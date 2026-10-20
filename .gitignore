@@ -3,3 +3,8 @@ node_modules/
 .wrangler/
 .dev.vars
 *.log
+test-results/
+e2e-results/
+_to_delete/
+.DS_Store
+__pycache__/
