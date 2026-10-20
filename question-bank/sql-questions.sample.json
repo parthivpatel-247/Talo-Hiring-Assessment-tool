@@ -1,0 +1,66 @@
+{
+  "_comment": "PLACEHOLDER SAMPLES ONLY — replace with Parthiv's real ~20-25 SQL questions. Paste the 'questions' array into the admin dashboard's bulk-import box (or merge more entries into this file first). Each question needs exactly 4 options and a 0-based correctIndex.",
+  "questions": [
+    {
+      "category": "sql",
+      "prompt": "A table `orders(order_id, customer_id, amount, status)` has some orders with status = 'cancelled'. Which query returns the total amount of NON-cancelled orders per customer?",
+      "codeSnippet": "SELECT customer_id, SUM(amount) FROM orders WHERE status != 'cancelled' GROUP BY customer_id;",
+      "options": [
+        "This query is correct as written",
+        "It should use HAVING instead of WHERE",
+        "It should GROUP BY amount, not customer_id",
+        "It will error because SUM() cannot be used with GROUP BY"
+      ],
+      "correctIndex": 0,
+      "explanation": "Filtering rows before aggregation belongs in WHERE; HAVING is for filtering after aggregation."
+    },
+    {
+      "category": "sql",
+      "prompt": "You have `events(user_id, event_type, created_at)`. You want each user's MOST RECENT event only. Which approach is correct?",
+      "options": [
+        "GROUP BY user_id with MAX(created_at) alone gives you the full most-recent row",
+        "Use a window function like ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) and filter to rn = 1",
+        "ORDER BY created_at DESC LIMIT 1 (no GROUP BY needed)",
+        "DISTINCT user_id, event_type ORDER BY created_at DESC"
+      ],
+      "correctIndex": 1,
+      "explanation": "MAX(created_at) with GROUP BY only gets you the max timestamp, not the rest of that row's columns; a window function is the standard fix."
+    },
+    {
+      "category": "sql",
+      "prompt": "Two tables: `students(id, name)` and `scores(student_id, score)`. Some students have no row in scores yet. Which join returns ALL students, with NULL scores for those without one?",
+      "options": [
+        "INNER JOIN",
+        "LEFT JOIN students to scores",
+        "RIGHT JOIN students to scores",
+        "CROSS JOIN"
+      ],
+      "correctIndex": 1,
+      "explanation": "A LEFT JOIN from the table you want to keep everything from (students) preserves unmatched rows as NULL."
+    },
+    {
+      "category": "sql",
+      "prompt": "What does this query return if the `discount` column contains NULLs?\nSELECT price - discount AS final_price FROM products;",
+      "options": [
+        "final_price is NULL wherever discount is NULL",
+        "final_price equals price wherever discount is NULL",
+        "It throws an error",
+        "final_price is 0 wherever discount is NULL"
+      ],
+      "correctIndex": 0,
+      "explanation": "Any arithmetic involving NULL yields NULL unless explicitly handled with COALESCE/IFNULL."
+    },
+    {
+      "category": "sql",
+      "prompt": "You need the second-highest salary from `employees(id, salary)`, handling ties correctly (if two people share the top salary, you still want the next distinct value). Which is correct?",
+      "options": [
+        "SELECT salary FROM employees ORDER BY salary DESC LIMIT 1 OFFSET 1",
+        "SELECT MAX(salary) FROM employees WHERE salary < (SELECT MAX(salary) FROM employees)",
+        "SELECT salary FROM employees ORDER BY salary DESC LIMIT 2",
+        "SELECT AVG(salary) FROM employees"
+      ],
+      "correctIndex": 1,
+      "explanation": "The OFFSET approach breaks when there are salary ties at the top; the subquery approach correctly finds the next distinct value."
+    }
+  ]
+}

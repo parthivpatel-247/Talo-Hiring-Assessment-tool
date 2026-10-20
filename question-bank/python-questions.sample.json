@@ -1,0 +1,29 @@
+{
+  "_comment": "PLACEHOLDER SAMPLES ONLY — replace with Parthiv's real ~10-15 Python questions. Same shape as the SQL file.",
+  "questions": [
+    {
+      "category": "python",
+      "prompt": "What does this print?",
+      "codeSnippet": "def f(x, lst=[]):\n    lst.append(x)\n    return lst\n\nprint(f(1))\nprint(f(2))",
+      "options": ["[1]\\n[2]", "[1]\\n[1, 2]", "[1, 2]\\n[1, 2]", "Raises an error"],
+      "correctIndex": 1,
+      "explanation": "Mutable default arguments are created once and persist across calls — a classic Python gotcha."
+    },
+    {
+      "category": "python",
+      "prompt": "What does this print?",
+      "codeSnippet": "a = [1, 2, 3]\nb = a\nb.append(4)\nprint(a)",
+      "options": ["[1, 2, 3]", "[1, 2, 3, 4]", "Raises an error", "[4]"],
+      "correctIndex": 1,
+      "explanation": "b = a assigns a reference, not a copy — mutating b also mutates a."
+    },
+    {
+      "category": "python",
+      "prompt": "What does this print?",
+      "codeSnippet": "print(0.1 + 0.2 == 0.3)",
+      "options": ["True", "False", "Raises an error", "None"],
+      "correctIndex": 1,
+      "explanation": "Floating-point representation error — 0.1 + 0.2 is 0.30000000000000004, not exactly 0.3."
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Talo — Technical Assessment</title>
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('talo-theme') || 'light'; }
+    catch (e) { document.documentElement.dataset.theme = 'light'; }
+  </script>
+  <link rel="stylesheet" href="/styles.css?v=15" />
+</head>
+<body>
+  <div id="timer" class="timer hidden"></div>
+
+  <button id="theme-toggle" class="theme-toggle floating" type="button" aria-label="Toggle dark mode">
+    <svg class="moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    <svg class="sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+  </button>
+
+  <div class="ambient" aria-hidden="true"></div>
+
+  <div class="wrap" id="app">
+    <!-- Login -->
+    <section id="login-section" class="card hero brandhero">
+      <div class="brand-lockup">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3.5" y="13" width="4" height="7.5" rx="2" fill="white" fill-opacity="0.7"/>
+            <rect x="10" y="8.5" width="4" height="12" rx="2" fill="white" fill-opacity="0.9"/>
+            <rect x="16.5" y="3.5" width="4" height="17" rx="2" fill="white"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">Talo</span>
+          <span class="brand-by">by Hevo</span>
+        </div>
+      </div>
+      <h1 class="hero-title">Technical Assessment</h1>
+      <p class="hero-sub">Welcome. Enter the email address from your resume to begin your assessment.</p>
+      <div class="chips">
+        <span class="chip"><b>5</b> questions</span>
+        <span class="chip"><b class="js-min">60</b> min</span>
+        <span class="chip">Auto-saved</span>
+      </div>
+      <div class="login-form">
+        <label class="field" for="login-email">Email address</label>
+        <input type="email" id="login-email" placeholder="you@example.com" autocomplete="email" />
+        <div style="height:14px"></div>
+        <button id="login-btn" class="block">Start assessment</button>
+        <div class="error" id="login-error"></div>
+      </div>
+    </section>
+
+    <!-- Overview -->
+    <section id="overview-section" class="card hidden">
+      <div class="brand-lockup small">
+        <div class="brand-mark">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3.5" y="13" width="4" height="7.5" rx="2" fill="white" fill-opacity="0.7"/>
+            <rect x="10" y="8.5" width="4" height="12" rx="2" fill="white" fill-opacity="0.9"/>
+            <rect x="16.5" y="3.5" width="4" height="17" rx="2" fill="white"/>
+          </svg>
+        </div>
+        <div class="brand-text"><span class="brand-name">Talo</span><span class="brand-by">by Hevo</span></div>
+      </div>
+      <h1>Welcome<span id="overview-name"></span></h1>
+      <p class="muted">Please read the instructions below carefully before you begin. Your <span class="js-min">60</span>-minute timer starts only when you select <em>Begin assessment</em>.</p>
+      <div class="steps">
+        <div class="step active">Technical Assessment · 5 questions · <span class="js-min">60</span> min</div>
+      </div>
+      <div class="detail-block" style="border:0;padding:0;margin:0">
+        <h3>About this assessment</h3>
+        <p>This assessment has <strong>one timed section of 5 questions</strong> covering SQL, Python, data structures &amp; algorithms, and a real-world scenario. You will write your own solution for each question. You have <strong><span class="js-min">60</span> minutes</strong> in total, and each response is limited to <strong><span class="js-words">1000</span> words</strong> — please aim to be clear, concise, and specific.</p>
+        <p style="margin-top:12px">This is a <strong>closed-book, proctored assessment</strong>. To keep the process fair for every candidate, we ask that you complete it independently and in your own words. The following guidelines apply:</p>
+        <ul style="margin:10px 0 0;padding-left:20px;line-height:1.75">
+          <li><strong>Stay in full-screen.</strong> Please remain in full-screen for the duration of the assessment. If you navigate away — switching tabs, windows, or applications — you will have <strong><span class="js-grace">10</span> seconds to return</strong> before your assessment is submitted automatically.</li>
+          <li><strong>Copying and pasting are disabled.</strong> Kindly type each answer in your own words.</li>
+          <li><strong>Connectivity is handled for you.</strong> If your internet connection drops, your timer will pause automatically and resume from the same point once you are back online. Please do not refresh or close this page.</li>
+          <li><strong>Your work is saved automatically</strong> as you go, so you will not lose your progress when moving between questions.</li>
+        </ul>
+      </div>
+      <div class="notice">Once you begin, the <span class="js-min">60</span>-minute timer starts and will pause only if your connection drops. Please make sure you are ready before you continue.</div>
+      <label class="consent" for="consent-chk">
+        <input type="checkbox" id="consent-chk" />
+        <span>I confirm that I have read and understood the instructions above. I understand that this is a proctored, closed-book assessment to be completed independently, and that any violation of these guidelines may result in disqualification from the hiring process.</span>
+      </label>
+      <button id="begin-part1-btn" class="block" disabled>Begin assessment</button>
+    </section>
+
+    <!-- Assessment (single part) -->
+    <section id="part1-section" class="card hidden">
+      <div class="steps">
+        <div class="step active">Technical Assessment · 5 questions · <span class="js-min">60</span> min</div>
+      </div>
+      <div id="part1-fullscreen-gate">
+        <div class="notice">This part must be taken in full-screen. Click below to enter full-screen and reveal the questions.</div>
+        <button id="part1-fullscreen-btn" class="block">Enter full-screen and begin</button>
+      </div>
+      <div id="part1-work" class="hidden">
+        <div class="qnav" id="part1-qnav"></div>
+        <div class="split">
+          <div class="qpanel" id="part1-qpanel"></div>
+          <div class="apanel">
+            <label class="field" for="part1-answer">Your answer</label>
+            <textarea id="part1-answer" class="answerbox" placeholder="Write your answer here…" spellcheck="false"></textarea>
+            <div class="apanel-foot">
+              <span class="wordcount" id="part1-wc">0 / 1000 words</span>
+              <span class="saved-tag" id="part1-saved">✓ saved</span>
+            </div>
+            <div class="qnav-btns">
+              <button id="part1-prev" class="secondary">&larr; Previous</button>
+              <button id="part1-next" class="secondary">Next &rarr;</button>
+              <button id="part1-save" class="save-btn secondary">Save answer</button>
+              <button id="part1-submit-btn" class="hidden">Submit assessment</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Done -->
+    <section id="done-section" class="card hero hidden">
+      <div class="icon" style="background:var(--ok-soft);color:var(--ok)">✓</div>
+      <h1>Assessment submitted</h1>
+      <p class="muted">Thanks — your assessment has been recorded. The hiring team will be in touch about next steps. You can close this tab.</p>
+    </section>
+
+    <p class="footnote">Talo by Hevo · Your responses are confidential and used only for this hiring process.</p>
+  </div>
+
+  <script src="/app.js?v=29"></script>
+</body>
+</html>

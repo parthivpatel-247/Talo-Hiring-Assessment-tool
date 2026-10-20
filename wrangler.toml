@@ -1,0 +1,77 @@
+name = "talo"
+main = "src/index.ts"
+compatibility_date = "2026-09-25"
+compatibility_flags = ["nodejs_compat"]
+
+# Static frontend (public/) is served directly by the Worker — no separate
+# Cloudflare Pages project needed. This is the modern equivalent of the
+# original "Pages + Workers" split and means ONE `wrangler deploy` does
+# everything.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "campus-hiring-assessment-db"
+database_id = "3feef41d-9982-462b-bc79-cf9fcfc14965"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "RESUMES"
+bucket_name = "campus-hiring-resumes"
+
+# Daily check for candidate data past the retention window.
+[triggers]
+crons = ["0 3 * * *"]
+
+[vars]
+OPENAI_MODEL = "gpt-4o-mini"
+# Login requires BOTH email and password. These are the emails for the two
+# bootstrap logins (paired with the ADMIN_PASSWORD / PANEL_PASSWORD secrets).
+# Change them to the real manager + panel emails. Additional named accounts are
+# created in the admin Access section (each with its own email + password).
+ADMIN_EMAIL = "parthiv.patel@hevodata.com"
+PANEL_EMAIL = "panel@hevodata.com"
+# Single-part assessment: 5 questions, 60 minutes by default. PART1_DURATION_MINUTES
+# is the whole test's clock and the fallback when no length is set in the admin
+# portal (the manager can change the live length there). Part 2/3 are retired —
+# their vars are kept only as harmless defaults for dormant code paths.
+PART1_DURATION_MINUTES = "60"
+PART2_DURATION_MINUTES = "15"
+PART3_DURATION_MINUTES = "15"
+DATA_RETENTION_DAYS = "15"
+# Per-student question mix for the single part (total = 5): 2 SQL + 1 Python + 1 DSA + 1 Scenario.
+SQL_QUESTIONS_PER_STUDENT = "2"
+PYTHON_QUESTIONS_PER_STUDENT = "1"
+DSA_QUESTIONS_PER_STUDENT = "1"
+SCENARIO_QUESTIONS_PER_STUDENT = "1"
+PART2_QUESTIONS_PER_STUDENT = "0"
+# Part 3 (retired).
+PART3_BUGGY_PER_STUDENT = "1"
+PART3_SCENARIO_PER_STUDENT = "1"
+SQL_MARKS = "3"
+PYTHON_MARKS = "4"
+DSA_MARKS = "5"
+SCENARIO_MARKS = "5"
+PART2_MARKS = "5"
+PART3_MARKS = "5"
+ANALYSIS_BATCH_SIZE = "4"
+# College names for candidate segregation (rename these to the real colleges).
+COLLEGES = "College Name 1"
+# Wall-clock grace beyond a part's timed duration before an abandoned attempt
+# (candidate disconnected and never returned) is auto-submitted so grading isn't blocked.
+STALE_GRACE_MINUTES = "30"
+
+# Secrets — set these with `wrangler secret put <NAME>` from your own
+# terminal once you're logged into your Cloudflare account. Never commit
+# real values for these:
+#   OPENAI_API_KEY   — used server-side only, for resume parsing,
+#                       Part 2 question generation, Part 2 scoring, and
+#                       interview-question generation.
+#   ADMIN_PASSWORD   — shared password for the admin dashboard (single
+#                       login shared by you + your manager; swap for
+#                       per-admin accounts later if needed).
+#   SESSION_SECRET   — random string used to sign candidate and admin
+#                       session cookies. Generate with e.g.
+#                       `openssl rand -hex 32`.

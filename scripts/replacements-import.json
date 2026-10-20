@@ -1,0 +1,25 @@
+{
+  "questions": [
+    {
+      "category": "sql",
+      "prompt": "Tables:\ncustomers - Columns: customer_id (PK), customer_name, city\norders - Columns: order_id (PK), customer_id (FK), order_date, amount\n\nWrite a SQL query to show how many orders each customer has placed, INCLUDING customers who have placed no orders (they should show a count of 0). Display customer_id, customer_name and order_count.",
+      "referenceAnswer": "SELECT c.customer_id, c.customer_name, COUNT(o.order_id) AS order_count\nFROM customers c\nLEFT JOIN orders o ON o.customer_id = c.customer_id\nGROUP BY c.customer_id, c.customer_name;",
+      "marks": 3,
+      "difficulty": "medium"
+    },
+    {
+      "category": "sql",
+      "prompt": "Table: products\nColumns: product_id (PK), product_name, category, price\n\nWrite a SQL query to list all the distinct product categories, sorted alphabetically.",
+      "referenceAnswer": "SELECT DISTINCT category\nFROM products\nORDER BY category;",
+      "marks": 3,
+      "difficulty": "easy"
+    },
+    {
+      "category": "sql",
+      "prompt": "Table: orders\nColumns: order_id (PK), customer_id, order_date, amount\n\nWrite a SQL query to find the top 3 customers by their total order amount. Display customer_id and total amount, highest first.",
+      "referenceAnswer": "SELECT customer_id, SUM(amount) AS total_amount\nFROM orders\nGROUP BY customer_id\nORDER BY total_amount DESC\nLIMIT 3;",
+      "marks": 3,
+      "difficulty": "medium"
+    }
+  ]
+}
