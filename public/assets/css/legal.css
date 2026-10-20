@@ -1,0 +1,209 @@
+/* Privacy, terms and 404: long-form reading pages. */
+body.legal {
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+}
+.legal-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  height: 64px;
+  padding: 0 clamp(16px, 4vw, 40px);
+  border-bottom: 1px solid var(--border);
+}
+.legal-top .wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-weight: 750;
+  font-size: 22px;
+  letter-spacing: -0.04em;
+}
+.legal-top .wordmark small {
+  font-size: 12px;
+  font-weight: 560;
+  letter-spacing: 0;
+  color: var(--text-2);
+}
+.legal-top nav {
+  margin-left: auto;
+  display: flex;
+  gap: var(--s-4);
+  font-size: var(--fs-sm);
+}
+.legal-top nav a {
+  color: var(--text-2);
+}
+.legal-top nav a[aria-current="page"] {
+  color: var(--text);
+  font-weight: 600;
+}
+.doc {
+  flex: 1;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--s-10) clamp(16px, 4vw, 40px) var(--s-16);
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: var(--s-10);
+}
+.toc {
+  position: sticky;
+  top: var(--s-6);
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-sm);
+}
+.toc b {
+  font-size: var(--fs-xs);
+  color: var(--text-3);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.toc a {
+  color: var(--text-2);
+  padding: 4px 0;
+  text-decoration: none;
+}
+.toc a:hover {
+  color: var(--text);
+}
+.prose {
+  max-width: 70ch;
+  font-size: var(--fs-base);
+  line-height: 1.7;
+  color: var(--text);
+}
+.prose h1 {
+  font-size: clamp(32px, 4vw, 44px);
+  letter-spacing: -0.04em;
+  line-height: 1.08;
+}
+.prose .updated {
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  margin-top: var(--s-3);
+}
+.prose .lede {
+  font-size: var(--fs-lg);
+  color: var(--text-2);
+  margin-top: var(--s-5);
+  line-height: 1.6;
+}
+.prose h2 {
+  font-size: var(--fs-xl);
+  letter-spacing: -0.025em;
+  margin-top: var(--s-12);
+  scroll-margin-top: var(--s-6);
+}
+.prose h3 {
+  font-size: var(--fs-base);
+  margin-top: var(--s-6);
+}
+.prose p,
+.prose ul,
+.prose table {
+  margin-top: var(--s-4);
+}
+.prose ul {
+  padding-left: 1.2em;
+}
+.prose li + li {
+  margin-top: 6px;
+}
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+.prose th,
+.prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.prose th {
+  background: var(--bg-subtle);
+  font-size: var(--fs-sm);
+}
+.prose .table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-top: var(--s-4);
+}
+.prose .table-wrap table {
+  margin: 0;
+}
+.request-card {
+  margin-top: var(--s-6);
+  padding: var(--s-6);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+  font-size: var(--fs-md);
+}
+.legal-foot {
+  border-top: 1px solid var(--border);
+  padding: var(--s-5) clamp(16px, 4vw, 40px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-4);
+  justify-content: space-between;
+  font-size: var(--fs-sm);
+  color: var(--text-2);
+}
+.legal-foot nav {
+  display: flex;
+  gap: var(--s-4);
+}
+.legal-foot a {
+  color: var(--text-2);
+}
+.nf {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--s-10) var(--s-5);
+  text-align: center;
+}
+.nf .code {
+  font-size: clamp(80px, 16vw, 160px);
+  font-weight: 760;
+  letter-spacing: -0.06em;
+  line-height: 1;
+  color: var(--text);
+}
+.nf .code span {
+  color: var(--accent);
+}
+.nf p {
+  color: var(--text-2);
+  margin-top: var(--s-4);
+  font-size: var(--fs-lg);
+}
+.nf .row {
+  justify-content: center;
+  margin-top: var(--s-8);
+}
+@media (max-width: 860px) {
+  .doc {
+    grid-template-columns: 1fr;
+    gap: var(--s-6);
+    padding-top: var(--s-6);
+  }
+  .toc {
+    display: none;
+  }
+}

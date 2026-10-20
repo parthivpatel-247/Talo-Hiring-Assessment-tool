@@ -1,7 +1,9 @@
-# Copy this file to `.dev.vars` (already in .gitignore) for local `wrangler dev`
-# testing. These are placeholder values — replace OPENAI_API_KEY with a real
-# key if you want to test the AI features locally; ADMIN_PASSWORD and
-# SESSION_SECRET can be anything for local testing.
-OPENAI_API_KEY=sk-your-real-key-here
-ADMIN_PASSWORD=choose-a-local-test-password
+# Copy to .dev.vars (git-ignored) for `npm run dev`. Local values only.
 SESSION_SECRET=any-long-random-string-for-local-testing-only
+# Only for creating the first manager account (with ADMIN_EMAIL from wrangler.toml).
+ADMIN_PASSWORD=choose-a-local-setup-password
+# Optional locally: resume reading and grading need a real key.
+OPENAI_API_KEY=
+# Optional: email (also set EMAIL_PROVIDER and EMAIL_FROM) and Turnstile.
+EMAIL_API_KEY=
+TURNSTILE_SECRET=

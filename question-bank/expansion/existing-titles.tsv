@@ -1,0 +1,84 @@
+category	difficulty	title	topic
+dsa	easy	Second Largest Element	Arrays
+dsa	easy	Valid Palindrome	Strings · Two Pointers
+dsa	easy	First Unique Character	Strings · Hash Map
+dsa	easy	Move Zeroes to the End	Arrays · Two Pointers
+dsa	medium	Two Sum	Arrays · Hash Map
+dsa	medium	Valid Parentheses	Strings · Stack
+dsa	medium	Longest Substring Without Repeating Characters	Strings · Sliding Window
+dsa	medium	Merge Intervals	Arrays · Sorting
+dsa	medium	Product of Array Except Self	Arrays · Prefix/Suffix
+dsa	medium	Maximum Subarray Sum	Arrays · Kadane's Algorithm
+dsa	medium	Rotate an Array	Arrays
+dsa	medium	Group Anagrams	Strings · Hash Map
+scenario	medium	Best Time to Buy and Sell Stock	Scenario · Arrays
+scenario	medium	Minimum Railway Platforms	Scenario · Sorting · Two Pointers
+scenario	medium	SMS Message Compression	Scenario · Strings
+scenario	medium	Top K Words in a Review	Scenario · Strings · Hash Map
+scenario	medium	Suspicious Transactions	Scenario · Arrays · Sliding Window
+scenario	medium	Duplicate API Requests	Scenario · Hash Set · Arrays
+scenario	easy	Debugging: Class Average	Debugging · Arrays
+scenario	medium	Debugging: Binary Search Misses the Last Item	Debugging · Arrays · Searching
+scenario	easy	Debugging: Letter Frequency	Debugging · Strings · Maps
+scenario	medium	Debugging: Secret Message Cipher	Debugging · Strings
+scenario	medium	Debugging: The Backup That Changes Too	Debugging · Arrays · References
+scenario	easy	Debugging: Largest Value Is Wrong for Negatives	Debugging · Arrays
+scenario	easy	Username Autocomplete	Scenario · Strings · Prefix Matching
+scenario	easy	Message Deduplication	Scenario · Arrays · Strings
+scenario	easy	Missing Roll Number	Scenario · Arrays · Math
+scenario	medium	Best Sales Window	Scenario · Arrays · Sliding Window
+scenario	easy	Password Strength Checker	Scenario · Strings
+dsa	easy	Anagram Check	Strings · Hash Map
+dsa	easy	Largest and Smallest Element	Arrays
+dsa	easy	Sum and Average of an Array	Arrays
+dsa	easy	Reverse an Array In Place	Arrays · Two Pointers
+dsa	easy	Count Even and Odd Numbers	Arrays
+dsa	easy	Linear Search	Arrays · Searching
+dsa	easy	Pairs With a Given Sum	Arrays · Hash Set
+dsa	easy	Reverse a String	Strings
+dsa	easy	Count Vowels and Consonants	Strings · Counting
+dsa	easy	Count Words in a Sentence	Strings
+dsa	easy	Character Frequency	Strings · Hash Map
+dsa	medium	Check Two Strings Are Anagrams	Strings · Hash Map
+dsa	easy	Reverse Each Word in a Sentence	Strings
+scenario	easy	Debugging: Sum Loop Runs One Step Too Far	Debugging · Arrays · Loops
+scenario	easy	Debugging: Typed Numbers Are Joined, Not Added	Debugging · Input · Data Types
+scenario	easy	Debugging: Upper-Case Result Is Thrown Away	Debugging · Strings · Return Values
+scenario	easy	Debugging: Vowel Counter Misses Capitals	Debugging · Strings
+scenario	medium	Debugging: Reverse Leaves the Array Unchanged	Debugging · Arrays · Two Pointers
+scenario	easy	Debugging: Palindrome Check Reads Past the End	Debugging · Strings · Indexing
+scenario	easy	Debugging: Linear Search Gives Up Too Early	Debugging · Arrays · Searching
+scenario	medium	Debugging: Second Largest Returns a Duplicate	Debugging · Arrays
+scenario	medium	Minimum Truck Capacity	Scenario · Binary Search · Greedy
+scenario	medium	Days Until a Better Price	Scenario · Arrays · Monotonic Stack
+scenario	medium	Top Error Codes in Server Logs	Scenario · Hash Map · Bucket Sort
+scenario	easy	Find the First Bad Build	Scenario · Binary Search
+scenario	medium	Course Prerequisites	Scenario · Graphs · Topological Sort
+scenario	medium	Fewest Coins for Change	Scenario · Dynamic Programming
+scenario	medium	Longest Uptime With Forgiven Outages	Scenario · Arrays · Sliding Window
+scenario	medium	EV Charging Loop	Scenario · Greedy · Arrays
+scenario	medium	Spread of a Software Update	Scenario · Grid · Multi-source BFS
+scenario	medium	Browser Page Cache	Scenario · Hash Map · Design
+dsa	medium	Container With Most Water	Arrays · Two Pointers · Greedy
+dsa	medium	Search in a Rotated Sorted Array	Arrays · Binary Search
+dsa	medium	Number of Islands	Matrix · Graphs · DFS/BFS
+dsa	medium	Longest Consecutive Sequence	Arrays · Hash Set
+dsa	medium	Three Sum to Zero	Arrays · Sorting · Two Pointers
+dsa	medium	Remove the Nth Node From the End	Linked Lists · Two Pointers
+dsa	medium	Kth Largest Element	Arrays · Heap · Quickselect
+dsa	medium	Spiral Matrix	Matrix · Simulation
+dsa	medium	Binary Tree Level Order Traversal	Trees · BFS · Queue
+dsa	medium	Validate a Binary Search Tree	Trees · Binary Search Tree · Recursion
+dsa	medium	House Robber	Arrays · Dynamic Programming
+dsa	medium	All Subsets	Arrays · Backtracking · Bit Manipulation
+dsa	medium	Sort Colors	Arrays · Two Pointers · In-Place
+python	-	Scenario: A reviews tool needs the single most frequent word in a review.	
+python	-	Scenario: A data job must merge two already-sorted lists of IDs into one sorted list.	
+python	-	Scenario: A log pipeline counts how many times each log level appears.	
+python	-	Scenario: A chat app removes CONSECUTIVE duplicate messages (non-consecutive repeats are kept).	
+sql	-	Scenario: An e-commerce team wants the total amount each customer has spent so they can rank their b	
+sql	-	Scenario: HR needs the second-highest distinct salary for a bonus rule.	
+sql	-	Scenario: Marketing wants customers who have never placed an order so they can re-engage them.	
+sql	-	Scenario: A store wants its top 3 products by total revenue for a featured shelf.	
+sql	-	Scenario: A signup table was imported twice, so some emails repeat and need flagging.	
+sql	-	Scenario: Analytics wants signups per month for a trend chart.	

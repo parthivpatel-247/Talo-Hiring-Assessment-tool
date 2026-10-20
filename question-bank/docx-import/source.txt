@@ -1,0 +1,5999 @@
+Question 1: Move Zeroes
+
+Easy
+
+Arrays · Two Pointers
+
+Problem description
+
+Given an integer array nums, move every zero to the end of the array
+while maintaining the relative order of all non-zero elements.
+
+The operation must modify the original array in place, without creating
+a copy of the array.
+
+Examples
+
+Example 1
+
+Input: nums = [0, 1, 0, 3, 12]Output: [1, 3, 12, 0, 0]
+
+Explanation: The non-zero elements remain in their original relative
+order, and both zeroes are moved to the end.
+
+Example 2
+
+Input: nums = [0]Output: [0]
+
+Explanation: The array contains only one element, so no change is
+necessary.
+
+Constraints
+
+-   1 ≤ len(nums) ≤ 10⁴
+
+-    − 2³¹ ≤ nums[i] ≤ 2³¹ − 1
+
+Hints
+
+1.  First consider how you would solve the problem using an additional
+      array.
+
+2.  Then consider using two pointers: one to traverse the array and
+      another to track where the next non-zero element should go.
+
+Question 2: Longest Substring Without Repeating Characters
+
+Medium
+
+Strings · Sliding Window
+
+Problem description
+
+Given a string s, find the length of the longest substring that contains
+no repeated characters.
+
+A substring is a contiguous sequence of characters from the original
+string. It cannot skip characters.
+
+Examples
+
+Example 1
+
+Input: s = "abcabcbb"Output: 3
+
+Explanation: "abc", "bca" and "cab" are valid substrings of length 3. No
+longer substring satisfies the condition.
+
+Example 2
+
+Input: s = "bbbbb"Output: 1
+
+Explanation: Every character is the same, so a valid substring can
+contain only one character.
+
+Example 3
+
+Input: s = "pwwkew"Output: 3
+
+Explanation: "wke" is a valid substring of length 3. "pwke" is not a
+valid candidate because it skips characters from the original string.
+
+Constraints
+
+-   0 ≤ len(s) ≤ 10⁵
+
+-   s may contain English letters, digits, symbols and spaces.
+
+Hint
+
+The number of distinct characters available is limited. Consider how you
+could examine candidate substrings efficiently, and how a sliding window
+could avoid repeatedly checking the same characters.
+
+Question 3: Product of Array Except Self
+
+Medium
+
+Arrays · Prefix and Suffix Products
+
+Problem description
+
+Given an integer array nums, return an array answer such that answer[i]
+equals the product of every element in nums except nums[i].
+
+Your algorithm must run in O(n) time and must not use the division
+operation.
+
+The product of any prefix or suffix of the input is guaranteed to fit in
+a 32-bit integer.
+
+Examples
+
+Example 1
+
+Input: nums = [1, 2, 3, 4]Output: [24, 12, 8, 6]
+
+Explanation: The results are 2 × 3 × 4 = 24, 1 × 3 × 4 = 12, 1 × 2 × 4 =
+8, and 1 × 2 × 3 = 6.
+
+Example 2
+
+Input: nums = [-1, 1, 0, -3, 3]Output: [0, 0, 9, 0, 0]
+
+Explanation: The zero makes every product zero except the result at its
+own index. Excluding that zero, the product of the other elements is 9.
+
+Constraints
+
+-   2 ≤ len(nums) ≤ 10⁵
+
+-    − 30 ≤ nums[i] ≤ 30
+
+-   Every resulting answer is guaranteed to fit in a 32-bit integer.
+
+Hints
+
+1.  Consider prefix products and suffix products. Can you calculate them
+      in linear time rather than recomputing products for each index?
+
+2.  Can you reduce extra space by storing intermediate results in the
+      output array and maintaining a running product?
+
+Question 4: Group Anagrams
+
+Medium
+
+Strings · Hash Map · Sorting
+
+Problem description
+
+Given an array of strings strs, group together all strings that are
+anagrams of one another. Anagrams contain exactly the same characters
+with the same frequencies, although their character order may differ.
+
+Return the groups in any order.
+
+Examples
+
+Example 1
+
+Input: strs = ["eat", "tea", "tan", "ate", "nat", "bat"]Output: [
+["bat"], ["nat", "tan"], ["ate", "eat", "tea"]]
+
+Explanation: "eat", "tea" and "ate" belong together. "tan" and "nat"
+form another group. "bat" has no anagram in the input.
+
+Example 2
+
+Input: strs = [""]Output: [[""]]
+
+Explanation: The input contains one empty string, which forms a group of
+its own.
+
+Example 3
+
+Input: strs = ["a"]Output: [["a"]]
+
+Explanation: A single string forms a single group.
+
+Constraints
+
+-   1 ≤ len(strs) ≤ 10⁴
+
+-   0 ≤ len(strs[i]) ≤ 100
+
+-   Each string contains only lowercase English letters.
+
+Hint: Think about how to assign the same key to strings that contain
+identical character frequencies. Sorting the characters or using a
+character-frequency representation can help identify anagrams.
+
+Question 5: Duplicate API Requests 
+
+Hash Set · Arrays
+
+Problem description
+
+A backend service receives request IDs from clients. Sometimes, a
+request is sent more than once because the client retries after a
+timeout or an uncertain response.
+
+Given a list of request IDs, identify every ID that occurs more than
+once. Return each duplicate ID only once, in the order in which its
+second occurrence appears in the input.
+
+Do not return IDs that occur only once.
+
+Examples
+
+Example 1
+
+Input: requests = ["A12", "B15", "A12", "C20", "B15", "D30"]Output:
+["A12", "B15"]
+
+Explanation: "A12" becomes a duplicate at index 2, followed by "B15" at
+index 4. "C20" and "D30" appear only once and are excluded.
+
+Example 2
+
+Input: requests = ["X1", "Y2", "X1", "X1", "Y2", "Z3"]Output: ["X1",
+"Y2"]
+
+Explanation: "X1" is reported when it first repeats. Its third
+occurrence does not add another entry. "Y2" is reported when its second
+occurrence is encountered.
+
+Constraints
+
+-   The input is a list of strings.
+
+-   Request IDs may appear any number of times.
+
+-   Each duplicate must appear exactly once in the result.
+
+-   The result must follow the order in which duplicates are first
+      detected.
+
+Hint: Maintain one collection for IDs already seen and another for
+duplicates already reported.
+
+Question 6: Log Analysis — Most Frequent Log Level
+
+Strings · Dictionary
+
+Problem description
+
+A server records log levels such as INFO, ERROR, WARN and DEBUG in a
+space-separated string.
+
+Write a function that returns the most frequently occurring log level.
+
+If two or more log levels have the same highest frequency, return the
+one whose first occurrence appears earliest in the input.
+
+Assume the input contains at least one log level and that log levels are
+separated by spaces.
+
+Examples
+
+Example 1
+
+Input: logs = "INFO ERROR INFO WARN ERROR ERROR INFO"Output: "INFO"
+
+Explanation: INFO appears three times and ERROR also appears three
+times. Since INFO appears first in the input, it wins the tie.
+
+Example 2
+
+Input: logs = "WARN INFO ERROR INFO WARN"Output: "WARN"
+
+Explanation: WARN and INFO each appear twice, while ERROR appears once.
+The tie is resolved in favor of WARN because its first occurrence comes
+before INFO.
+
+Constraints
+
+-   The input contains one or more space-separated log levels.
+
+-   Log levels are case-sensitive.
+
+-   If multiple levels share the maximum frequency, the earliest first
+      occurrence determines the answer.
+
+Hint: A dictionary can track frequencies. Think carefully about when to
+update the current answer: updating it on every tie may violate the
+required ordering.
+
+Question 7: User Search / Autocomplete
+
+Strings · Arrays · Prefix Matching
+
+Problem description
+
+A web application stores usernames in a list and provides a search
+feature.
+
+Given a list of usernames and a search prefix, return all usernames that
+start with that prefix. The matching must begin at the first character
+of the username.
+
+Preserve the original order of the usernames. If no username matches,
+return an empty list.
+
+Examples
+
+Example 1
+
+Input: users = ["ashish", "ashwin", "amit", "ankit", "arjun"] prefix =
+"ash"Output: ["ashish", "ashwin"]
+
+Explanation: Both "ashish" and "ashwin" begin with "ash". The other
+usernames do not match the prefix.
+
+Example 2
+
+Input: users = ["alice", "bob", "anna", "alex"] prefix = "al"Output:
+["alice", "alex"]
+
+Explanation: Only "alice" and "alex" start with "al". Their original
+relative order is preserved.
+
+Constraints
+
+-   users is a list of strings.
+
+-   prefix is a string.
+
+-   Return every matching username, not just the first match.
+
+-   Preserve the order of matching usernames.
+
+Hint: Python strings provide a method for checking whether a string
+starts with a specified prefix.
+
+Question 8: Suspicious Transactions
+
+Arrays · Sliding Window
+
+Problem description
+
+A payment system monitors transaction amounts to identify potentially
+suspicious activity.
+
+A transaction is considered suspicious if its amount is strictly greater
+than five times the average of the three immediately preceding
+transactions.
+
+Given a list of transaction amounts, return the zero-based indices of
+all suspicious transactions in their original order.
+
+The first three transactions cannot be flagged because three preceding
+transactions are not available. When evaluating a transaction, exclude
+its amount from the average.
+
+Examples
+
+Example 1
+
+Input: transactions = [100, 200, 150, 5000, 120, 130, 7000]Output: [3]
+
+Explanation: At index 3, the preceding average is (100 + 200 + 150) / 3
+= 150. Five times this average is 750, and 5000 exceeds it. At index 6,
+the preceding average is (5000 + 120 + 130) / 3 = 1750, making the
+threshold 8750. Since 7000 does not exceed 8750, index 6 is not
+suspicious.
+
+Example 2
+
+Input: transactions = [10, 10, 10, 51, 20]Output: [3]
+
+Explanation: At index 3, the preceding average is 10, so the threshold
+is 50. Since 51 is greater than 50, index 3 is suspicious. At index 4,
+the preceding values are 10, 10 and 51. Their average is about 23.67, so
+the threshold is about 118.33. The transaction amount 20 does not exceed
+it.
+
+Constraints
+
+-   The input is a list of non-negative transaction amounts.
+
+-   The first three elements are never evaluated.
+
+-   The average must use exactly the three preceding transactions.
+
+-   Return zero-based indices in ascending order.
+
+Hint: Maintain a running sum of the last three transaction amounts.
+Update the sum as the window moves rather than calculating each average
+from scratch.
+
+Question 9: Message Deduplication
+
+Arrays · Strings
+
+Problem description
+
+A messaging system receives a sequence of messages. Due to repeated
+events or retries, the same message may appear several times
+consecutively.
+
+Given a list of messages, remove consecutive duplicate entries so that
+each uninterrupted run of identical messages is represented by a single
+occurrence.
+
+Preserve the order of the remaining messages. If the same message
+appears again after a different message, retain that later occurrence.
+
+Examples
+
+Example 1
+
+Input: messages = ["A", "A", "B", "B", "B", "A", "A"]Output: ["A", "B",
+"A"]
+
+Explanation: The first two "A" messages become one. The three
+consecutive "B" messages become one. The final two "A" messages also
+become one, but this "A" must remain because it follows a "B".
+
+Example 2
+
+Input: messages = ["LOGIN", "LOGIN", "LOGOUT", "LOGIN"]Output: ["LOGIN",
+"LOGOUT", "LOGIN"]
+
+Explanation: The two consecutive "LOGIN" messages at the beginning are
+reduced to one. The final "LOGIN" remains because it is separated from
+the first group by "LOGOUT".
+
+Constraints
+
+-   messages is a list of strings and may be empty.
+
+-   Consecutive duplicates must be collapsed into one occurrence.
+
+-   Non-consecutive repetitions must be retained.
+
+-   The relative order of retained messages must not change.
+
+Hint: Compare each message with the immediately preceding message in the
+original sequence. You do not need to track every message seen
+previously.
+
+DSA Assessment for Freshers
+
+Set 1: Easy Level
+
+E1. Second Largest Element
+
+Given an array arr of integers, return the second largest distinct
+element in the array. If the second largest element does not exist,
+return -1.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: arr = [12, 35, 1, 10, 34, 1]                                   |
+|                                                                       |
+| Output: 34                                                            |
+|                                                                       |
+| Explanation: The largest element is 35 and the second largest is 34.  |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: arr = [10, 5, 10]                                              |
+|                                                                       |
+| Output: 5                                                             |
+|                                                                       |
+| Explanation: 10 appears twice but is counted once, so the second      |
+| largest distinct element is 5.                                        |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= arr.length <= 10^5
+
+-   -10^5 <= arr[i] <= 10^5
+
+Hint: You do not need to sort. Keep two variables, largest and
+secondLargest, and update them as you go through the array once. Be
+careful when the current value is equal to the largest.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: arr = [10, 10, 10]                                             |
+|                                                                       |
+| Expected Output: -1                                                   |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: arr = [-5, -2, -9, -2]                                         |
+|                                                                       |
+| Expected Output: -5                                                   |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E2. Valid Palindrome
+
+A phrase is a palindrome if, after converting all uppercase letters to
+lowercase and removing all characters that are not letters or digits, it
+reads the same forward and backward.
+
+Given a string s, return true if it is a palindrome, or false otherwise.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "A man, a plan, a canal: Panama"                           |
+|                                                                       |
+| Output: true                                                          |
+|                                                                       |
+| Explanation: After cleaning, the string is "amanaplanacanalpanama",   |
+| which is a palindrome.                                                |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "race a car"                                               |
+|                                                                       |
+| Output: false                                                         |
+|                                                                       |
+| Explanation: After cleaning, the string is "raceacar", which is not a |
+| palindrome.                                                           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= s.length <= 2 * 10^5
+
+-   s contains only printable ASCII characters.
+
+Hint: Use two pointers, one at the start and one at the end. Skip
+characters that are not letters or digits, and compare the rest in
+lowercase while moving the pointers toward each other.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: s = " "                                                        |
+|                                                                       |
+| Expected Output: true                                                 |
+|                                                                       |
+| Explanation: After cleaning, the string is empty, and an empty string |
+| is a palindrome.                                                      |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "0P"                                                       |
+|                                                                       |
+| Expected Output: false                                                |
+|                                                                       |
+| Explanation: Digits are kept, so "0p" is compared and "0" is not      |
+| equal to "p".                                                         |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E3. First Unique Character in a String
+
+Given a string s, find the first character that does not repeat and
+return its index. If no such character exists, return -1.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "leetcode"                                                 |
+|                                                                       |
+| Output: 0                                                             |
+|                                                                       |
+| Explanation: 'l' at index 0 appears only once.                        |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "loveleetcode"                                             |
+|                                                                       |
+| Output: 2                                                             |
+|                                                                       |
+| Explanation: 'l' and 'o' repeat, so the first unique character is 'v' |
+| at index 2.                                                           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= s.length <= 10^5
+
+-   s consists of only lowercase English letters.
+
+Hint: Go through the string twice. In the first pass, count how many
+times each character appears. In the second pass, return the index of
+the first character whose count is 1.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "aabb"                                                     |
+|                                                                       |
+| Expected Output: -1                                                   |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "aabbccdde"                                                |
+|                                                                       |
+| Expected Output: 8                                                    |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E4. Move Zeroes
+
+Given an integer array nums, move all 0s to the end of the array while
+keeping the relative order of the non-zero elements.
+
+You must do this in place, without making a copy of the array.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: nums = [0, 1, 0, 3, 12]                                        |
+|                                                                       |
+| Output: [1, 3, 12, 0, 0]                                              |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: nums = [0]                                                     |
+|                                                                       |
+| Output: [0]                                                           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= nums.length <= 10^4
+
+-   -2^31 <= nums[i] <= 2^31 - 1
+
+Hint: Keep a pointer to the position where the next non-zero element
+should go. Copy each non-zero element to that position, then fill the
+remaining positions with 0.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: nums = [4, 0, 0, 0, 5, 0, 6]                                   |
+|                                                                       |
+| Expected Output: [4, 5, 6, 0, 0, 0, 0]                                |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: nums = [1, 2, 3]                                               |
+|                                                                       |
+| Expected Output: [1, 2, 3]                                            |
+|                                                                       |
+| Explanation: There are no zeros, so the array does not change.        |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Set 2: Moderate Level
+
+M1. Two Sum
+
+Given an array of integers nums and an integer target, return the
+indices of the two numbers that add up to target.
+
+You may assume that each input has exactly one solution, and you may not
+use the same element twice. You can return the answer in any order.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: nums = [2, 7, 11, 15], target = 9                              |
+|                                                                       |
+| Output: [0, 1]                                                        |
+|                                                                       |
+| Explanation: nums[0] + nums[1] = 2 + 7 = 9.                           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: nums = [3, 2, 4], target = 6                                   |
+|                                                                       |
+| Output: [1, 2]                                                        |
+|                                                                       |
+| Explanation: nums[1] + nums[2] = 2 + 4 = 6.                           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   2 <= nums.length <= 10^4
+
+-   -10^9 <= nums[i] <= 10^9
+
+-   -10^9 <= target <= 10^9
+
+-   Only one valid answer exists.
+
+Hint: For each number x, the number you need is target - x. Store the
+numbers you have already seen in a hash map (value to index) so you can
+check for the needed number in O(1).
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: nums = [3, 3], target = 6                                      |
+|                                                                       |
+| Expected Output: [0, 1]                                               |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: nums = [-1, -2, -3, -4, -5], target = -8                       |
+|                                                                       |
+| Expected Output: [2, 4]                                               |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M2. Valid Parentheses
+
+Given a string s containing only the characters '(', ')', '{', '}', '['
+and ']', determine if the input string is valid.
+
+A string is valid if:
+
+-   Every open bracket is closed by the same type of bracket.
+
+-   Open brackets are closed in the correct order.
+
+-   Every close bracket has a matching open bracket of the same type.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "()[]{}"                                                   |
+|                                                                       |
+| Output: true                                                          |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "(]"                                                       |
+|                                                                       |
+| Output: false                                                         |
+|                                                                       |
+| Explanation: '(' is closed by ']', which is a different type.         |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= s.length <= 10^4
+
+-   s consists of the bracket characters '()[]{}' only.
+
+Hint: The most recently opened bracket must be the first one closed.
+Which data structure gives you the most recently added item first?
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "{[()()]}"                                                 |
+|                                                                       |
+| Expected Output: true                                                 |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "([)]"                                                     |
+|                                                                       |
+| Expected Output: false                                                |
+|                                                                       |
+| Explanation: '[' is opened after '(' but ')' tries to close first.    |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M3. Longest Substring Without Repeating Characters
+
+Given a string s, find the length of the longest substring without
+repeating characters. A substring is a continuous sequence of characters
+within the string.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "abcabcbb"                                                 |
+|                                                                       |
+| Output: 3                                                             |
+|                                                                       |
+| Explanation: The answer is "abc", with length 3.                      |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "pwwkew"                                                   |
+|                                                                       |
+| Output: 3                                                             |
+|                                                                       |
+| Explanation: The answer is "wke", with length 3. "pwke" is a          |
+| subsequence, not a substring.                                         |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   0 <= s.length <= 5 * 10^4
+
+-   s consists of English letters, digits, symbols and spaces.
+
+Hint: Use a sliding window with two pointers. Remember the last index
+where each character was seen. When a character repeats inside the
+window, move the left pointer just past its previous position.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: s = "dvdf"                                                     |
+|                                                                       |
+| Expected Output: 3                                                    |
+|                                                                       |
+| Explanation: The answer is "vdf".                                     |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: s = "abba"                                                     |
+|                                                                       |
+| Expected Output: 2                                                    |
+|                                                                       |
+| Explanation: The answer is "ab" or "ba". The left pointer must never  |
+| move backward.                                                        |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M4. Merge Intervals
+
+Given an array of intervals where intervals[i] = [start, end], merge all
+overlapping intervals and return an array of the non-overlapping
+intervals that cover all the intervals in the input.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: intervals = [[1,3], [2,6], [8,10], [15,18]]                    |
+|                                                                       |
+| Output: [[1,6], [8,10], [15,18]]                                      |
+|                                                                       |
+| Explanation: [1,3] and [2,6] overlap, so they merge into [1,6].       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: intervals = [[1,4], [4,5]]                                     |
+|                                                                       |
+| Output: [[1,5]]                                                       |
+|                                                                       |
+| Explanation: Intervals that touch at a point are considered           |
+| overlapping.                                                          |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= intervals.length <= 10^4
+
+-   intervals[i].length == 2
+
+-   0 <= start <= end <= 10^4
+
+Hint: Sort the intervals by start time first. Then each interval can
+only overlap with the last interval you added to the result.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: intervals = [[1,4], [0,4]]                                     |
+|                                                                       |
+| Expected Output: [[0,4]]                                              |
+|                                                                       |
+| Explanation: The input is not sorted.                                 |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: intervals = [[1,10], [2,3], [4,5], [11,12]]                    |
+|                                                                       |
+| Expected Output: [[1,10], [11,12]]                                    |
+|                                                                       |
+| Explanation: [2,3] and [4,5] lie fully inside [1,10].                 |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Set 3: Real Life Scenario Problems on Arrays and Strings (Moderate)
+
+S1. Best Time to Buy and Sell Stock
+
+You are given an array prices where prices[i] is the price of a stock on
+day i.
+
+You want to maximize your profit by choosing a single day to buy one
+stock and a different day in the future to sell it. Return the maximum
+profit you can achieve. If you cannot make any profit, return 0.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: prices = [7, 1, 5, 3, 6, 4]                                    |
+|                                                                       |
+| Output: 5                                                             |
+|                                                                       |
+| Explanation: Buy on day 1 (price 1) and sell on day 4 (price 6).      |
+| Profit = 6 - 1 = 5.                                                   |
+|                                                                       |
+| Buying on day 1 and selling on day 0 is not allowed, because you must |
+| buy before you sell.                                                  |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: prices = [7, 6, 4, 3, 1]                                       |
+|                                                                       |
+| Output: 0                                                             |
+|                                                                       |
+| Explanation: Prices only go down, so no profit is possible.           |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= prices.length <= 10^5
+
+-   0 <= prices[i] <= 10^4
+
+Hint: For each day, the best profit from selling on that day is the
+price today minus the lowest price seen before today. Track the lowest
+price as you go.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: prices = [2, 4, 1]                                             |
+|                                                                       |
+| Expected Output: 2                                                    |
+|                                                                       |
+| Explanation: Buy at 2 and sell at 4. The lowest price, 1, comes last  |
+| and cannot be used to buy.                                            |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: prices = [3, 8, 1, 9, 2]                                       |
+|                                                                       |
+| Expected Output: 8                                                    |
+|                                                                       |
+| Explanation: Buy at 1 and sell at 9.                                  |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S2. Minimum Platforms
+
+You are given the arrival times arr[] and departure times dep[] of all
+trains that reach a railway station on the same day. Times are in
+24-hour HHMM format. Find the minimum number of platforms needed so that
+no train has to wait.
+
+A platform cannot be used for arrival and departure at the same time. If
+one train arrives at the same time another departs, they need different
+platforms.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: arr = [900, 940, 950, 1100, 1500, 1800], dep = [910, 1200,     |
+| 1120, 1130, 1900, 2000]                                               |
+|                                                                       |
+| Output: 3                                                             |
+|                                                                       |
+| Explanation: Between 11:00 and 11:20, three trains are at the station |
+| at the same time.                                                     |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: arr = [900, 1100, 1235], dep = [1000, 1200, 1240]              |
+|                                                                       |
+| Output: 1                                                             |
+|                                                                       |
+| Explanation: No two trains are at the station at the same time.       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= number of trains <= 5 * 10^4
+
+-   0000 <= arr[i] <= dep[i] <= 2359
+
+Hint: Sort the arrival and departure times separately. Walk through both
+with two pointers: an arrival adds one platform and a departure frees
+one. The maximum count at any point is the answer.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: arr = [1000, 1000, 1000], dep = [1030, 1015, 1045]             |
+|                                                                       |
+| Expected Output: 3                                                    |
+|                                                                       |
+| Explanation: All three trains arrive together.                        |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: arr = [900, 1000], dep = [1000, 1100]                          |
+|                                                                       |
+| Expected Output: 2                                                    |
+|                                                                       |
+| Explanation: The second train arrives at 10:00, the same time the     |
+| first departs, so it needs a separate platform.                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S3. SMS Message Compression
+
+A messaging app wants to reduce the size of messages before sending
+them. Given a string msg, compress it by replacing each group of
+consecutive repeated characters with the character followed by the
+number of times it repeats.
+
+If the compressed string is not shorter than the original string, return
+the original string.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: msg = "aaabccdddd"                                             |
+|                                                                       |
+| Output: "a3b1c2d4"                                                    |
+|                                                                       |
+| Explanation: The groups are "aaa", "b", "cc" and "dddd". The          |
+| compressed length 8 is less than 10.                                  |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: msg = "abc"                                                    |
+|                                                                       |
+| Output: "abc"                                                         |
+|                                                                       |
+| Explanation: The compressed string "a1b1c1" is longer, so the         |
+| original is returned.                                                 |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   0 <= msg.length <= 10^4
+
+-   msg consists of lowercase English letters only.
+
+Hint: Walk through the string and count how long the current group is.
+When the next character is different (or the string ends), add the
+character and its count to the result. Do not forget the last group.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: msg = "aabcccccaaa"                                            |
+|                                                                       |
+| Expected Output: "a2b1c5a3"                                           |
+|                                                                       |
+| Explanation: The same character can appear in more than one group.    |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: msg = "zzzzzzzzzzzz"                                           |
+|                                                                       |
+| Expected Output: "z12"                                                |
+|                                                                       |
+| Explanation: A count can have more than one digit.                    |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S4. Top K Words in a Product Review
+
+An online store wants to show the most common words from a customer
+review. Given a string review and an integer k, return the k most
+frequent words.
+
+Words are case-insensitive and made of letters only; ignore punctuation.
+Return the answer sorted by frequency from highest to lowest. If two
+words have the same frequency, the word that comes first in alphabetical
+order comes first.
+
+Example 1:
+
++-----------------------------------------------------------------------+
+| Input: review = "Great phone. Battery is great, camera is good.       |
+| Battery life is great!", k = 2                                        |
+|                                                                       |
+| Output: ["great", "is"]                                               |
+|                                                                       |
+| Explanation: "great" and "is" appear 3 times each and "great" comes   |
+| first alphabetically. "battery" appears 2 times.                      |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Example 2:
+
++-----------------------------------------------------------------------+
+| Input: review = "Fast delivery, fast refund. Good!", k = 1            |
+|                                                                       |
+| Output: ["fast"]                                                      |
+|                                                                       |
+| Explanation: "Fast" and "fast" are the same word, so "fast" appears 2 |
+| times.                                                                |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Constraints:
+
+-   1 <= review.length <= 10^4
+
+-   review consists of English letters, spaces and the punctuation marks
+      . , ! ?
+
+-   1 <= k <= number of distinct words in review
+
+Hint: First split the review into clean lowercase words. Count each word
+with a hash map. Then sort the words by (negative count, word) and take
+the first k.
+
+Test Case 1:
+
++-----------------------------------------------------------------------+
+| Input: review = "Nice nice NICE product. Product is nice.", k = 2     |
+|                                                                       |
+| Expected Output: ["nice", "product"]                                  |
+|                                                                       |
+| Explanation: "nice" appears 4 times and "product" appears 2 times.    |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Test Case 2:
+
++-----------------------------------------------------------------------+
+| Input: review = "Bad. Worse? Bad!", k = 2                             |
+|                                                                       |
+| Expected Output: ["bad", "worse"]                                     |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Solutions (Interviewer Only)
+
+Do not share this section with candidates. Solutions are in Python and
+pass both examples and both test cases of each problem. Accept any
+correct approach in any language; the expected approach is a guide, not
+the only answer.
+
+Problem Sources
+
+  -----------------------------------------------------------------------
+  Problem                             Source
+  ----------------------------------- -----------------------------------
+  E1. Second Largest Element          GeeksforGeeks: Second Largest
+
+  E2. Valid Palindrome                LeetCode 125
+
+  E3. First Unique Character in a     LeetCode 387
+  String                              
+
+  E4. Move Zeroes                     LeetCode 283
+
+  M1. Two Sum                         LeetCode 1
+
+  M2. Valid Parentheses               LeetCode 20
+
+  M3. Longest Substring Without       LeetCode 3
+  Repeating Characters                
+
+  M4. Merge Intervals                 LeetCode 56
+
+  S1. Best Time to Buy and Sell Stock LeetCode 121
+
+  S2. Minimum Platforms               GeeksforGeeks: Minimum Platforms
+
+  S3. SMS Message Compression         Custom, based on the classic string
+                                      compression problem (similar to
+                                      LeetCode 443, which compresses in
+                                      place and skips the count 1)
+
+  S4. Top K Words in a Product Review Custom, based on LeetCode 692 with
+                                      punctuation and case handling added
+  -----------------------------------------------------------------------
+
+Set 1 Solutions
+
+E1. Second Largest Element. Single pass that tracks the largest and
+second largest, skipping values equal to the largest. Time O(n), space
+O(1). Sorting is acceptable as a first answer at O(n log n). Watch for
+duplicates of the maximum and all-negative arrays (do not start second
+largest at 0).
+
++-----------------------------------------------------------------------+
+| def second_largest(arr):                                              |
+|                                                                       |
+|     first = second = None                                             |
+|                                                                       |
+|     for x in arr:                                                     |
+|                                                                       |
+|         if first is None or x > first:                                |
+|                                                                       |
+|             second = first                                            |
+|                                                                       |
+|             first = x                                                 |
+|                                                                       |
+|         elif x != first and (second is None or x > second):           |
+|                                                                       |
+|             second = x                                                |
+|                                                                       |
+|     return second if second is not None else -1                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E2. Valid Palindrome. Two pointers from both ends, skipping characters
+that are not letters or digits and comparing in lowercase. Time O(n),
+space O(1). Building a cleaned string and reversing it is also
+acceptable. A common bug is dropping digits, which fails the "0P" test
+case.
+
++-----------------------------------------------------------------------+
+| def is_palindrome(s):                                                 |
+|                                                                       |
+|     left, right = 0, len(s) - 1                                       |
+|                                                                       |
+|     while left < right:                                               |
+|                                                                       |
+|         if not s[left].isalnum():                                     |
+|                                                                       |
+|             left += 1                                                 |
+|                                                                       |
+|         elif not s[right].isalnum():                                  |
+|                                                                       |
+|             right -= 1                                                |
+|                                                                       |
+|         else:                                                         |
+|                                                                       |
+|             if s[left].lower() != s[right].lower():                   |
+|                                                                       |
+|                 return False                                          |
+|                                                                       |
+|             left += 1                                                 |
+|                                                                       |
+|             right -= 1                                                |
+|                                                                       |
+|     return True                                                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E3. First Unique Character in a String. First pass counts each character
+in a dictionary; second pass returns the first index with count 1. Time
+O(n), space O(1) since there are at most 26 letters. A nested loop at
+O(n squared) shows weak optimization.
+
++-----------------------------------------------------------------------+
+| def first_unique_char(s):                                             |
+|                                                                       |
+|     count = {}                                                        |
+|                                                                       |
+|     for ch in s:                                                      |
+|                                                                       |
+|         count[ch] = count.get(ch, 0) + 1                              |
+|                                                                       |
+|     for i, ch in enumerate(s):                                        |
+|                                                                       |
+|         if count[ch] == 1:                                            |
+|                                                                       |
+|             return i                                                  |
+|                                                                       |
+|     return -1                                                         |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+E4. Move Zeroes. A write pointer copies each non-zero value forward,
+then the remaining positions are filled with zeros. Time O(n), space
+O(1). Check that the order of non-zero values is preserved and that no
+new array is created.
+
++-----------------------------------------------------------------------+
+| def move_zeros(nums):                                                 |
+|                                                                       |
+|     pos = 0                                                           |
+|                                                                       |
+|     for x in nums:                                                    |
+|                                                                       |
+|         if x != 0:                                                    |
+|                                                                       |
+|             nums[pos] = x                                             |
+|                                                                       |
+|             pos += 1                                                  |
+|                                                                       |
+|     while pos < len(nums):                                            |
+|                                                                       |
+|         nums[pos] = 0                                                 |
+|                                                                       |
+|         pos += 1                                                      |
+|                                                                       |
+|     return nums                                                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Set 2 Solutions
+
+M1. Two Sum. A dictionary maps each value to its index; for each number,
+check whether target minus the number has been seen. Time O(n), space
+O(n). Brute force with two loops is O(n squared). Adding the number to
+the map before checking fails the [3, 3] test case.
+
++-----------------------------------------------------------------------+
+| def two_sum(nums, target):                                            |
+|                                                                       |
+|     seen = {}                                                         |
+|                                                                       |
+|     for i, x in enumerate(nums):                                      |
+|                                                                       |
+|         if target - x in seen:                                        |
+|                                                                       |
+|             return [seen[target - x], i]                              |
+|                                                                       |
+|         seen[x] = i                                                   |
+|                                                                       |
+|     return []                                                         |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M2. Valid Parentheses. Push opening brackets onto a stack; a closing
+bracket must match the top of the stack. The stack must be empty at the
+end. Time O(n), space O(n). Common mistakes: popping an empty stack and
+not checking that the stack is empty at the end.
+
++-----------------------------------------------------------------------+
+| def is_valid(s):                                                      |
+|                                                                       |
+|     pairs = {')': '(', '}': '{', ']': '['}                            |
+|                                                                       |
+|     stack = []                                                        |
+|                                                                       |
+|     for ch in s:                                                      |
+|                                                                       |
+|         if ch in '({[':                                               |
+|                                                                       |
+|             stack.append(ch)                                          |
+|                                                                       |
+|         else:                                                         |
+|                                                                       |
+|             if not stack or stack[-1] != pairs[ch]:                   |
+|                                                                       |
+|                 return False                                          |
+|                                                                       |
+|             stack.pop()                                               |
+|                                                                       |
+|     return len(stack) == 0                                            |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M3. Longest Substring Without Repeating Characters. Sliding window that
+stores the last index of each character and moves the window start past
+a repeated character. Time O(n), space O(k) for k distinct characters.
+Missing the check last_seen[ch] >= start moves the window backward and
+fails the "abba" test case.
+
++-----------------------------------------------------------------------+
+| def longest_unique_substring(s):                                      |
+|                                                                       |
+|     last_seen = {}                                                    |
+|                                                                       |
+|     start = best = 0                                                  |
+|                                                                       |
+|     for i, ch in enumerate(s):                                        |
+|                                                                       |
+|         if ch in last_seen and last_seen[ch] >= start:                |
+|                                                                       |
+|             start = last_seen[ch] + 1                                 |
+|                                                                       |
+|         last_seen[ch] = i                                             |
+|                                                                       |
+|         best = max(best, i - start + 1)                               |
+|                                                                       |
+|     return best                                                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+M4. Merge Intervals. Sort by start, then extend the last merged interval
+when the next one starts before or at its end. Time O(n log n).
+Forgetting to sort fails the [[1,4], [0,4]] test case, and replacing the
+end instead of taking the max fails the [[1,10], [2,3], ...] test case.
+
++-----------------------------------------------------------------------+
+| def merge_intervals(intervals):                                       |
+|                                                                       |
+|     intervals.sort(key=lambda x: x[0])                                |
+|                                                                       |
+|     merged = []                                                       |
+|                                                                       |
+|     for start, end in intervals:                                      |
+|                                                                       |
+|         if merged and start <= merged[-1][1]:                         |
+|                                                                       |
+|             merged[-1][1] = max(merged[-1][1], end)                   |
+|                                                                       |
+|         else:                                                         |
+|                                                                       |
+|             merged.append([start, end])                               |
+|                                                                       |
+|     return merged                                                     |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Set 3 Solutions
+
+S1. Best Time to Buy and Sell Stock. One pass that keeps the lowest
+price seen so far and checks the profit of selling on each day. Time
+O(n), space O(1). Checking every pair of days is O(n squared) and
+acceptable as a first answer. Returning max minus min of the whole array
+fails the [2, 4, 1] test case.
+
++-----------------------------------------------------------------------+
+| def max_profit(prices):                                               |
+|                                                                       |
+|     min_price = float('inf')                                          |
+|                                                                       |
+|     best = 0                                                          |
+|                                                                       |
+|     for p in prices:                                                  |
+|                                                                       |
+|         if p < min_price:                                             |
+|                                                                       |
+|             min_price = p                                             |
+|                                                                       |
+|         elif p - min_price > best:                                    |
+|                                                                       |
+|             best = p - min_price                                      |
+|                                                                       |
+|     return best                                                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S2. Minimum Platforms. Sort arrivals and departures separately, then
+walk through both with two pointers: an arrival needs one more platform,
+a departure frees one. Use <= so that a train arriving when another
+departs gets its own platform. Time O(n log n). Checking overlaps for
+every pair of trains is O(n squared) and acceptable as a first answer.
+
++-----------------------------------------------------------------------+
+| def min_platforms(arr, dep):                                          |
+|                                                                       |
+|     arr = sorted(arr)                                                 |
+|                                                                       |
+|     dep = sorted(dep)                                                 |
+|                                                                       |
+|     i = j = 0                                                         |
+|                                                                       |
+|     platforms = best = 0                                              |
+|                                                                       |
+|     while i < len(arr):                                               |
+|                                                                       |
+|         if arr[i] <= dep[j]:                                          |
+|                                                                       |
+|             platforms += 1                                            |
+|                                                                       |
+|             best = max(best, platforms)                               |
+|                                                                       |
+|             i += 1                                                    |
+|                                                                       |
+|         else:                                                         |
+|                                                                       |
+|             platforms -= 1                                            |
+|                                                                       |
+|             j += 1                                                    |
+|                                                                       |
+|     return best                                                       |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S3. SMS Message Compression. Walk through the string, counting each run
+of the same character, and add the character and its count when the run
+ends. Compare lengths at the end. Time O(n), space O(n). Common
+mistakes: missing the last group, and assuming the count is a single
+digit (fails "z12").
+
++-----------------------------------------------------------------------+
+| def compress(msg):                                                    |
+|                                                                       |
+|     if not msg:                                                       |
+|                                                                       |
+|         return msg                                                    |
+|                                                                       |
+|     result = []                                                       |
+|                                                                       |
+|     count = 1                                                         |
+|                                                                       |
+|     for i in range(1, len(msg) + 1):                                  |
+|                                                                       |
+|         if i < len(msg) and msg[i] == msg[i - 1]:                     |
+|                                                                       |
+|             count += 1                                                |
+|                                                                       |
+|         else:                                                         |
+|                                                                       |
+|             result.append(msg[i - 1] + str(count))                    |
+|                                                                       |
+|             count = 1                                                 |
+|                                                                       |
+|     compressed = ''.join(result)                                      |
+|                                                                       |
+|     return compressed if len(compressed) < len(msg) else msg          |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+S4. Top K Words in a Product Review. Build each word from letters only,
+count words in a dictionary, then sort by count (highest first) and
+alphabetically for ties. Time O(n + m log m) for n characters and m
+distinct words. Check that the candidate handles case, punctuation and
+the tie-break rule.
+
++-----------------------------------------------------------------------+
+| def top_k_words(review, k):                                           |
+|                                                                       |
+|     count = {}                                                        |
+|                                                                       |
+|     word = ''                                                         |
+|                                                                       |
+|     for ch in review.lower() + ' ':                                   |
+|                                                                       |
+|         if ch.isalpha():                                              |
+|                                                                       |
+|             word += ch                                                |
+|                                                                       |
+|         elif word:                                                    |
+|                                                                       |
+|             count[word] = count.get(word, 0) + 1                      |
+|                                                                       |
+|             word = ''                                                 |
+|                                                                       |
+|     ranked = sorted(count.items(), key=lambda item: (-item[1],        |
+| item[0]))                                                             |
+|                                                                       |
+|     return [w for w, c in ranked[:k]]                                 |
++=======================================================================+
++-----------------------------------------------------------------------+
+
+Scoring Rubric
+
+Score each problem out of 10 using the criteria below.
+
+  -----------------------------------------------------------------------
+  Criteria                Marks                   What to look for
+  ----------------------- ----------------------- -----------------------
+  Understanding the       2                       Restates the problem,
+  problem                                         asks clarifying
+                                                  questions, works
+                                                  through the examples.
+
+  Approach and logic      3                       Explains the idea
+                                                  before coding, starts
+                                                  with a working solution
+                                                  and improves it. Deduct
+                                                  1 mark if the hint was
+                                                  needed.
+
+  Code correctness        2                       1 mark for each of the
+                                                  2 test cases passed.
+
+  Edge cases              1                       Mentions or handles
+                                                  empty input,
+                                                  duplicates, single
+                                                  element and similar
+                                                  cases.
+
+  Complexity analysis     1                       States time and space
+                                                  complexity correctly.
+
+  Communication           1                       Thinks aloud and
+                                                  explains clearly.
+  -----------------------------------------------------------------------
+
+Overall guide (out of 40 for 4 problems): 32 and above is strong; 24 to
+31 is good, with a clear approach and minor gaps; 16 to 23 is average,
+solves easy problems but struggles with optimization; below 16 needs
+improvement.
+
+For freshers, give more weight to the approach and how they reason
+through a problem than to perfect syntax. A candidate who explains a
+brute force solution clearly and then improves it with a hint shows
+better problem-solving ability than one who writes memorized code
+without being able to explain it.
+
+Programming Test Questions
+
+Student-Friendly Problem Statements • Arrays and Strings • 10 Questions
+
+  These questions specify the task, input and output formats, rules,
+  constraints, and sample cases to help students understand exactly what
+  is expected.
+
+  Sections covered: Arrays and Basic Problem Solving (Q1–Q5), Strings
+  (Q6–Q10).
+
+Section A1: Arrays and Basic Problem Solving Q1. Best Day to Buy and Sell (Easy)
+
+Problem Statement
+
+  Riya wants to buy a gaming console and sell it later to make a profit.
+  You are given an array prices, where prices[i] is the console's price
+  on day i + 1. You may buy on one day and sell on a later day,
+  completing at most one transaction. You must buy before selling and
+  cannot buy and sell on the same day. Find the maximum possible profit.
+  If no transaction can make a profit, print 0.
+
+Input Format
+
+-   The first line contains an integer n, the number of days.
+
+-   The second line contains n space-separated integers representing
+      prices in chronological order.
+
+Output Format
+
+  Print one integer: the maximum possible profit.
+
+Constraints
+
+-   1 ≤ n ≤ 10⁵
+
+-   0 ≤ prices[i] ≤ 10⁴
+
+Sample Input
+
+  6
+
+  7 1 5 3 6 4
+
+Sample Output
+
+  5
+
+Explanation
+
+  Buy on day 2 for 1 and sell on day 5 for 6. The profit is 6 − 1 = 5,
+  which is the maximum possible profit.
+
+Additional Clarification
+
+  If prices are 5 4 3 2 1, print 0 because no later day has a higher
+  price than an earlier purchase price.
+
+Q2. Missing Roll Number (Easy)
+
+Problem Statement
+
+  A class has n students with unique roll numbers from 1 to n,
+  inclusive. The teacher has recorded exactly n − 1 roll numbers. Every
+  recorded number is valid and appears only once, so exactly one roll
+  number is missing. Find and print that missing number.
+
+Input Format
+
+-   The first line contains an integer n, the total number of students.
+
+-   The second line contains n − 1 space-separated integers: the
+      recorded roll numbers.
+
+Output Format
+
+  Print the missing roll number as one integer.
+
+Constraints
+
+-   2 ≤ n ≤ 10⁵
+
+-   Every recorded roll number is between 1 and n.
+
+-   All recorded roll numbers are distinct.
+
+Sample Input
+
+  6
+
+  1 2 4 5 6
+
+Sample Output
+
+  3
+
+Explanation
+
+  The complete set should be 1 2 3 4 5 6. The number 3 is missing.
+
+Additional Clarification
+
+  The missing number may be 1, n, or any number between them.
+
+  Q3. Rotate the Playlist (Easy to Moderate)
+
+Problem Statement
+
+  A music app stores song IDs in an array of length n. One right
+  rotation moves every song one position to the right, and the last song
+  moves to the first position. Given the original playlist and an
+  integer k, print the playlist after exactly k right rotations.
+
+Input Format
+
+-   The first line contains two integers, n and k: the number of songs
+      and the number of right rotations.
+
+-   The second line contains n space-separated integers representing the
+      song IDs.
+
+Output Format
+
+  Print the rotated playlist as n space-separated integers.
+
+Constraints
+
+-   1 ≤ n ≤ 10⁵
+
+-   0 ≤ k ≤ 10⁹
+
+-   Each song ID is an integer.
+
+Sample Input
+
+  7 3
+
+  1 2 3 4 5 6 7
+
+Sample Output
+
+  5 6 7 1 2 3 4
+
+Explanation
+
+-   After one rotation: 7 1 2 3 4 5 6.
+
+-   After two rotations: 6 7 1 2 3 4 5.
+
+-   After three rotations: 5 6 7 1 2 3 4.
+
+Additional Clarification
+
+  A rotation of n positions restores the original order. If n = 5 and k
+  = 12, only 12 mod 5 = 2 effective rotations are needed.
+
+  Q4. Best Sales Window (Moderate)
+
+Problem Statement
+
+  A shop owner records daily sales for n consecutive days. The owner
+  wants the maximum total sales over a period of exactly k consecutive
+  days. Find the largest sum among all windows of exactly k adjacent
+  values. You may not skip days or use fewer or more than k days.
+
+Input Format
+
+-   The first line contains two integers, n and k: the number of days
+      and the required window length.
+
+-   The second line contains n space-separated non-negative integers
+      representing daily sales.
+
+Output Format
+
+  Print one integer: the maximum sum of any k consecutive days.
+
+Constraints
+
+-   1 ≤ k ≤ n ≤ 10⁵
+
+-   0 ≤ sales[i] ≤ 10⁴
+
+Sample Input
+
+  6 3
+
+  2 1 5 1 3 2
+
+Sample Output
+
+  9
+
+Explanation
+
+  The sums of all three-day windows are 8 (days 1–3), 7 (days 2–4), 9
+  (days 3–5), and 6 (days 4–6). The maximum is
+
+  9.
+
+Additional Clarification
+
+  If k = n, there is only one possible window: the entire array. If
+  several windows share the maximum sum, print the sum only.
+
+  Q5. Duplicate Phone Numbers (Moderate)
+
+Problem Statement
+
+  A company's customer database contains phone numbers imported from
+  multiple sources. Some numbers may therefore appear more than once.
+  Identify every phone number that occurs at least twice. Print each
+  duplicated number only once, sorted in ascending numerical order. If
+  there are no duplicates, print None.
+
+Input Format
+
+-   The first line contains an integer n, the number of phone-number
+      entries.
+
+-   The second line contains n space-separated ten-digit phone numbers.
+
+Output Format
+
+  Print the duplicated phone numbers in ascending numerical order,
+  separated by single spaces. If no number is duplicated, print None.
+
+Constraints
+
+-   1 ≤ n ≤ 10⁵
+
+-   Each phone number contains ten digits.
+
+Sample Input
+
+  6
+
+  9876543210 9123456780 9876543210 9000000001 9123456780 9876543210
+
+Sample Output
+
+  9123456780 9876543210
+
+Explanation
+
+-   9876543210 appears three times.
+
+-   9123456780 appears twice.
+
+-   9000000001 appears once.
+
+-   The duplicated numbers are printed once each in ascending order.
+
+Additional Clarification
+
+  If phone numbers beginning with 0 must be supported, read them as
+  strings so leading zeros are preserved. For example, if all numbers
+  are distinct, print None.
+
+Section A2: Strings
+
+  Q6. Password Strength Checker (Easy)
+
+Problem Statement
+
+  A website accepts only strong passwords. Given a password as a single
+  string with no spaces, determine whether it satisfies every
+  requirement below. A password is valid only if it has at least 8
+  characters, at least one uppercase English letter (A–Z), at least one
+  lowercase English letter (a–z), at least one digit (0–9), and at least
+  one special character from this exact set: @ # $ % & *. If any
+  requirement is missing, the password is invalid.
+
+Input Format
+
+  The input contains one password string without spaces.
+
+Output Format
+
+  Print Valid if all five requirements are met; otherwise, print
+  Invalid.
+
+Constraints
+
+-   1 ≤ password length ≤ 100
+
+Sample Input
+
+  Hello@123
+
+Sample Output
+
+  Valid
+
+Explanation
+
+  The password has 9 characters, an uppercase letter, lowercase letters,
+  digits, and the permitted special character @.
+
+Additional Clarification
+
+  For input hello123, print Invalid: it has no uppercase letter and no
+  permitted special character. Characters such as !,
+
+  _, and - do not satisfy the special-character requirement.
+
+  Q7. Is the Message a Palindrome? (Easy to Moderate)
+
+Problem Statement
+
+  A word-game app awards bonus points when a sentence reads the same
+  forwards and backwards. You are given one line of text that may
+  contain uppercase letters, lowercase letters, spaces, and punctuation.
+  Ignore spaces, punctuation, and all non-alphanumeric characters. Treat
+  uppercase and lowercase letters as identical. If the remaining
+  sequence reads the same in both directions, it is a palindrome.
+
+Input Format
+
+  The input consists of one line of text. It may contain spaces and
+  punctuation.
+
+Output Format
+
+  Print Yes if the text is a palindrome under the stated rules;
+  otherwise, print No.
+
+Constraints
+
+-   1 ≤ input line length ≤ 10⁵
+
+Sample Input
+
+  A man, a plan, a canal: Panama
+
+Sample Output
+
+  Yes
+
+Explanation
+
+  After removing spaces and punctuation and converting to lowercase, the
+  text becomes amanaplanacanalpanama, which reads the same forwards and
+  backwards.
+
+Additional Clarification
+
+  For Hello World, print No. A single alphanumeric character is a
+  palindrome. If the cleaned text is empty because the input contains
+  only spaces or punctuation, treat it as a palindrome and print Yes.
+
+  Q8. Anagram Check for a Word Game (Moderate)
+
+Problem Statement
+
+  Two words are anagrams if they contain exactly the same letters with
+  exactly the same frequencies, even if the letters appear in a
+  different order. Given two words, determine whether the second can be
+  formed by rearranging the first. Ignore uppercase/lowercase
+  differences. Every letter must be used exactly once; no letters may be
+  added or removed.
+
+Input Format
+
+-   The first line contains a word.
+
+-   The second line contains another word.
+
+Output Format
+
+  Print Yes if the words are anagrams; otherwise, print No.
+
+Constraints
+
+-   1 ≤ length of each word ≤ 10⁵
+
+-   Both words contain English letters only.
+
+Sample Input
+
+  Listen Silent
+
+Sample Output
+
+  Yes
+
+Explanation
+
+-   Listen and Silent contain the same letters with the same
+      frequencies.
+
+-   Apple and Papel are also anagrams.
+
+-   Apple and Appla are not anagrams because their letter frequencies
+      differ.
+
+Additional Clarification
+
+  Words of different lengths cannot be anagrams. For a more efficient
+  solution, count the frequency of each letter in O(n) time rather than
+  sorting, where n is the word length when both lengths are equal.
+
+  Q9. Compress the Text Message (Moderate)
+
+Problem Statement
+
+  A messaging app compresses consecutive repeated characters. Replace
+  each consecutive group with the character followed by the number of
+  times it appears in that group. For example, aaabb becomes a3b2. After
+  creating the compressed string, print it only if it is strictly
+  shorter than the original. If it is the same length or longer, print
+  the original string.
+
+Input Format
+
+  The input contains one string made up only of lowercase English
+  letters.
+
+Output Format
+
+  Print the compressed string if it is shorter; otherwise, print the
+  original string.
+
+Constraints
+
+-   1 ≤ input string length ≤ 10⁵
+
+-   The input contains lowercase English letters only.
+
+Sample Input
+
+  aaabbbccd
+
+Sample Output
+
+  a3b3c2d1
+
+Explanation
+
+  The groups are aaa → a3, bbb → b3, cc → c2, and d → d1. The compressed
+  string has 8 characters, fewer than the original string's 9.
+
+Additional Clarification
+
+  For input abc, the compressed form a1b1c1 is longer, so print abc.
+  Only consecutive occurrences are grouped: aba becomes a1b1a1, which is
+  not shorter, so print aba.
+
+Q10. Most Frequent Word in Customer Reviews (Moderate)
+
+Problem Statement
+
+  A restaurant wants to identify the most frequently used word in a
+  customer review. You are given one line containing words separated by
+  single spaces. The words may use uppercase or lowercase English
+  letters, and there is no punctuation. Ignore case when counting words.
+  If multiple words have the highest frequency, choose the word whose
+  first occurrence appears earliest in the original review. Print the
+  selected word in lowercase followed by its frequency.
+
+Input Format
+
+  The input consists of one line containing one or more words separated
+  by single spaces.
+
+Output Format
+
+  Print the most frequent word in lowercase, followed by one space and
+  its total count.
+
+Constraints
+
+-   1 ≤ number of words ≤ 10⁵
+
+-   Words contain English letters only.
+
+-   Words are separated by single spaces.
+
+Sample Input
+
+  The food was good and the service was good
+
+Sample Output
+
+  the 2
+
+Explanation
+
+  After converting to lowercase, the, was, and good each appear twice.
+  The word the occurs first in the review, so the output is the 2.
+
+Additional Clarification
+
+  If every word appears once, all words tie at frequency 1. Print the
+  first word in the review followed by 1.
+
+General Instructions for Students
+
+-   Read the input format carefully before coding.
+
+-   Print only the requested output. Do not print prompts such as Enter
+      n: or explanatory text.
+
+-   Match the required output capitalization exactly, including Yes, No,
+      Valid, Invalid, and None.
+
+-   Separate multiple output values with a single space unless the
+      question states otherwise.
+
+-   Ensure your solution handles the maximum input size specified in the
+      constraints.
+
+  Note for the test setter: For Q5, if phone numbers beginning with 0
+  are valid, explicitly require string input so leading zeros are
+  preserved.
+
+Arrays and Strings
+
+Part A: Arrays
+
+Q1. Find the largest and smallest element in an array.
+
+  Given an array arr[] of n integers, find the largest and the smallest
+  element present in the array without sorting it, and print both.
+
+  Examples
+
+  Input: arr[] = [4, 9, 1, 7, 3]
+
+  Output: Largest: 9, Smallest: 1
+
+  Explanation: 9 is the greatest value and 1 is the least.
+
+  Input: arr[] = [-5, -2, -9]
+
+  Output: Largest: -2, Smallest: -9
+
+  Explanation: All values are negative. -2 is the largest and -9 is the
+  smallest.
+
+  Input: arr[] = [7]
+
+  Output: Largest: 7, Smallest: 7
+
+  Explanation: With a single element, it is both the largest and the
+  smallest.
+
+  Constraints
+
+  1 ≤ arr.size() ≤ 10^5
+
+  -10^9 ≤ arr[i] ≤ 10^9
+
+  Solution
+
+  arr = [4, 9, 1, 7, 3]
+
+  largest = smallest = arr[0]
+
+  for x in arr:
+
+  if x > largest:
+
+  largest = x
+
+  if x < smallest:
+
+  smallest = x
+
+  print("Largest:", largest)
+
+  print("Smallest:", smallest)
+
+  Sample Output
+
+  Largest: 9
+
+  Smallest: 1
+
+  Test Cases
+
++---+---------------------------------+--------------------------------+
+| # | Input                           | Expected Output                |
++===+=================================+================================+
+| 1 | arr = [4, 9, 1, 7, 3]           | Largest: 9                     |
+|   |                                 |                                |
+|   |                                 | Smallest: 1                    |
++---+---------------------------------+--------------------------------+
+| 2 | arr = [5]                       | Largest: 5                     |
+|   |                                 |                                |
+|   |                                 | Smallest: 5                    |
++---+---------------------------------+--------------------------------+
+| 3 | arr = [-5, -2, -9]              | Largest: -2                    |
+|   |                                 |                                |
+|   |                                 | Smallest: -9                   |
++---+---------------------------------+--------------------------------+
+| 4 | arr = [7, 7, 7]                 | Largest: 7                     |
+|   |                                 |                                |
+|   |                                 | Smallest: 7                    |
++---+---------------------------------+--------------------------------+
+| 5 | arr = [0, -1, 100, -100]        | Largest: 100                   |
+|   |                                 |                                |
+|   |                                 | Smallest: -100                 |
++---+---------------------------------+--------------------------------+
+
+Q2. Calculate the sum and average of all elements.
+
+  Given an array arr[] of n numbers, calculate the sum of all its
+  elements and their average (the sum divided by n), and print both.
+
+  Examples
+
+  Input: arr[] = [10, 20, 30, 40]
+
+  Output: Sum: 100, Average: 25.0
+
+  Explanation: 10 + 20 + 30 + 40 = 100 and 100 / 4 = 25.0.
+
+  Input: arr[] = [5]
+
+  Output: Sum: 5, Average: 5.0
+
+  Explanation: With one element, the sum is 5 and the average is 5.0.
+
+  Input: arr[] = [1, 2]
+
+  Output: Sum: 3, Average: 1.5
+
+  Explanation: The sum is 3 and 3 / 2 = 1.5, so the average can be a
+  decimal.
+
+  Constraints
+
+  1 ≤ arr.size() ≤ 10^5
+
+  -1000 ≤ arr[i] ≤ 1000
+
+  Solution
+
+  arr = [10, 20, 30, 40]
+
+  total = 0
+
+  for x in arr:
+
+  total += x
+
+  print("Sum:", total)
+
+  print("Average:", total / len(arr))
+
+  Sample Output
+
+  Sum: 100
+
+  Average: 25.0
+
+  Test Cases
+
++---+---------------------------------+--------------------------------+
+| # | Input                           | Expected Output                |
++===+=================================+================================+
+| 1 | arr = [10, 20, 30, 40]          | Sum: 100                       |
+|   |                                 |                                |
+|   |                                 | Average: 25.0                  |
++---+---------------------------------+--------------------------------+
+| 2 | arr = [5]                       | Sum: 5                         |
+|   |                                 |                                |
+|   |                                 | Average: 5.0                   |
++---+---------------------------------+--------------------------------+
+| 3 | arr = [-1, 1]                   | Sum: 0                         |
+|   |                                 |                                |
+|   |                                 | Average: 0.0                   |
++---+---------------------------------+--------------------------------+
+| 4 | arr = [1, 2]                    | Sum: 3                         |
+|   |                                 |                                |
+|   |                                 | Average: 1.5                   |
++---+---------------------------------+--------------------------------+
+| 5 | arr = [0, 0, 0]                 | Sum: 0                         |
+|   |                                 |                                |
+|   |                                 | Average: 0.0                   |
++---+---------------------------------+--------------------------------+
+
+Q3. Reverse an array in place (without creating a new list).
+
+  Given an array arr[] of n elements, reverse the array in place. The
+  same list must be modified using O(1) extra space. Do not create a new
+  list and do not use slicing. Print the reversed array.
+
+  Examples
+
+  Input: arr[] = [1, 2, 3, 4, 5]
+
+  Output: [5, 4, 3, 2, 1]
+
+  Explanation: The first and last elements swap, then the second and
+  second-last. The middle element 3 stays.
+
+  Input: arr[] = [1, 2, 3, 4]
+
+  Output: [4, 3, 2, 1]
+
+  Explanation: For an even length, 1 and 4 swap and 2 and 3 swap.
+
+  Input: arr[] = [7]
+
+  Output: [7]
+
+  Explanation: A single element stays as it is.
+
+  Constraints
+
+  0 ≤ arr.size() ≤ 10^5
+
+  -10^9 ≤ arr[i] ≤ 10^9
+
+  Solution
+
+  arr = [1, 2, 3, 4, 5]
+
+  left, right = 0, len(arr) - 1
+
+  while left < right:
+
+  arr[left], arr[right] = arr[right], arr[left]
+
+  left += 1
+
+  right -= 1
+
+  print(arr)
+
+  Sample Output
+
+  [5, 4, 3, 2, 1]
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   arr = [1, 2, 3, 4, 5]             [5, 4, 3, 2, 1]
+
+  2   arr = [1, 2, 3, 4]                [4, 3, 2, 1]
+
+  3   arr = [7]                         [7]
+
+  4   arr = []                          []
+
+  5   arr = [-1, 0, 5]                  [5, 0, -1]
+  -----------------------------------------------------------------------
+
+Q4. Count the even and odd numbers in an array.
+
+  Given an array arr[] of n integers, count how many elements are even
+  and how many are odd. Zero is an even number. Print both counts.
+
+  Examples
+
+  Input: arr[] = [1, 2, 3, 4, 5, 6, 7]
+
+  Output: Even: 3 Odd: 4
+
+  Explanation: Even numbers are 2, 4, 6 and odd numbers are 1, 3, 5, 7.
+
+  Input: arr[] = [2, 4, 6]
+
+  Output: Even: 3 Odd: 0
+
+  Explanation: All elements are even.
+
+  Input: arr[] = [0]
+
+  Output: Even: 1 Odd: 0
+
+  Explanation: Zero is an even number.
+
+  Constraints
+
+  0 ≤ arr.size() ≤ 10^5
+
+  -10^9 ≤ arr[i] ≤ 10^9
+
+  Solution
+
+  arr = [1, 2, 3, 4, 5, 6, 7]
+
+  even = odd = 0
+
+  for x in arr:
+
+  if x % 2 == 0:
+
+  even += 1
+
+  else:
+
+  odd += 1
+
+  print("Even:", even, "Odd:", odd)
+
+  Sample Output
+
+  Even: 3 Odd: 4
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   arr = [1, 2, 3, 4, 5, 6, 7]       Even: 3 Odd: 4
+
+  2   arr = [2, 4, 6]                   Even: 3 Odd: 0
+
+  3   arr = [1, 3]                      Even: 0 Odd: 2
+
+  4   arr = [0]                         Even: 1 Odd: 0
+
+  5   arr = []                          Even: 0 Odd: 0
+
+  6   arr = [-2, -3]                    Even: 1 Odd: 1
+  -----------------------------------------------------------------------
+
+Q5. Search for an element using linear search and return its index (or
+-1 if not found).
+
+  Given an array, arr[] of n integers, and an integer element x, find
+  whether element x is present in the array. Return the index of the
+  first occurrence of x in the array, or -1 if it doesn't exist.
+
+  Examples
+
+  Input: arr[] = [1, 2, 3, 4], x = 3
+
+  Output: 2
+
+  Explanation: For array [1, 2, 3, 4], the element to be searched is 3.
+  Since 3 is present at index 2, the output is 2.
+
+  Input: arr[] = [10, 8, 30, 4, 5], x = 5
+
+  Output: 4
+
+  Explanation: For array [10, 8, 30, 4, 5], the element to be searched
+  is 5 and it is at index 4. So, the output is 4.
+
+  Input: arr[] = [10, 8, 30], x = 6
+
+  Output: -1
+
+  Explanation: The element to be searched is 6 and it is not present, so
+  we return -1.
+
+  Constraints
+
+  1 ≤ arr.size() ≤ 10^6
+
+  0 ≤ arr[i] ≤ 10^6
+
+  0 ≤ x ≤ 10^5
+
+  Solution
+
+  def linear_search(arr, x):
+
+  for i in range(len(arr)):
+
+  if arr[i] == x:
+
+  return i
+
+  return -1
+
+  print(linear_search([5, 8, 2, 9], 2))
+
+  print(linear_search([5, 8, 2, 9], 7))
+
+  Sample Output
+
+  2
+
+  -1
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   linear_search([5, 8, 2, 9], 2)    2
+
+  2   linear_search([5, 8, 2, 9], 7)    -1
+
+  3   linear_search([], 1)              -1
+
+  4   linear_search([3], 3)             0
+
+  5   linear_search([1, 2, 2, 3], 2)    1
+  -----------------------------------------------------------------------
+
+Moderate
+
+Q6. Find the second largest element without sorting the array.
+
+  Given an array arr[] of n integers, find the second largest distinct
+  element without sorting the array. If no second largest exists (all
+  elements are equal, or the array has a single element), return None.
+
+  Examples
+
+  Input: arr[] = [12, 35, 1, 10, 34, 1]
+
+  Output: 34
+
+  Explanation: The largest element is 35 and the next distinct largest
+  is 34.
+
+  Input: arr[] = [5, 5, 3]
+
+  Output: 3
+
+  Explanation: The two 5s count as one value, so the second largest is
+  3.
+
+  Input: arr[] = [7, 7, 7]
+
+  Output: None
+
+  Explanation: All elements are equal, so there is no second largest.
+
+  Constraints
+
+  1 ≤ arr.size() ≤ 10^5
+
+  -10^9 ≤ arr[i] ≤ 10^9
+
+  Solution
+
+  def second_largest(arr):
+
+  first = second = float('-inf')
+
+  for x in arr:
+
+  if x > first:
+
+  second = first
+
+  first = x
+
+  elif x > second and x != first:
+
+  second = x
+
+  return None if second == float('-inf') else second
+
+  print(second_largest([12, 35, 1, 10, 34, 1]))
+
+  Sample Output
+
+  34
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   second_largest([12, 35, 1, 10,    34
+      34, 1])                           
+
+  2   second_largest([5, 5, 3])         3
+
+  3   second_largest([7, 7, 7])         None
+
+  4   second_largest([-1, -5, -3])      -3
+
+  5   second_largest([1])               None
+
+  6   second_largest([10, 20])          10
+  -----------------------------------------------------------------------
+
+Q7. Rotate an array left by k positions (use the reversal technique).
+
+  Given an array arr[] of n elements and an integer k, rotate the array
+  to the left by k positions using the reversal technique: reverse the
+  first k elements, reverse the remaining n - k elements, then reverse
+  the whole array. If k is greater than n, use k % n. Return the rotated
+  array.
+
+  Examples
+
+  Input: arr[] = [1, 2, 3, 4, 5, 6, 7], k = 3
+
+  Output: [4, 5, 6, 7, 1, 2, 3]
+
+  Explanation: The first 3 elements move to the end of the array.
+
+  Input: arr[] = [1, 2, 3, 4], k = 6
+
+  Output: [3, 4, 1, 2]
+
+  Explanation: k % n = 6 % 4 = 2, so the array is rotated left by 2
+  positions.
+
+  Input: arr[] = [1, 2, 3], k = 3
+
+  Output: [1, 2, 3]
+
+  Explanation: Rotating by exactly n positions gives back the original
+  array.
+
+  Constraints
+
+  0 ≤ arr.size() ≤ 10^5
+
+  0 ≤ k ≤ 10^9
+
+  Solution
+
+  def rotate_left(arr, k):
+
+  n = len(arr)
+
+  if n == 0:
+
+  return arr
+
+  k %= n
+
+  def reverse(l, r):
+
+  while l < r:
+
+  arr[l], arr[r] = arr[r], arr[l]
+
+  l += 1
+
+  r -= 1
+
+  reverse(0, k - 1)
+
+  reverse(k, n - 1)
+
+  reverse(0, n - 1)
+
+  return arr
+
+  print(rotate_left([1, 2, 3, 4, 5, 6, 7], 3))
+
+  Sample Output
+
+  [4, 5, 6, 7, 1, 2, 3]
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   rotate_left([1, 2, 3, 4, 5, 6,    [4, 5, 6, 7, 1, 2, 3]
+      7], 3)                            
+
+  2   rotate_left([1, 2, 3], 0)         [1, 2, 3]
+
+  3   rotate_left([1, 2, 3], 3)         [1, 2, 3]
+
+  4   rotate_left([1, 2, 3, 4], 6)      [3, 4, 1, 2]
+
+  5   rotate_left([], 2)                []
+
+  6   rotate_left([9], 5)               [9]
+  -----------------------------------------------------------------------
+
+Q8. Move all zeros to the end of the array while keeping the order of
+the other elements.
+
+  Given an array arr[] of n integers, move all the zeros to the end of
+  the array while keeping the relative order of the non-zero elements.
+  Modify the array in place and return it.
+
+  Examples
+
+  Input: arr[] = [0, 1, 0, 3, 12]
+
+  Output: [1, 3, 12, 0, 0]
+
+  Explanation: The non-zero elements 1, 3, 12 keep their order and both
+  zeros go to the end.
+
+  Input: arr[] = [0, 4]
+
+  Output: [4, 0]
+
+  Explanation: The zero moves behind 4.
+
+  Input: arr[] = [1, 2, 3]
+
+  Output: [1, 2, 3]
+
+  Explanation: There are no zeros, so the array does not change.
+
+  Constraints
+
+  0 ≤ arr.size() ≤ 10^5
+
+  -10^9 ≤ arr[i] ≤ 10^9
+
+  Solution
+
+  def move_zeros(arr):
+
+  pos = 0
+
+  for i in range(len(arr)):
+
+  if arr[i] != 0:
+
+  arr[pos], arr[i] = arr[i], arr[pos]
+
+  pos += 1
+
+  return arr
+
+  print(move_zeros([0, 1, 0, 3, 12]))
+
+  Sample Output
+
+  [1, 3, 12, 0, 0]
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   move_zeros([0, 1, 0, 3, 12])      [1, 3, 12, 0, 0]
+
+  2   move_zeros([0, 0, 0])             [0, 0, 0]
+
+  3   move_zeros([1, 2, 3])             [1, 2, 3]
+
+  4   move_zeros([])                    []
+
+  5   move_zeros([4, 0])                [4, 0]
+
+  6   move_zeros([0, 4])                [4, 0]
+  -----------------------------------------------------------------------
+
+Q9. Find all pairs in an array whose sum equals a given target.
+
+  Given an array arr[] of n distinct integers and an integer target,
+  find all pairs of elements whose sum equals target. A pair is reported
+  as (a, b), where a appears before b in the array. Return the list of
+  pairs, or an empty list if there is none.
+
+  Examples
+
+  Input: arr[] = [2, 7, 4, 5, 3, 6], target = 9
+
+  Output: [(2, 7), (4, 5), (3, 6)]
+
+  Explanation: 2 + 7, 4 + 5 and 3 + 6 each add up to 9.
+
+  Input: arr[] = [1, 2, 3], target = 10
+
+  Output: []
+
+  Explanation: No two elements add up to 10.
+
+  Input: arr[] = [-2, 2, 0], target = 0
+
+  Output: [(-2, 2)]
+
+  Explanation: -2 + 2 = 0. The element 0 would need another 0 to pair
+  with, which is not present.
+
+  Constraints
+
+  0 ≤ arr.size() ≤ 10^5
+
+  All elements of arr[] are distinct
+
+  -10^9 ≤ arr[i], target ≤ 10^9
+
+  Solution
+
+  def find_pairs(arr, target):
+
+  seen = set()
+
+  pairs = []
+
+  for x in arr:
+
+  if target - x in seen:
+
+  pairs.append((target - x, x))
+
+  seen.add(x)
+
+  return pairs
+
+  print(find_pairs([2, 7, 4, 5, 3, 6], 9))
+
+  Sample Output
+
+  [(2, 7), (4, 5), (3, 6)]
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   find_pairs([2, 7, 4, 5, 3, 6], 9) [(2, 7), (4, 5), (3, 6)]
+
+  2   find_pairs([1, 2, 3], 10)         []
+
+  3   find_pairs([5], 10)               []
+
+  4   find_pairs([4, 5], 9)             [(4, 5)]
+
+  5   find_pairs([-2, 2, 0], 0)         [(-2, 2)]
+
+  6   find_pairs([], 5)                 []
+  -----------------------------------------------------------------------
+
+Q10. Find the maximum sum of a contiguous subarray (Kadane's algorithm).
+
+  Given an array arr[] of n integers (which may be negative), find the
+  maximum possible sum of a non-empty contiguous subarray using Kadane's
+  algorithm.
+
+  Examples
+
+  Input: arr[] = [-2, 1, -3, 4, -1, 2, 1, -5, 4]
+
+  Output: 6
+
+  Explanation: The subarray [4, -1, 2, 1] has the largest sum, which is
+  6.
+
+  Input: arr[] = [-3, -1, -2]
+
+  Output: -1
+
+  Explanation: All elements are negative, so the best subarray is the
+  single element -1.
+
+  Input: arr[] = [5, -9, 6]
+
+  Output: 6
+
+  Explanation: Starting fresh at 6 is better than 5 - 9 + 6 = 2.
+
+  Constraints
+
+  1 ≤ arr.size() ≤ 10^5
+
+  -10^4 ≤ arr[i] ≤ 10^4
+
+  Solution
+
+  def max_subarray(arr):
+
+  best = cur = arr[0]
+
+  for x in arr[1:]:
+
+  cur = max(x, cur + x)
+
+  best = max(best, cur)
+
+  return best
+
+  print(max_subarray([-2, 1, -3, 4, -1, 2, 1, -5, 4]))
+
+  Sample Output
+
+  6
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   max_subarray([-2, 1, -3, 4, -1,   6
+      2, 1, -5, 4])                     
+
+  2   max_subarray([1])                 1
+
+  3   max_subarray([-3, -1, -2])        -1
+
+  4   max_subarray([1, 2, 3])           6
+
+  5   max_subarray([5, -9, 6])          6
+  -----------------------------------------------------------------------
+
+Part B: Strings
+
+Easy
+
+Q1. Reverse a string.
+
+  Given a string s, print the string in reverse order. The solution
+  builds the result one character at a time.
+
+  Examples
+
+  Input: s = "python"
+
+  Output: nohtyp
+
+  Explanation: The characters are read from last to first.
+
+  Input: s = "Hello World"
+
+  Output: dlroW olleH
+
+  Explanation: Spaces and letter case are kept. Only the order is
+  reversed.
+
+  Input: s = ""
+
+  Output: (empty string)
+
+  Explanation: An empty string stays empty.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  s may contain letters, digits and spaces
+
+  Solution
+
+  s = "python"
+
+  rev = ""
+
+  for ch in s:
+
+  rev = ch + rev
+
+  print(rev)
+
+  Sample Output
+
+  nohtyp
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   s = "python"                      nohtyp
+
+  2   s = ""                            (empty string)
+
+  3   s = "a"                           a
+
+  4   s = "Hello World"                 dlroW olleH
+
+  5   s = "12345"                       54321
+  -----------------------------------------------------------------------
+
+Q2. Check whether a string is a palindrome (ignore case).
+
+  Given a string s, check whether it is a palindrome, that is, whether
+  it reads the same forwards and backwards. Ignore upper and lower case,
+  but do not ignore spaces or punctuation. Return True if it is a
+  palindrome, otherwise False.
+
+  Examples
+
+  Input: s = "Madam"
+
+  Output: True
+
+  Explanation: In lower case, "madam" reads the same in both directions.
+
+  Input: s = "hello"
+
+  Output: False
+
+  Explanation: "hello" reversed is "olleh", which is different.
+
+  Input: s = "RaceCar"
+
+  Output: True
+
+  Explanation: Case is ignored, so it matches "racecar".
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  def is_palindrome(s):
+
+  s = s.lower()
+
+  left, right = 0, len(s) - 1
+
+  while left < right:
+
+  if s[left] != s[right]:
+
+  return False
+
+  left += 1
+
+  right -= 1
+
+  return True
+
+  print(is_palindrome("Madam"))
+
+  print(is_palindrome("hello"))
+
+  Sample Output
+
+  True
+
+  False
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   is_palindrome("Madam")            True
+
+  2   is_palindrome("hello")            False
+
+  3   is_palindrome("")                 True
+
+  4   is_palindrome("a")                True
+
+  5   is_palindrome("RaceCar")          True
+
+  6   is_palindrome("ab")               False
+  -----------------------------------------------------------------------
+
+Q3. Count the vowels and consonants in a string.
+
+  Given a string s, count the vowels (a, e, i, o, u in any case) and the
+  consonants (alphabet letters that are not vowels). Digits, spaces and
+  symbols are not counted. Print both counts.
+
+  Examples
+
+  Input: s = "Hello World"
+
+  Output: Vowels: 3 Consonants: 7
+
+  Explanation: Vowels are e, o, o. Consonants are H, l, l, W, r, l, d.
+
+  Input: s = "AEIOU bcd 123"
+
+  Output: Vowels: 5 Consonants: 3
+
+  Explanation: The space and the digits are ignored, and uppercase
+  vowels are counted.
+
+  Input: s = "xyz"
+
+  Output: Vowels: 0 Consonants: 3
+
+  Explanation: The string has no vowels.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  s = "Hello World"
+
+  vowels = consonants = 0
+
+  for ch in s.lower():
+
+  if ch.isalpha():
+
+  if ch in "aeiou":
+
+  vowels += 1
+
+  else:
+
+  consonants += 1
+
+  print("Vowels:", vowels, "Consonants:", consonants)
+
+  Sample Output
+
+  Vowels: 3 Consonants: 7
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   s = "Hello World"                 Vowels: 3 Consonants: 7
+
+  2   s = "aeiou"                       Vowels: 5 Consonants: 0
+
+  3   s = "xyz"                         Vowels: 0 Consonants: 3
+
+  4   s = ""                            Vowels: 0 Consonants: 0
+
+  5   s = "AEIOU bcd 123"               Vowels: 5 Consonants: 3
+  -----------------------------------------------------------------------
+
+Q4. Count the number of words in a sentence.
+
+  Given a sentence s, count the number of words in it. Words are
+  separated by one or more whitespace characters, and leading and
+  trailing spaces are ignored. Print the count.
+
+  Examples
+
+  Input: s = " Python is fun "
+
+  Output: 3
+
+  Explanation: The words are Python, is and fun. Extra spaces are
+  ignored.
+
+  Input: s = "Hello"
+
+  Output: 1
+
+  Explanation: There is a single word.
+
+  Input: s = " "
+
+  Output: 0
+
+  Explanation: The string has only spaces, so there are no words.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  s = " Python is fun "
+
+  print(len(s.split()))
+
+  Sample Output
+
+  3
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   s = " Python is fun "             3
+
+  2   s = ""                            0
+
+  3   s = "Hello"                       1
+
+  4   s = " "                           0
+
+  5   s = "one two\tthree\nfour"        4
+  -----------------------------------------------------------------------
+
+Q5. Find the frequency of each character in a string.
+
+  Given a string s, find how many times each character occurs. Counting
+  is case-sensitive and spaces count as characters. Print a dictionary
+  of character counts in the order of first appearance.
+
+  Examples
+
+  Input: s = "banana"
+
+  Output: {'b': 1, 'a': 3, 'n': 2}
+
+  Explanation: b appears once, a three times and n twice.
+
+  Input: s = "AaA"
+
+  Output: {'A': 2, 'a': 1}
+
+  Explanation: Uppercase 'A' and lowercase 'a' are different characters.
+
+  Input: s = ""
+
+  Output: {}
+
+  Explanation: An empty string has no characters, so the dictionary is
+  empty.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  s = "banana"
+
+  freq = {}
+
+  for ch in s:
+
+  freq[ch] = freq.get(ch, 0) + 1
+
+  print(freq)
+
+  Sample Output
+
+  {'b': 1, 'a': 3, 'n': 2}
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   s = "banana"                      {'b': 1, 'a': 3, 'n': 2}
+
+  2   s = ""                            {}
+
+  3   s = "aaa"                         {'a': 3}
+
+  4   s = "abc"                         {'a': 1, 'b': 1, 'c': 1}
+
+  5   s = "AaA"                         {'A': 2, 'a': 1}
+  -----------------------------------------------------------------------
+
+Moderate
+
+Q6. Check whether two strings are anagrams.
+
+  Given two strings a and b, check whether they are anagrams of each
+  other, that is, whether one can be rearranged to form the other using
+  every letter exactly once. Ignore spaces and letter case. Return True
+  or False.
+
+  Examples
+
+  Input: a = "listen", b = "silent"
+
+  Output: True
+
+  Explanation: Both contain the letters e, i, l, n, s, t once each.
+
+  Input: a = "hello", b = "world"
+
+  Output: False
+
+  Explanation: The letters are different.
+
+  Input: a = "Dormitory", b = "Dirty room"
+
+  Output: True
+
+  Explanation: After removing the space and ignoring case, both have the
+  same letters.
+
+  Constraints
+
+  0 ≤ a.length(), b.length() ≤ 10^5
+
+  Solution
+
+  def is_anagram(a, b):
+
+  a = a.replace(" ", "").lower()
+
+  b = b.replace(" ", "").lower()
+
+  if len(a) != len(b):
+
+  return False
+
+  count = {}
+
+  for ch in a:
+
+  count[ch] = count.get(ch, 0) + 1
+
+  for ch in b:
+
+  if count.get(ch, 0) == 0:
+
+  return False
+
+  count[ch] -= 1
+
+  return True
+
+  print(is_anagram("listen", "silent"))
+
+  print(is_anagram("hello", "world"))
+
+  Sample Output
+
+  True
+
+  False
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   is_anagram("listen", "silent")    True
+
+  2   is_anagram("hello", "world")      False
+
+  3   is_anagram("Dormitory", "Dirty    True
+      room")                            
+
+  4   is_anagram("a", "a")              True
+
+  5   is_anagram("abc", "ab")           False
+
+  6   is_anagram("aab", "abb")          False
+
+  7   is_anagram("", "")                True
+  -----------------------------------------------------------------------
+
+Q7. Find the first non-repeating character in a string.
+
+  Given a string s, find the first character that occurs exactly once,
+  scanning from left to right. Return that character, or None if every
+  character repeats.
+
+  Examples
+
+  Input: s = "swiss"
+
+  Output: w
+
+  Explanation: s occurs three times, while w occurs only once.
+
+  Input: s = "loveleetcode"
+
+  Output: v
+
+  Explanation: l and o occur more than once. The first character that
+  occurs once is v.
+
+  Input: s = "aabb"
+
+  Output: None
+
+  Explanation: Every character repeats, so there is no answer.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  def first_unique(s):
+
+  freq = {}
+
+  for ch in s:
+
+  freq[ch] = freq.get(ch, 0) + 1
+
+  for ch in s:
+
+  if freq[ch] == 1:
+
+  return ch
+
+  return None
+
+  print(first_unique("swiss"))
+
+  print(first_unique("aabb"))
+
+  Sample Output
+
+  w
+
+  None
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   first_unique("swiss")             w
+
+  2   first_unique("aabb")              None
+
+  3   first_unique("a")                 a
+
+  4   first_unique("leetcode")          l
+
+  5   first_unique("loveleetcode")      v
+
+  6   first_unique("")                  None
+  -----------------------------------------------------------------------
+
+Q8. Reverse each word in a sentence while keeping the word order.
+
+  Given a sentence, reverse the letters of each word while keeping the
+  order of the words the same. Extra spaces between words are collapsed
+  into a single space. Return the new sentence.
+
+  Examples
+
+  Input: sentence = "hello world"
+
+  Output: olleh dlrow
+
+  Explanation: "hello" becomes "olleh" and "world" becomes "dlrow". The
+  word order is the same.
+
+  Input: sentence = "Python is fun"
+
+  Output: nohtyP si nuf
+
+  Explanation: Letter case is kept while each word is reversed.
+
+  Input: sentence = " hi there "
+
+  Output: ih ereht
+
+  Explanation: Leading, trailing and repeated spaces are removed.
+
+  Constraints
+
+  0 ≤ sentence.length() ≤ 10^5
+
+  Solution
+
+  def reverse_words(sentence):
+
+  return " ".join(word[::-1] for word in sentence.split())
+
+  print(reverse_words("hello world"))
+
+  Sample Output
+
+  olleh dlrow
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   reverse_words("hello world")      olleh dlrow
+
+  2   reverse_words("a")                a
+
+  3   reverse_words("")                 (empty string)
+
+  4   reverse_words(" hi there ")       ih ereht
+
+  5   reverse_words("Python is fun")    nohtyP si nuf
+  -----------------------------------------------------------------------
+
+Q9. Compress a string (for example, aaabbc becomes a3b2c1).
+
+  Given a string s, compress it by replacing each group of consecutive
+  identical characters with the character followed by the length of the
+  group. The count is always written, even when it is 1. Return the
+  compressed string.
+
+  Examples
+
+  Input: s = "aaabbc"
+
+  Output: a3b2c1
+
+  Explanation: There are three a, two b and one c.
+
+  Input: s = "aabbaa"
+
+  Output: a2b2a2
+
+  Explanation: Only consecutive repeats are grouped, so the last two a
+  form a new group.
+
+  Input: s = "aaaaaaaaaa"
+
+  Output: a10
+
+  Explanation: A count with two digits is written in full.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  def compress(s):
+
+  if not s:
+
+  return ""
+
+  result = ""
+
+  count = 1
+
+  for i in range(1, len(s)):
+
+  if s[i] == s[i - 1]:
+
+  count += 1
+
+  else:
+
+  result += s[i - 1] + str(count)
+
+  count = 1
+
+  result += s[-1] + str(count)
+
+  return result
+
+  print(compress("aaabbc"))
+
+  Sample Output
+
+  a3b2c1
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   compress("aaabbc")                a3b2c1
+
+  2   compress("")                      (empty string)
+
+  3   compress("a")                     a1
+
+  4   compress("abc")                   a1b1c1
+
+  5   compress("aaaa")                  a4
+
+  6   compress("aabbaa")                a2b2a2
+
+  7   compress("aaaaaaaaaa")            a10
+  -----------------------------------------------------------------------
+
+Q10. Check whether a string has balanced parentheses: (), [] and {}.
+
+  Given a string s containing brackets ( ), [ ] and { }, check whether
+  it is balanced: every opening bracket must be closed by the same type
+  of bracket and in the correct order. Characters other than brackets
+  are ignored. Return True or False.
+
+  Examples
+
+  Input: s = "{[()]}"
+
+  Output: True
+
+  Explanation: Every bracket is closed by its own type, in the correct
+  order.
+
+  Input: s = "([)]"
+
+  Output: False
+
+  Explanation: The ) arrives while [ is still the most recent open
+  bracket, so the order is wrong.
+
+  Input: s = "a(b)c"
+
+  Output: True
+
+  Explanation: Characters that are not brackets are ignored.
+
+  Constraints
+
+  0 ≤ s.length() ≤ 10^5
+
+  Solution
+
+  def is_balanced(s):
+
+  stack = []
+
+  pairs = {')': '(', ']': '[', '}': '{'}
+
+  for ch in s:
+
+  if ch in "([{":
+
+  stack.append(ch)
+
+  elif ch in pairs:
+
+  if not stack or stack.pop() != pairs[ch]:
+
+  return False
+
+  return not stack
+
+  print(is_balanced("{[()]}"))
+
+  print(is_balanced("([)]"))
+
+  Sample Output
+
+  True
+
+  False
+
+  Test Cases
+
+  -----------------------------------------------------------------------
+  #   Input                             Expected Output
+  --- --------------------------------- ---------------------------------
+  1   is_balanced("{[()]}")             True
+
+  2   is_balanced("([)]")               False
+
+  3   is_balanced("")                   True
+
+  4   is_balanced("(")                  False
+
+  5   is_balanced(")")                  False
+
+  6   is_balanced("()[]{}")             True
+
+  7   is_balanced("(((")                False
+
+  8   is_balanced("a(b)c")              True
+  -----------------------------------------------------------------------
+
+Part C: Scenario-Based Debugging
+
+Q1. Scenario: A student writes code to sum a list but the program
+crashes.
+
+  Expected Behaviour: The program should print the sum of all elements
+  in the list.
+
+  Buggy Code
+
+  arr = [1, 2, 3, 4, 5]
+
+  total = 0
+
+  for i in range(len(arr) + 1):
+
+  total += arr[i]
+
+  print(total)
+
+  Answer: range(len(arr) + 1) produces one index too many, so the last
+  iteration raises IndexError: list index out of range. Valid indices
+  are 0 to len(arr) - 1.
+
+  Fix: Use range(len(arr)), or better, for x in arr: total += x.
+
+  Corrected Code
+
+  arr = [1, 2, 3, 4, 5]
+
+  total = 0
+
+  for x in arr:
+
+  total += x
+
+  print(total)
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   arr = [1, 2, 3, 4, 5]      15                   IndexError
+
+  2   arr = [10]                 10                   IndexError
+
+  3   arr = []                   0                    IndexError
+  ------------------------------------------------------------------------
+
+Q2. Scenario: The user types 5 when asked for a number, but the program
+prints "Not equal".
+
+  Expected Behaviour: The program should print Equal when the user
+  enters 5, and Not equal for any other number.
+
+  Buggy Code
+
+  n = input("Enter a number: ")
+
+  if n == 5:
+
+  print("Equal")
+
+  else:
+
+  print("Not equal")
+
+  Answer: input() always returns a string, so "5" is compared with the
+  integer 5, which is never equal. The types differ.
+
+  Fix: Convert the input first: n = int(input("Enter a number: ")).
+
+  Corrected Code
+
+  n = int(input("Enter a number: "))
+
+  if n == 5:
+
+  print("Equal")
+
+  else:
+
+  print("Not equal")
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   user enters 5              Equal                Not equal
+
+  2   user enters 7              Not equal            Not equal
+
+  3   user enters 05             Equal                Not equal
+  ------------------------------------------------------------------------
+
+Q3. Scenario: The program should find the maximum, but it prints 0 for
+[-5, -2, -9].
+
+  Expected Behaviour: The program should print the largest element of
+  the list, even when all elements are negative.
+
+  Buggy Code
+
+  arr = [-5, -2, -9]
+
+  largest = 0
+
+  for x in arr:
+
+  if x > largest:
+
+  largest = x
+
+  print(largest)
+
+  Answer: Initializing largest to 0 fails when all values are negative,
+  since none is greater than 0.
+
+  Fix: Initialize with largest = arr[0] or float('-inf').
+
+  Corrected Code
+
+  arr = [-5, -2, -9]
+
+  largest = arr[0]
+
+  for x in arr:
+
+  if x > largest:
+
+  largest = x
+
+  print(largest)
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   arr = [-5, -2, -9]         -2                   0
+
+  2   arr = [3, 1, 2]            3                    3
+
+  3   arr = [-7]                 -7                   0
+
+  4   arr = [0, -1]              0                    0
+  ------------------------------------------------------------------------
+
+Q4. Scenario: The student expects "HELLO" but gets "hello".
+
+  Expected Behaviour: The program should print the string in upper case.
+
+  Buggy Code
+
+  s = "hello"
+
+  s.upper()
+
+  print(s)
+
+  Answer: Strings are immutable in Python. upper() returns a new string
+  and the original is unchanged.
+
+  Fix: Assign the result: s = s.upper().
+
+  Corrected Code
+
+  s = "hello"
+
+  s = s.upper()
+
+  print(s)
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   s = "hello"                HELLO                hello
+
+  2   s = "Python"               PYTHON               Python
+
+  3   s = "ABC"                  ABC                  ABC
+  ------------------------------------------------------------------------
+
+Q5. Scenario: Counting vowels in "Apple" gives 1 instead of 2.
+
+  Expected Behaviour: The program should count vowels (a, e, i, o, u) in
+  both upper and lower case.
+
+  Buggy Code
+
+  s = "Apple"
+
+  count = 0
+
+  for c in s:
+
+  if c in "aeiou":
+
+  count += 1
+
+  print(count)
+
+  Answer: The check is case-sensitive, so uppercase 'A' is missed.
+
+  Fix: Convert first: for c in s.lower(): or if c.lower() in "aeiou".
+
+  Corrected Code
+
+  s = "Apple"
+
+  count = 0
+
+  for c in s.lower():
+
+  if c in "aeiou":
+
+  count += 1
+
+  print(count)
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   s = "Apple"                2                    1
+
+  2   s = "banana"               3                    3
+
+  3   s = "AEIOU"                5                    0
+
+  4   s = "xyz"                  0                    0
+  ------------------------------------------------------------------------
+
+Q6. Scenario: A reverse function leaves the list unchanged.
+
+  Expected Behaviour: reverse(arr) should return the list with its
+  elements in reverse order.
+
+  Buggy Code
+
+  def reverse(arr):
+
+  n = len(arr)
+
+  for i in range(n):
+
+  arr[i], arr[n - 1 - i] = arr[n - 1 - i], arr[i]
+
+  return arr
+
+  Answer: The loop goes through the whole list, so every pair is swapped
+  twice and returns to its original position.
+
+  Fix: Loop only to the middle: for i in range(n // 2).
+
+  Corrected Code
+
+  def reverse(arr):
+
+  n = len(arr)
+
+  for i in range(n // 2):
+
+  arr[i], arr[n - 1 - i] = arr[n - 1 - i], arr[i]
+
+  return arr
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   reverse([1, 2, 3, 4, 5])   [5, 4, 3, 2, 1]      [1, 2, 3, 4, 5]
+
+  2   reverse([1, 2])            [2, 1]               [1, 2]
+
+  3   reverse([7])               [7]                  [7]
+
+  4   reverse([])                []                   []
+  ------------------------------------------------------------------------
+
+Q7. Scenario: A palindrome checker raises an error for every input.
+
+  Expected Behaviour: is_palindrome(s) should return True if s reads the
+  same forwards and backwards, otherwise False.
+
+  Buggy Code
+
+  def is_palindrome(s):
+
+  n = len(s)
+
+  for i in range(n // 2):
+
+  if s[i] != s[n - i]:
+
+  return False
+
+  return True
+
+  Answer: At i = 0, s[n] is out of range and raises IndexError. The
+  mirror index is n - 1 - i.
+
+  Fix: Use s[n - 1 - i], or simply return s == s[::-1].
+
+  Corrected Code
+
+  def is_palindrome(s):
+
+  n = len(s)
+
+  for i in range(n // 2):
+
+  if s[i] != s[n - 1 - i]:
+
+  return False
+
+  return True
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   is_palindrome("madam")     True                 IndexError
+
+  2   is_palindrome("hello")     False                IndexError
+
+  3   is_palindrome("ab")        False                IndexError
+
+  4   is_palindrome("a")         True                 True
+  ------------------------------------------------------------------------
+
+Q8. Scenario: Linear search returns -1 for any key that isn't at index
+0.
+
+  Expected Behaviour: search(arr, key) should return the index of the
+  first occurrence of key, or -1 if it is not present.
+
+  Buggy Code
+
+  def search(arr, key):
+
+  for i in range(len(arr)):
+
+  if arr[i] == key:
+
+  return i
+
+  else:
+
+  return -1
+
+  return -1
+
+  Answer: The else branch returns on the first mismatch, so only the
+  first element is ever checked.
+
+  Fix: Remove the else and return -1 only after the loop finishes.
+
+  Corrected Code
+
+  def search(arr, key):
+
+  for i in range(len(arr)):
+
+  if arr[i] == key:
+
+  return i
+
+  return -1
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   search([5, 8, 2, 9], 5)    0                    0
+
+  2   search([5, 8, 2, 9], 2)    2                    -1
+
+  3   search([5, 8, 2, 9], 9)    3                    -1
+
+  4   search([5, 8, 2, 9], 7)    -1                   -1
+  ------------------------------------------------------------------------
+
+Q9. Scenario: For [5, 5, 3] the expected second largest is 3, but the
+program prints 5.
+
+  Expected Behaviour: The program should print the second largest
+  distinct element of the list.
+
+  Buggy Code
+
+  arr = [5, 5, 3]
+
+  first = second = float('-inf')
+
+  for x in arr:
+
+  if x > first:
+
+  second = first
+
+  first = x
+
+  elif x > second:
+
+  second = x
+
+  print(second)
+
+  Answer: The second 5 is not greater than first, but it is greater than
+  second, so second becomes 5 (a duplicate of the largest).
+
+  Fix: Change the condition to elif x > second and x != first.
+
+  Corrected Code
+
+  arr = [5, 5, 3]
+
+  first = second = float('-inf')
+
+  for x in arr:
+
+  if x > first:
+
+  second = first
+
+  first = x
+
+  elif x > second and x != first:
+
+  second = x
+
+  print(second)
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   arr = [5, 5, 3]            3                    5
+
+  2   arr = [10, 20, 30]         20                   20
+
+  3   arr = [1, 2, 2]            1                    2
+
+  4   arr = [4, 4, 9]            4                    4
+  ------------------------------------------------------------------------
+
+Q10. Scenario: A student "backs up" a list, modifies the copy, and finds
+the original changed too.
+
+  Expected Behaviour: After b[0] is changed, the original list a must
+  stay unchanged. The program should print the original first element.
+
+  Buggy Code
+
+  a = [10, 20, 30]
+
+  b = a
+
+  b[0] = 99
+
+  print(a[0]) # prints 99
+
+  Answer: b = a does not copy the list. Both names refer to the same
+  list object.
+
+  Fix: Make a real copy: b = a.copy(), b = a[:] or b = list(a).
+
+  Corrected Code
+
+  a = [10, 20, 30]
+
+  b = a.copy()
+
+  b[0] = 99
+
+  print(a[0]) # prints 10
+
+  Test Cases
+
+  ------------------------------------------------------------------------
+  #   Input                      Expected Output      Buggy Code Output
+  --- -------------------------- -------------------- --------------------
+  1   a = [10, 20, 30]; b[0] =   10                   99
+      99                                              
+
+  2   a = [1]; b[0] = 5          1                    5
+
+  3   a = [0, 0]; b[0] = -1      0                    -1
+  ------------------------------------------------------------------------
+
+DSA Assessment: 30 Easy-to-Moderate Problems
+
+Part A: Scenario-Based Problems
+
+A1. Non-Repeating Playlist Stretch (Moderate)
+
+A music app logs the songs a user played, in order, as a list of song
+IDs. The product team wants the length of the longest continuous stretch
+of plays in which no song was repeated.
+
+Given an integer array plays, return the length of the longest
+contiguous subarray that contains no duplicate song IDs.
+
+def longest_unique_stretch(plays: list[int]) -> int:
+
+Constraints
+
+-   0 <= plays.length <= 10^5
+
+-   1 <= plays[i] <= 10^9
+
+-   Target O(n) time.
+
+Test case 1
+
+Input: plays = [3, 1, 4, 1, 5, 9, 2, 6]
+Output: 6
+
+Explanation: Starting at index 2, the stretch [4, 1, 5, 9, 2, 6] has six
+distinct songs. Any stretch that starts earlier contains both 1s, so it
+cannot be longer.
+
+Test case 2
+
+Input: plays = [2, 5, 2, 8, 5, 9]
+Output: 4
+
+Explanation: [2, 5] stops at the second 2, and [5, 2, 8] stops at the
+second 5. The stretch [2, 8, 5, 9] (indices 2 to 5) is the longest with
+no repeat.
+
+Hints
+
+1.  Checking every start and end pair is O(n^2). Can you reuse work as
+      the window moves?
+
+2.  Use a sliding window with a left and right pointer. Extend right one
+      song at a time.
+
+3.  Store the last index where each song was seen. When the new song is
+      already inside the window, jump left to one past its previous
+      index.
+
+Solution
+
+def longest_unique_stretch(plays):
+last = {}
+left = best = 0
+for right, song in enumerate(plays):
+if song in last and last[song] >= left:
+left = last[song] + 1
+last[song] = right
+best = max(best, right - left + 1)
+return best
+
+ A2. Merge Calendar Busy Blocks (Moderate)
+
+A scheduling tool collects a person's meetings from several calendars as
+[start, end] pairs, in hours on a 24-hour clock. Meetings can overlap or
+sit back to back, and the list is not sorted.
+
+To show free time, the tool needs the merged busy blocks. Merge every
+pair of meetings that overlap or touch (one ends exactly when the next
+starts) and return the blocks sorted by start time.
+
+def merge_busy_blocks(meetings: list[list[int]]) -> list[list[int]]:
+
+Constraints
+
+-   1 <= meetings.length <= 10^4
+
+-   0 <= start < end <= 24
+
+Test case 1
+
+Input: meetings = [[9, 11], [10, 12], [13, 14], [14, 15]]
+Output: [[9, 12], [13, 15]]
+
+Explanation: [9, 11] and [10, 12] overlap, giving [9, 12]. [13, 14] and
+[14, 15] touch at 14, giving [13, 15]. The two blocks have a free gap
+from 12 to 13.
+
+Test case 2
+
+Input: meetings = [[13, 17], [9, 10], [11, 12]]
+Output: [[9, 10], [11, 12], [13, 17]]
+
+Explanation: No two meetings overlap or touch, so nothing merges. The
+output is simply sorted by start time.
+
+Hints
+
+1.  Overlaps are hard to spot in an unsorted list. What order makes them
+      easy to find?
+
+2.  After sorting by start time, a meeting can only merge with the last
+      block you have built.
+
+3.  If the next start is <= the last block's end, extend that block's
+      end to the larger of the two ends; otherwise start a new block.
+      Total O(n log n).
+
+Solution: def merge_busy_blocks(meetings): meetings.sort(key=lambda m: m[0]) merged = [meetings[0][:]] for start, end in meetings[1:]: if start <= merged[-1][1]: merged[-1][1] = max(merged[-1][1], end) else: merged.append([start, end]) return merged
+
+ A3. Minimum Truck Capacity (Moderate)
+
+A warehouse ships packages along a conveyor belt. Package i weighs
+weights[i] kg. Each day one truck is loaded with packages in the belt's
+order until adding the next package would exceed the truck's capacity.
+Packages cannot be reordered or split.
+
+Return the smallest truck capacity (in kg) that ships every package
+within days days.
+
+def min_truck_capacity(weights: list[int], days: int) -> int:
+
+Constraints
+
+-   1 <= days <= weights.length <= 5 * 10^4
+
+-   1 <= weights[i] <= 500
+
+Test case 1
+
+Input: weights = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], days = 5
+Output: 15
+
+Explanation: With capacity 15 the days are [1, 2, 3, 4, 5], [6, 7], [8],
+[9], [10], which is 5 days. With capacity 14 the loads become [1, 2, 3,
+4], [5, 6], [7], [8], [9], [10], which needs 6 days.
+
+Test case 2
+
+Input: weights = [3, 2, 2, 4, 1, 4], days = 3
+Output: 6
+
+Explanation: Capacity 6 gives [3, 2], [2, 4], [1, 4], which is 3 days.
+Capacity 5 gives [3, 2], [2], [4, 1], [4], which needs 4 days.
+
+Hints
+
+1.  The capacity must be at least max(weights), or the heaviest package
+      never fits. It never needs to exceed sum(weights).
+
+2.  Given a capacity, you can count the days needed with one greedy
+      pass. Bigger capacity never needs more days.
+
+3.  That monotonic yes/no answer means you can binary search the
+      capacity between max(weights) and sum(weights). Total O(n
+      log(sum)).
+
+Solution: def min_truck_capacity(weights, days): def days_needed(cap): d, load = 1, 0 for w in weights: if load + w > cap: d += 1 load = 0 load += w return d  low, high = max(weights), sum(weights) while low < high: mid = (low + high) // 2 if days_needed(mid) <= days: high = mid else: low = mid + 1 return low
+
+ A4. Days Until a Better Price (Moderate)
+
+A seller tracks a product's closing price each day. For every day, they
+want to know how many days they would have to wait to see a strictly
+higher price. If no later day has a higher price, the answer for that
+day is 0.
+
+Given prices, return an array wait where wait[i] is the number of days
+after day i until a strictly higher price.
+
+def days_until_higher(prices: list[int]) -> list[int]:
+
+Constraints
+
+-   1 <= prices.length <= 10^5
+
+-   1 <= prices[i] <= 10^5
+
+-   Target O(n) time.
+
+Test case 1
+
+Input: prices = [73, 74, 75, 71, 69, 72, 76, 73]
+Output: [1, 1, 4, 2, 1, 1, 0, 0]
+
+Explanation: Day 2 (75) waits until day 6 (76), so 4 days. Day 3 (71)
+waits until day 5 (72), so 2 days. Day 6 (76) and day 7 (73) never see a
+higher price, so 0.
+
+Test case 2
+
+Input: prices = [50, 40, 30, 60]
+Output: [3, 2, 1, 0]
+
+Explanation: Prices keep falling until day 3, so days 0, 1 and 2 all
+wait for the 60 on day 3. Day 3 is last, so it gets 0.
+
+Hints
+
+1.  The nested-loop approach looks forward from every day: O(n^2) in the
+      worst case (Test case 2 shows why).
+
+2.  Days that are still waiting for a higher price form a decreasing
+      sequence. Which data structure keeps that?
+
+3.  Keep a stack of indices still waiting. For each new price, pop every
+      index with a lower price and set its answer to the index
+      difference, then push the current day.
+
+Solution: def days_until_higher(prices): wait = [0] * len(prices) stack = [] for i, p in enumerate(prices): while stack and prices[stack[-1]] < p: j = stack.pop() wait[j] = i - j stack.append(i) return wait
+
+ A5. Top Error Codes in Server Logs (Moderate)
+
+An on-call dashboard reads the error codes logged by a server during an
+incident, such as "E500". It must show the k codes that occurred most
+often.
+
+Given a list of strings logs and an integer k, return the k most
+frequent error codes, in any order. The answer is guaranteed to be
+unique.
+
+def top_error_codes(logs: list[str], k: int) -> list[str]:
+
+Constraints
+
+-   1 <= logs.length <= 10^5
+
+-   1 <= k <= number of distinct codes
+
+-   The k most frequent codes are uniquely determined (no tie at the
+      cutoff).
+
+-   Do better than O(n log n) if you can.
+
+Test case 1
+
+Input: logs = ["E1", "E2", "E1", "E3", "E2", "E1"], k = 2
+Output: ["E1", "E2"]
+
+Explanation: Counts are E1 = 3, E2 = 2, E3 = 1. The two highest are E1
+and E2.
+
+Test case 2
+
+Input: logs = ["E404", "E500", "E404", "E401", "E500", "E404", "E502"],
+k = 1
+Output: ["E404"]
+
+Explanation: E404 appears 3 times, E500 twice, and E401 and E502 once
+each. Only the single most frequent code is returned.
+
+Hints
+
+1.  First count each code with a dictionary in O(n).
+
+2.  Sorting all codes by count works in O(m log m) for m distinct codes.
+      A min-heap of size k gets O(m log k).
+
+3.  For O(n): no count can exceed n, so place codes into buckets indexed
+      by count and read buckets from highest to lowest until you have k
+      codes.
+
+Solution:
+
+from collections import Counter
+def top_error_codes(logs, k):
+counts = Counter(logs)
+buckets = [[] for _ in range(len(logs) + 1)]
+for code, c in counts.items():
+buckets[c].append(code)
+result = []
+for c in range(len(buckets) - 1, 0, -1):
+for code in buckets[c]:
+result.append(code)
+if len(result) == k:
+return result
+return result
+
+ A6. Best Day to Buy and Sell (Easy)
+
+An investing app shows a stock's closing price for each of the next n
+days. A user may buy one share on one day and sell it on a later day, at
+most once.
+
+Given prices, return the maximum profit the user can make. If no
+profitable trade exists, return 0.
+
+def max_profit(prices: list[int]) -> int:
+
+Constraints
+
+-   1 <= prices.length <= 10^5
+
+-   0 <= prices[i] <= 10^4
+
+-   The sell day must come after the buy day.
+
+Test case 1
+
+Input: prices = [7, 1, 5, 3, 6, 4]
+Output: 5
+
+Explanation: Buy on day 1 at price 1 and sell on day 4 at price 6, for a
+profit of 5. Selling at 7 is not allowed because day 0 comes before the
+buy.
+
+Test case 2
+
+Input: prices = [7, 6, 4, 3, 1]
+Output: 0
+
+Explanation: The price falls every day, so every trade loses money. The
+best choice is not to trade.
+
+Hints
+
+1.  Trying every buy and sell pair is O(n^2).
+
+2.  If you sell on day i, the best buy day is the cheapest day before i.
+
+3.  Walk once through the prices, keeping the minimum price so far and
+      the best profit so far.
+
+Solution:
+
+def max_profit(prices):
+min_price = float('inf')
+best = 0
+for p in prices:
+min_price = min(min_price, p)
+best = max(best, p - min_price)
+return best
+
+ A7. Validate Config Brackets (Easy)
+
+A deployment tool rejects configuration files with broken nesting before
+it parses them. A file's text contains brackets (), [] and {} mixed with
+other characters.
+
+Return True if the brackets are balanced: every opening bracket is
+closed by the same type, and brackets close in the correct order. Ignore
+all non-bracket characters.
+
+def is_balanced(text: str) -> bool:
+
+Constraints
+
+-   0 <= text.length <= 10^4
+
+-   text contains printable ASCII characters.
+
+Test case 1
+
+Input: text = "server{ports[80(443)]}"
+Output: True
+
+Explanation: ( closes first, then [, then {. Each bracket is closed by
+its own type, innermost first.
+
+Test case 2
+
+Input: text = "map{list[)]}"
+Output: False
+
+Explanation: The ) arrives while [ is still the most recent open
+bracket. A ) cannot close a [, so the nesting is broken.
+
+Hints
+
+1.  Counting each bracket type separately fails on Test case 2's kind of
+      input. Order matters.
+
+2.  The most recently opened bracket must be the first one closed. Which
+      data structure is last in, first out?
+
+3.  Push opening brackets on a stack. On a closing bracket, the stack
+      must be non-empty and its top must match. At the end, the stack
+      must be empty.
+
+Solution:
+
+def is_balanced(text):
+pairs = {')': '(', ']': '[', '}': '{'}
+stack = []
+for ch in text:
+if ch in '([{':
+stack.append(ch)
+elif ch in pairs:
+if not stack or stack.pop() != pairs[ch]:
+return False
+return not stack
+
+ A8. Minimum Meeting Rooms (Moderate)
+
+An office booking system receives the day's meetings as [start, end)
+intervals in minutes. A meeting occupies its room from start up to, but
+not including, end, so a room freed at 10 can host a meeting starting at
+10.
+
+Return the minimum number of rooms needed so that no two meetings share
+a room at the same time.
+
+def min_meeting_rooms(meetings: list[list[int]]) -> int:
+
+Constraints
+
+-   1 <= meetings.length <= 10^4
+
+-   0 <= start < end <= 10^6
+
+Test case 1
+
+Input: meetings = [[0, 30], [5, 10], [15, 20]]
+Output: 2
+
+Explanation: [0, 30] runs the whole time. [5, 10] and [15, 20] each
+overlap it but not each other, so they can share a second room.
+
+Test case 2
+
+Input: meetings = [[9, 10], [10, 11], [11, 12]]
+Output: 1
+
+Explanation: Each meeting starts exactly when the previous one ends, so
+one room is reused all day.
+
+Hints
+
+1.  The answer is the largest number of meetings running at the same
+      moment.
+
+2.  Sort meetings by start time and keep a min-heap of end times for
+      rooms in use.
+
+3.  Before placing a meeting, pop every room whose end time is <= its
+      start. The largest heap size reached is the answer. A
+      sorted-starts and sorted-ends two-pointer sweep also works.
+
+Solution:
+
+import heapq
+def min_meeting_rooms(meetings):
+meetings.sort(key=lambda m: m[0])
+ends = []
+rooms = 0
+for start, end in meetings:
+while ends and ends[0] <= start:
+heapq.heappop(ends)
+heapq.heappush(ends, end)
+rooms = max(rooms, len(ends))
+return rooms
+
+ A9. Find the First Bad Build (Easy)
+
+A CI system has builds numbered 1 to n. One build introduced a bug, and
+every build after it is also bad. You can call is_bad(version), which
+returns whether a build is bad, but each call runs a slow test suite.
+
+Return the number of the first bad build while making as few calls to
+is_bad as possible.
+
+def first_bad_build(n: int, is_bad) -> int:
+
+Constraints
+
+-   1 <= first bad build <= n <= 2^31 - 1
+
+-   Your solution should make O(log n) calls.
+
+Test case 1
+
+Input: n = 5, first bad build = 4
+Output: 4
+
+Explanation: is_bad(3) is False, so the first bad build is after 3.
+is_bad(4) is True, so it is 4 or earlier. Build 4 is the first bad one.
+
+Test case 2
+
+Input: n = 1, first bad build = 1
+Output: 1
+
+Explanation: There is only one build, and it is bad.
+
+Hints
+
+1.  The results look like F, F, F, T, T: a sorted sequence of booleans.
+      You need the first True.
+
+2.  Binary search on the build number. If mid is bad, the answer is mid
+      or earlier; otherwise it is after mid.
+
+3.  Use while low < high with high = mid on bad and low = mid + 1 on
+      good, and compute mid as low + (high - low) // 2.
+
+Solution:
+
+def first_bad_build(n, is_bad):
+low, high = 1, n
+while low < high:
+mid = low + (high - low) // 2
+if is_bad(mid):
+high = mid
+else:
+low = mid + 1
+return low
+
+ A10. Course Prerequisites (Moderate)
+
+A learning platform has num_courses courses labelled 0 to
+num_courses - 1. Each pair [a, b] in prereqs means course b must be
+completed before course a.
+
+Return True if a student can finish every course in some order,
+otherwise False.
+
+def can_finish(num_courses: int, prereqs: list[list[int]]) -> bool:
+
+Constraints
+
+-   1 <= num_courses <= 2000
+
+-   0 <= prereqs.length <= 5000
+
+-   0 <= a, b < num_courses, and a != b
+
+-   All pairs are distinct.
+
+Test case 1
+
+Input: num_courses = 4, prereqs = [[1, 0], [2, 0], [3, 1], [3, 2]]
+Output: True
+
+Explanation: Take 0 first, then 1 and 2, then 3, which needs both 1 and
+2. Every prerequisite is met.
+
+Test case 2
+
+Input: num_courses = 3, prereqs = [[0, 1], [1, 2], [2, 0]]
+Output: False
+
+Explanation: 0 needs 1, 1 needs 2, and 2 needs 0. The three courses wait
+on each other in a cycle, so none can be started.
+
+Hints
+
+1.  Model courses as nodes in a directed graph with an edge b -> a for
+      each pair. The question becomes: does the graph have a cycle?
+
+2.  Kahn's algorithm: count each node's incoming edges and repeatedly
+      take courses whose count is 0.
+
+3.  If the number of courses taken equals num_courses, return True. DFS
+      with three colours (unvisited, in progress, done) also detects the
+      cycle.
+
+Solution:
+
+from collections import deque
+def can_finish(num_courses, prereqs):
+graph = [[] for _ in range(num_courses)]
+indegree = [0] * num_courses
+for a, b in prereqs:
+graph[b].append(a)
+indegree[a] += 1
+queue = deque(i for i in range(num_courses) if indegree[i] == 0)
+taken = 0
+while queue:
+course = queue.popleft()
+taken += 1
+for nxt in graph[course]:
+indegree[nxt] -= 1
+if indegree[nxt] == 0:
+queue.append(nxt)
+return taken == num_courses
+
+ A11. Fewest Coins for Change (Moderate)
+
+A vending machine must return change of exactly amount using the coin
+denominations it stocks in coins. It has an unlimited supply of each
+denomination and wants to dispense as few coins as possible.
+
+Return the minimum number of coins that add up to amount, or -1 if the
+amount cannot be made.
+
+def min_coins(coins: list[int], amount: int) -> int:
+
+Constraints
+
+-   1 <= coins.length <= 12
+
+-   1 <= coins[i] <= 2^31 - 1
+
+-   0 <= amount <= 10^4
+
+Test case 1
+
+Input: coins = [1, 3, 4], amount = 6
+Output: 2
+
+Explanation: 3 + 3 = 6 uses two coins. Taking the largest coin first
+gives 4 + 1 + 1, which uses three, so a greedy choice is not optimal
+here.
+
+Test case 2
+
+Input: coins = [2], amount = 3
+Output: -1
+
+Explanation: Any number of 2s adds to an even total, so 3 can never be
+made.
+
+Hints
+
+1.  Test case 1 shows that always taking the biggest coin can fail. You
+      need to consider every coin.
+
+2.  Let dp[x] be the fewest coins that make x. Then dp[x] = 1 +
+      min(dp[x - c]) over coins c <= x, with dp[0] = 0.
+
+3.  Fill dp from 1 to amount, using infinity for unreachable amounts.
+      Time O(amount x coins), space O(amount).
+
+Solution:
+
+def min_coins(coins, amount):
+INF = float('inf')
+dp = [0] + [INF] * amount
+for x in range(1, amount + 1):
+for c in coins:
+if c <= x and dp[x - c] + 1 < dp[x]:
+dp[x] = dp[x - c] + 1
+return dp[amount] if dp[amount] != INF else -1
+
+ A12. Longest Uptime With Forgiven Outages (Moderate)
+
+A monitoring service records a server's status every minute: 1 means up
+and 0 means an outage. Under its SLA, up to k outage minutes in a
+stretch can be forgiven.
+
+Return the length of the longest contiguous stretch of minutes that
+contains at most k outages.
+
+def longest_forgiven_uptime(status: list[int], k: int) -> int:
+
+Constraints
+
+-   1 <= status.length <= 10^5
+
+-   status[i] is 0 or 1
+
+-   0 <= k <= status.length
+
+Test case 1
+
+Input: status = [1, 1, 1, 0, 0, 0, 1, 1, 1, 1, 0], k = 2
+Output: 6
+
+Explanation: Indices 4 to 9 are [0, 0, 1, 1, 1, 1], which has exactly 2
+outages and length 6. Any longer stretch includes a third outage.
+
+Test case 2
+
+Input: status = [0, 0, 1, 1, 1, 0, 0], k = 1
+Output: 4
+
+Explanation: The three up minutes plus one neighbouring outage, such as
+indices 1 to 4, give length 4. Adding another minute on either side
+brings in a second outage.
+
+Hints
+
+1.  Rephrase: find the longest window with at most k zeros.
+
+2.  Grow a sliding window to the right and count the zeros inside it.
+
+3.  Whenever the zero count exceeds k, move the left edge right until it
+      is back to k. Track the largest window size. O(n) time.
+
+Solution:
+
+def longest_forgiven_uptime(status, k):
+left = zeros = best = 0
+for right, s in enumerate(status):
+if s == 0:
+zeros += 1
+while zeros > k:
+if status[left] == 0:
+zeros -= 1
+left += 1
+best = max(best, right - left + 1)
+return best
+
+ A13. EV Charging Loop (Moderate)
+
+A delivery van drives a circular route past n charging stations. At
+station i it gains charge[i] units of battery, and driving from station
+i to station i + 1 (wrapping from the last to the first) uses cost[i]
+units. The van starts with an empty battery at a station of your choice.
+
+Return the index of the starting station from which the van can complete
+one full loop, or -1 if no station works. If a solution exists, it is
+unique.
+
+def start_station(charge: list[int], cost: list[int]) -> int:
+
+Constraints
+
+-   1 <= n == charge.length == cost.length <= 10^5
+
+-   0 <= charge[i], cost[i] <= 10^4
+
+Test case 1
+
+Input: charge = [1, 2, 3, 4, 5], cost = [3, 4, 5, 1, 2]
+Output: 3
+
+Explanation: Starting at station 3, the battery after each leg is 4 - 1
+= 3, 3 + 5 - 2 = 6, 6 + 1 - 3 = 4, 4 + 2 - 4 = 2, then 2 + 3 - 5 = 0. It
+never goes negative, so the van gets back to station 3.
+
+Test case 2
+
+Input: charge = [2, 3, 4], cost = [3, 4, 3]
+Output: -1
+
+Explanation: Total charge is 9 but total cost is 10. No starting point
+can make up the shortfall.
+
+Hints
+
+1.  If sum(charge) < sum(cost), the answer is -1. Otherwise a valid
+      start always exists.
+
+2.  Simulating from every station is O(n^2). Notice what happens when
+      the battery drops below zero.
+
+3.  If starting at s runs out before reaching station j, no station
+      between s and j can work either. Reset the start to j + 1 with an
+      empty battery and keep going. One pass, O(n).
+
+Solution:
+
+def start_station(charge, cost):
+if sum(charge) < sum(cost):
+return -1
+start = tank = 0
+for i in range(len(charge)):
+tank += charge[i] - cost[i]
+if tank < 0:
+start = i + 1
+tank = 0
+return start
+
+ A14. Spread of a Software Update (Moderate)
+
+A data centre is laid out as an m x n grid. Each cell is 0 (empty slot),
+1 (a server still on the old version) or 2 (a server already updated).
+Every minute, each updated server pushes the update to old servers
+directly above, below, left and right of it.
+
+Return the minimum number of minutes until no old server remains, or -1
+if some server can never be reached.
+
+def minutes_to_update(grid: list[list[int]]) -> int:
+
+Constraints
+
+-   1 <= m, n <= 10
+
+-   grid[i][j] is 0, 1 or 2
+
+Test case 1
+
+Input: grid = [[2, 1, 1],
+[1, 1, 0],
+[0, 1, 1]]
+Output: 4
+
+Explanation: Minute 1 updates (0,1) and (1,0). Minute 2 updates (0,2)
+and (1,1). Minute 3 updates (2,1). Minute 4 updates (2,2), the last old
+server.
+
+Test case 2
+
+Input: grid = [[2, 1, 1],
+[0, 1, 1],
+[1, 0, 1]]
+Output: -1
+
+Explanation: The server at (2,0) has empty slots above and to its right,
+so the update can never reach it.
+
+Hints
+
+1.  This is a shortest-time spread from several starting points at once.
+      Which traversal explores level by level?
+
+2.  Put every updated server in a queue at time 0 and count the old
+      servers.
+
+3.  Run BFS one level per minute, updating neighbours and decrementing
+      the count. If the count is still above 0 at the end, return -1.
+
+Solution:
+
+from collections import deque
+def minutes_to_update(grid):
+rows, cols = len(grid), len(grid[0])
+queue = deque()
+old = 0
+for r in range(rows):
+for c in range(cols):
+if grid[r][c] == 2:
+queue.append((r, c))
+elif grid[r][c] == 1:
+old += 1
+minutes = 0
+while queue and old > 0:
+for _ in range(len(queue)):
+r, c = queue.popleft()
+for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+nr, nc = r + dr, c + dc
+if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 1:
+grid[nr][nc] = 2
+old -= 1
+queue.append((nr, nc))
+minutes += 1
+return minutes if old == 0 else -1
+
+ A15. Browser Page Cache (Moderate)
+
+A browser keeps recently viewed pages in a cache that holds at most
+capacity pages. When the cache is full and a new page is added, it
+evicts the least recently used page. Reading or updating a page counts
+as using it.
+
+Implement the class:
+
+-   LRUCache(capacity) creates an empty cache.
+
+-   get(key) returns the page's value if present, otherwise -1.
+
+-   put(key, value) adds or updates the page. If this pushes the size
+      past capacity, evict the least recently used page.
+
+Both operations must run in O(1) average time.
+
+class LRUCache:
+def __init__(self, capacity: int): ...
+def get(self, key: int) -> int: ...
+def put(self, key: int, value: int) -> None: ...
+
+Constraints
+
+-   1 <= capacity <= 3000
+
+-   0 <= key <= 10^4, 0 <= value <= 10^5
+
+-   At most 2 * 10^5 calls to get and put.
+
+Test case 1
+
+Input: capacity = 2
+put(1, 1), put(2, 2), get(1), put(3, 3), get(2), put(4, 4), get(1),
+get(3), get(4)
+Output: get(1) -> 1, get(2) -> -1, get(1) -> -1, get(3) -> 3, get(4) ->
+4
+
+Explanation: get(1) makes 1 recent, so put(3, 3) evicts 2. Then put(4,
+4) evicts 1, the least recent of 1 and 3. Pages 3 and 4 remain.
+
+Test case 2
+
+Input: capacity = 1
+put(5, 50), get(5), put(6, 60), get(5), get(6)
+Output: get(5) -> 50, get(5) -> -1, get(6) -> 60
+
+Explanation: With room for one page, adding 6 evicts 5 immediately.
+
+Hints
+
+1.  A dictionary gives O(1) lookup, but you also need O(1) "move to most
+      recent" and "remove least recent".
+
+2.  Combine a hash map with a doubly linked list ordered by recency; the
+      map stores pointers to list nodes.
+
+3.  In Python, collections.OrderedDict with move_to_end and
+      popitem(last=False) does both. Be ready to explain the linked-list
+      version.
+
+Solution:
+
+from collections import OrderedDict
+class LRUCache:
+def __init__(self, capacity):
+self.capacity = capacity
+self.cache = OrderedDict()
+def get(self, key):
+if key not in self.cache:
+return -1
+self.cache.move_to_end(key)
+return self.cache[key]
+def put(self, key, value):
+if key in self.cache:
+self.cache.move_to_end(key)
+self.cache[key] = value
+if len(self.cache) > self.capacity:
+self.cache.popitem(last=False)
+
+Part B: Plain DSA Problems
+
+B1. Group Anagrams (Moderate)
+
+Given an array of strings words, group the strings that are anagrams of
+each other and return the groups. Two strings are anagrams if one can be
+formed by rearranging all the letters of the other.
+
+You may return the groups in any order, and the strings inside each
+group in any order.
+
+def group_anagrams(words: list[str]) -> list[list[str]]:
+
+Constraints
+
+-   1 <= words.length <= 10^4
+
+-   0 <= words[i].length <= 100
+
+-   words[i] contains only lowercase English letters.
+
+Test case 1
+
+Input: words = ["eat", "tea", "tan", "ate", "nat", "bat"]
+Output: [["eat", "tea", "ate"], ["tan", "nat"], ["bat"]]
+
+Explanation: "eat", "tea" and "ate" all use the letters a, e, t. "tan"
+and "nat" use a, n, t. "bat" has no anagram partner, so it forms a group
+alone.
+
+Test case 2
+
+Input: words = ["", "b", ""]
+Output: [["", ""], ["b"]]
+
+Explanation: The two empty strings are anagrams of each other (both have
+no letters). "b" stands alone.
+
+Hints
+
+1.  Comparing every pair of words is O(n^2 * k). Instead, find a key
+      that is identical for all anagrams.
+
+2.  Sorting a word's letters gives such a key: "eat", "tea" and "ate"
+      all become "aet".
+
+3.  Map each key to a list in a dictionary. For an O(n * k) version, use
+      a tuple of 26 letter counts as the key instead of the sorted
+      string.
+
+Solution:
+
+from collections import defaultdict
+def group_anagrams(words):
+groups = defaultdict(list)
+for w in words:
+key = [0] * 26
+for ch in w:
+key[ord(ch) - ord('a')] += 1
+groups[tuple(key)].append(w)
+return list(groups.values())
+
+ B2. Container With Most Water (Moderate)
+
+You are given an integer array height of length n. There are n vertical
+lines; line i stands at x = i and has height height[i].
+
+Choose two lines that, together with the x-axis, form a container. The
+water it holds is (distance between the lines) x (height of the shorter
+line). Return the maximum amount of water a container can store. The
+container cannot be tilted.
+
+def max_area(height: list[int]) -> int:
+
+Constraints
+
+-   2 <= height.length <= 10^5
+
+-   0 <= height[i] <= 10^4
+
+-   Target O(n) time.
+
+Test case 1
+
+Input: height = [1, 8, 6, 2, 5, 4, 8, 3, 7]
+Output: 49
+
+Explanation: Lines at index 1 (height 8) and index 8 (height 7) are 7
+apart. The shorter line is 7, so the area is 7 x 7 = 49. No other pair
+holds more.
+
+Test case 2
+
+Input: height = [4, 3, 2, 1, 4]
+Output: 16
+
+Explanation: The two lines of height 4 at index 0 and index 4 are 4
+apart, giving 4 x 4 = 16.
+
+Hints
+
+1.  Trying every pair is O(n^2). Start instead with the widest
+      container: one pointer at each end.
+
+2.  The area is limited by the shorter line. Moving the taller line
+      inward can only reduce the width without raising that limit.
+
+3.  So always move the pointer at the shorter line inward, record the
+      area at each step, and stop when the pointers meet.
+
+Solution: 
+
+def max_area(height):
+left, right = 0, len(height) - 1
+best = 0
+while left < right:
+best = max(best, (right - left) * min(height[left], height[right]))
+if height[left] < height[right]:
+left += 1
+else:
+right -= 1
+return best
+
+ B3. Search in a Rotated Sorted Array (Moderate)
+
+An array of distinct integers was sorted in ascending order, then
+possibly rotated at an unknown pivot. For example, [0, 1, 2, 4, 5, 6, 7]
+might become [4, 5, 6, 7, 0, 1, 2].
+
+Given the rotated array nums and an integer target, return the index of
+target, or -1 if it is not present. You must run in O(log n) time.
+
+def search_rotated(nums: list[int], target: int) -> int:
+
+Constraints
+
+-   1 <= nums.length <= 5000
+
+-   -10^4 <= nums[i], target <= 10^4
+
+-   All values in nums are distinct.
+
+-   nums is an ascending array, possibly rotated.
+
+Test case 1
+
+Input: nums = [4, 5, 6, 7, 0, 1, 2], target = 0
+Output: 4
+
+Explanation: 0 sits at index 4, right after the rotation point where 7
+drops to 0.
+
+Test case 2
+
+Input: nums = [4, 5, 6, 7, 0, 1, 2], target = 3
+Output: -1
+
+Explanation: 3 is not in the array, so the search ends without a match.
+
+Hints
+
+1.  A linear scan is O(n). The O(log n) requirement points to binary
+      search.
+
+2.  When you split at mid, at least one half, [low, mid] or [mid, high],
+      is still fully sorted. Compare nums[low] with nums[mid] to tell
+      which.
+
+3.  If target falls within the range of the sorted half, search there;
+      otherwise search the other half.
+
+Solution:
+
+def search_rotated(nums, target):
+low, high = 0, len(nums) - 1
+while low <= high:
+mid = (low + high) // 2
+if nums[mid] == target:
+return mid
+if nums[low] <= nums[mid]:
+if nums[low] <= target < nums[mid]:
+high = mid - 1
+else:
+low = mid + 1
+else:
+if nums[mid] < target <= nums[high]:
+low = mid + 1
+else:
+high = mid - 1
+return -1
+
+ B4. Number of Islands (Moderate)
+
+You are given an m x n grid of characters where "1" is land and "0" is
+water. An island is a group of land cells connected horizontally or
+vertically (not diagonally). Assume the grid is surrounded by water.
+
+Return the number of islands.
+
+def num_islands(grid: list[list[str]]) -> int:
+
+Constraints
+
+-   1 <= m, n <= 300
+
+-   grid[i][j] is "0" or "1".
+
+Test case 1
+
+Input: grid = [
+["1","1","0","0","0"],
+["1","1","0","0","0"],
+["0","0","1","0","0"],
+["0","0","0","1","1"]
+]
+Output: 3
+
+Explanation: The 2 x 2 block in the top-left is one island. The single
+cell at row 2, column 2 is a second. The two cells at the bottom-right
+form a third.
+
+Test case 2
+
+Input: grid = [
+["1","0","1"],
+["0","1","0"],
+["1","0","1"]
+]
+Output: 5
+
+Explanation: Every land cell touches the others only diagonally, and
+diagonal cells are not connected. So each of the five land cells is its
+own island.
+
+Hints
+
+1.  Scan every cell. Each time you find land that you have not visited
+      yet, you have found a new island.
+
+2.  From that cell, run DFS or BFS to visit every land cell connected to
+      it, so it is not counted again.
+
+3.  Mark visited land by setting it to "0" in place, or keep a visited
+      set. Each cell is visited once: O(m x n).
+
+Solution:
+
+def num_islands(grid):
+rows, cols = len(grid), len(grid[0])
+count = 0
+for r in range(rows):
+for c in range(cols):
+if grid[r][c] == "1":
+count += 1
+grid[r][c] = "0"
+stack = [(r, c)]
+while stack:
+cr, cc = stack.pop()
+for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+nr, nc = cr + dr, cc + dc
+if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == "1":
+grid[nr][nc] = "0"
+stack.append((nr, nc))
+return count
+
+ B5. Longest Consecutive Sequence (Moderate)
+
+Given an unsorted array of integers nums, return the length of the
+longest run of consecutive integers (such as 4, 5, 6, 7) that can be
+formed from its elements. The values can appear anywhere in the array,
+and duplicates count once.
+
+You must run in O(n) time.
+
+def longest_consecutive(nums: list[int]) -> int:
+
+Constraints
+
+-   0 <= nums.length <= 10^5
+
+-   -10^9 <= nums[i] <= 10^9
+
+Test case 1
+
+Input: nums = [100, 4, 200, 1, 3, 2]
+Output: 4
+
+Explanation: The values 1, 2, 3 and 4 are all present, a run of length
+4. 100 and 200 have no neighbours, so they form runs of length 1.
+
+Test case 2
+
+Input: nums = [0, 3, 7, 2, 5, 8, 4, 6, 0, 1]
+Output: 9
+
+Explanation: Every value from 0 to 8 is present, a run of length 9. The
+duplicate 0 is counted only once.
+
+Hints
+
+1.  Sorting then scanning works but costs O(n log n). How can you check
+      "is x present?" in O(1)?
+
+2.  Put every value into a set.
+
+3.  Only start counting from x when x - 1 is not in the set, so x begins
+      a run. Then step x + 1, x + 2, ... while present. Each value is
+      visited at most twice, giving O(n).
+
+Solution:
+
+def longest_consecutive(nums):
+values = set(nums)
+best = 0
+for x in values:
+if x - 1 not in values:
+length = 1
+while x + length in values:
+length += 1
+best = max(best, length)
+return best
+
+ B6. Maximum Subarray Sum (Moderate)
+
+Given an integer array nums, find the contiguous, non-empty subarray
+with the largest sum and return that sum.
+
+def max_subarray(nums: list[int]) -> int:
+
+Constraints
+
+-   1 <= nums.length <= 10^5
+
+-   -10^4 <= nums[i] <= 10^4
+
+-   Target O(n) time.
+
+Test case 1
+
+Input: nums = [-2, 1, -3, 4, -1, 2, 1, -5, 4]
+Output: 6
+
+Explanation: The subarray [4, -1, 2, 1] sums to 6. Extending it either
+way adds a negative total, so no larger sum exists.
+
+Test case 2
+
+Input: nums = [-3, -1, -2]
+Output: -1
+
+Explanation: Every value is negative, and the subarray must be
+non-empty. The best choice is the single largest element, -1.
+
+Hints
+
+1.  For each index, ask: what is the best subarray sum that ends exactly
+      here?
+
+2.  The best sum ending at i is either nums[i] alone or nums[i] plus the
+      best sum ending at i - 1.
+
+3.  That is Kadane's algorithm: keep a running "current" and a global
+      "best". Do not initialise best to 0, or Test case 2 fails.
+
+Solution:
+
+def max_subarray(nums):
+current = best = nums[0]
+for x in nums[1:]:
+current = max(x, current + x)
+best = max(best, current)
+return best
+
+ B7. Three Sum to Zero (Moderate)
+
+Given an integer array nums, return all unique triplets [nums[i],
+nums[j], nums[k]] with i, j and k distinct such that their sum is 0.
+
+The answer must not contain duplicate triplets. Triplets and the order
+of values inside them may be returned in any order.
+
+def three_sum(nums: list[int]) -> list[list[int]]:
+
+Constraints
+
+-   3 <= nums.length <= 3000
+
+-   -10^5 <= nums[i] <= 10^5
+
+Test case 1
+
+Input: nums = [-1, 0, 1, 2, -1, -4]
+Output: [[-1, -1, 2], [-1, 0, 1]]
+
+Explanation: -1 + -1 + 2 = 0 and -1 + 0 + 1 = 0. The second -1 could
+also form [-1, 0, 1], but that duplicate is listed once.
+
+Test case 2
+
+Input: nums = [0, 0, 0, 0]
+Output: [[0, 0, 0]]
+
+Explanation: Many index choices give 0 + 0 + 0, but they all form the
+same triplet, so it appears once.
+
+Hints
+
+1.  The triple loop is O(n^3). Sort the array first.
+
+2.  Fix the first value nums[i], then find pairs summing to -nums[i] in
+      the rest with two pointers moving inward. That gives O(n^2).
+
+3.  Skip duplicates: move past equal values of nums[i], and after
+      finding a triplet, move both pointers past equal values.
+
+Solution: def three_sum(nums): nums.sort() result = [] n = len(nums) for i in range(n - 2): if i > 0 and nums[i] == nums[i - 1]: continue left, right = i + 1, n - 1 while left < right: total = nums[i] + nums[left] + nums[right] if total < 0: left += 1 elif total > 0: right -= 1 else: result.append([nums[i], nums[left], nums[right]]) while left < right and nums[left] == nums[left + 1]: left += 1 while left < right and nums[right] == nums[right - 1]: right -= 1 left += 1 right -= 1 return result
+
+ B8. Remove the Nth Node From the End (Moderate)
+
+Given the head of a singly linked list, remove the n-th node from the
+end of the list and return the head of the modified list.
+
+class ListNode:
+def __init__(self, val=0, next=None):
+self.val = val
+self.next = next
+def remove_nth_from_end(head: ListNode, n: int) -> ListNode | None:
+
+In the test cases, a list is written as its values from head to tail.
+
+Constraints
+
+-   1 <= number of nodes <= 30
+
+-   0 <= node.val <= 100
+
+-   1 <= n <= number of nodes
+
+-   Follow-up: can you do it in one pass?
+
+Test case 1
+
+Input: head = [1, 2, 3, 4, 5], n = 2
+Output: [1, 2, 3, 5]
+
+Explanation: Counting from the end, 5 is first and 4 is second. Node 4
+is removed, so 3 now points to 5.
+
+Test case 2
+
+Input: head = [1], n = 1
+Output: []
+
+Explanation: The only node is removed, so the new head is None.
+
+Hints
+
+1.  Two passes work: count the length L, then remove the node at
+      position L - n from the front.
+
+2.  For one pass, move a fast pointer n steps ahead, then move fast and
+      slow together until fast reaches the last node. slow then sits
+      just before the node to remove.
+
+3.  Start both pointers at a dummy node placed before head, so removing
+      the head itself needs no special case.
+
+Solution:
+
+class ListNode:
+def __init__(self, val=0, next=None):
+self.val = val
+self.next = next
+def remove_nth_from_end(head, n):
+dummy = ListNode(0, head)
+fast = slow = dummy
+for _ in range(n):
+fast = fast.next
+while fast.next:
+fast = fast.next
+slow = slow.next
+slow.next = slow.next.next
+return dummy.next
+
+ B9. Kth Largest Element (Moderate)
+
+Given an integer array nums and an integer k, return the k-th largest
+element in the array. This is the k-th largest in sorted order, so
+duplicates count separately; it is not the k-th distinct value.
+
+Try to solve it without sorting the whole array.
+
+def kth_largest(nums: list[int], k: int) -> int:
+
+Constraints
+
+-   1 <= k <= nums.length <= 10^5
+
+-   -10^4 <= nums[i] <= 10^4
+
+Test case 1
+
+Input: nums = [3, 2, 1, 5, 6, 4], k = 2
+Output: 5
+
+Explanation: In descending order the array is 6, 5, 4, 3, 2, 1. The
+second value is 5.
+
+Test case 2
+
+Input: nums = [3, 2, 3, 1, 2, 4, 5, 5, 6], k = 4
+Output: 4
+
+Explanation: In descending order the array is 6, 5, 5, 4, ... Both 5s
+count, so the fourth value is 4.
+
+Hints
+
+1.  Sorting gives O(n log n). Can you avoid ordering everything?
+
+2.  Keep a min-heap of size k. Push each value and pop when the heap
+      exceeds k. The heap's top is the answer, in O(n log k).
+
+3.  For average O(n), use quickselect: partition around a pivot and
+      recurse only into the side that holds the k-th largest.
+
+Solution:
+
+import heapq
+def kth_largest(nums, k):
+heap = []
+for x in nums:
+heapq.heappush(heap, x)
+if len(heap) > k:
+heapq.heappop(heap)
+return heap[0]
+
+ B10. Spiral Matrix (Moderate)
+
+Given an m x n matrix, return all of its elements in spiral order: start
+at the top-left corner, move right along the top row, then down, then
+left, then up, and keep spiralling inward.
+
+def spiral_order(matrix: list[list[int]]) -> list[int]:
+
+Constraints
+
+-   1 <= m, n <= 10
+
+-   -100 <= matrix[i][j] <= 100
+
+Test case 1
+
+Input: matrix = [[1, 2, 3],
+[4, 5, 6],
+[7, 8, 9]]
+Output: [1, 2, 3, 6, 9, 8, 7, 4, 5]
+
+Explanation: Right along the top (1, 2, 3), down the right side (6, 9),
+left along the bottom (8, 7), up the left side (4), then the centre (5).
+
+Test case 2
+
+Input: matrix = [[1, 2, 3, 4],
+[5, 6, 7, 8],
+[9, 10, 11, 12]]
+Output: [1, 2, 3, 4, 8, 12, 11, 10, 9, 5, 6, 7]
+
+Explanation: The outer ring gives 1, 2, 3, 4, 8, 12, 11, 10, 9, 5. The
+remaining inner row, 6 and 7, is read left to right.
+
+Hints
+
+1.  Keep four boundaries: top, bottom, left and right.
+
+2.  Traverse the top row, then the right column, then the bottom row,
+      then the left column, shrinking the matching boundary after each.
+
+3.  Check that top <= bottom and left <= right before the bottom-row and
+      left-column passes, or a single remaining row or column (Test
+      case 2) is read twice.
+
+Solution:
+
+def spiral_order(matrix):
+result = []
+top, bottom = 0, len(matrix) - 1
+left, right = 0, len(matrix[0]) - 1
+while top <= bottom and left <= right:
+for c in range(left, right + 1):
+result.append(matrix[top][c])
+top += 1
+for r in range(top, bottom + 1):
+result.append(matrix[r][right])
+right -= 1
+if top <= bottom:
+for c in range(right, left - 1, -1):
+result.append(matrix[bottom][c])
+bottom -= 1
+if left <= right:
+for r in range(bottom, top - 1, -1):
+result.append(matrix[r][left])
+left += 1
+return result
+
+ B11. Binary Tree Level Order Traversal (Moderate)
+
+Given the root of a binary tree, return the values of its nodes level by
+level, from top to bottom, and left to right within each level.
+
+class TreeNode:
+def __init__(self, val=0, left=None, right=None):
+self.val = val
+self.left = left
+self.right = right
+def level_order(root: TreeNode | None) -> list[list[int]]:
+
+In the test cases, a tree is written in level order, with null marking a
+missing child.
+
+Constraints
+
+-   0 <= number of nodes <= 2000
+
+-   -1000 <= node.val <= 1000
+
+Test case 1
+
+Input: root = [3, 9, 20, null, null, 15, 7]
+Output: [[3], [9, 20], [15, 7]]
+
+Explanation: 3 is the root. Its children are 9 and 20. 9 has no
+children, and 20 has children 15 and 7, which form the third level.
+
+Test case 2
+
+Input: root = [1, 2, 3, 4, null, null, 5]
+Output: [[1], [2, 3], [4, 5]]
+
+Explanation: 4 is the left child of 2, and 5 is the right child of 3.
+They have different parents but sit on the same level, so they are
+grouped together.
+
+Hints
+
+1.  Level by level means breadth-first search. Use a queue.
+
+2.  At the start of each level, record the queue's current length. That
+      many nodes belong to this level.
+
+3.  Pop exactly that many nodes, collect their values, and push their
+      non-null children. Handle an empty tree by returning [].
+
+Solution:
+
+from collections import deque
+class TreeNode:
+def __init__(self, val=0, left=None, right=None):
+self.val = val
+self.left = left
+self.right = right
+def level_order(root):
+if not root:
+return []
+result = []
+queue = deque([root])
+while queue:
+level = []
+for _ in range(len(queue)):
+node = queue.popleft()
+level.append(node.val)
+if node.left:
+queue.append(node.left)
+if node.right:
+queue.append(node.right)
+result.append(level)
+return result
+
+ B12. Validate a Binary Search Tree (Moderate)
+
+Given the root of a binary tree, return True if it is a valid binary
+search tree, otherwise False. In a valid BST:
+
+-   every value in a node's left subtree is strictly less than the
+      node's value;
+
+-   every value in its right subtree is strictly greater;
+
+-   both subtrees are also valid BSTs.
+
+def is_valid_bst(root: TreeNode | None) -> bool:
+
+Use the TreeNode class from B11. Trees are written in level order with
+null for missing children.
+
+Constraints
+
+-   1 <= number of nodes <= 10^4
+
+-   -2^31 <= node.val <= 2^31 - 1
+
+Test case 1
+
+Input: root = [2, 1, 3]
+Output: True
+
+Explanation: 1 is less than 2 and sits on the left; 3 is greater than 2
+and sits on the right.
+
+Test case 2
+
+Input: root = [5, 1, 4, null, null, 3, 6]
+Output: False
+
+Explanation: 4 is the root's right child but is less than 5. Every node
+in the right subtree must be greater than 5, so the tree is invalid.
+
+Hints
+
+1.  Checking only each node against its direct children is not enough: a
+      node deep in the right subtree must still beat the root.
+
+2.  Pass down an allowed range (low, high). Going left narrows high to
+      the node's value; going right narrows low.
+
+3.  Alternatively, an in-order traversal of a valid BST produces a
+      strictly increasing sequence. Compare each value with the previous
+      one.
+
+Solution:
+
+def is_valid_bst(root):
+def check(node, low, high):
+if not node:
+return True
+if not (low < node.val < high):
+return False
+return check(node.left, low, node.val) and check(node.right, node.val,
+high)
+return check(root, float('-inf'), float('inf'))
+
+ B13. House Robber (Moderate)
+
+You are given an array nums where nums[i] is the amount of money at the
+i-th house on a street. You may take money from any set of houses, but
+you cannot take from two adjacent houses.
+
+Return the maximum amount of money you can collect.
+
+def rob(nums: list[int]) -> int:
+
+Constraints
+
+-   1 <= nums.length <= 100
+
+-   0 <= nums[i] <= 400
+
+Test case 1
+
+Input: nums = [2, 7, 9, 3, 1]
+Output: 12
+
+Explanation: Take houses 0, 2 and 4 for 2 + 9 + 1 = 12. Taking house 1
+(7) instead blocks the 9, and 7 + 3 = 10 is less.
+
+Test case 2
+
+Input: nums = [2, 1, 1, 2]
+Output: 4
+
+Explanation: Take houses 0 and 3 for 2 + 2 = 4. Simply taking every
+other house (indices 0 and 2, or 1 and 3) gives only 3.
+
+Hints
+
+1.  Test case 2 shows that picking all even or all odd indices is not
+      enough.
+
+2.  At house i you either skip it, keeping best(i - 1), or take it,
+      getting nums[i] + best(i - 2).
+
+3.  best(i) = max(best(i - 1), nums[i] + best(i - 2)). You only need the
+      last two values, so space is O(1).
+
+Solution:
+
+def rob(nums):
+prev2, prev1 = 0, 0
+for x in nums:
+prev2, prev1 = prev1, max(prev1, prev2 + x)
+return prev1
+
+ B14. All Subsets (Moderate)
+
+Given an integer array nums of distinct elements, return all possible
+subsets (the power set), including the empty set.
+
+The result must not contain duplicate subsets. You may return the
+subsets in any order.
+
+def subsets(nums: list[int]) -> list[list[int]]:
+
+Constraints
+
+-   1 <= nums.length <= 10
+
+-   -10 <= nums[i] <= 10
+
+-   All values in nums are distinct.
+
+Test case 1
+
+Input: nums = [1, 2, 3]
+Output: [[], [1], [2], [1, 2], [3], [1, 3], [2, 3], [1, 2, 3]]
+
+Explanation: Each of the 3 elements is either in or out of a subset,
+giving 2^3 = 8 subsets, from the empty set up to the full array.
+
+Test case 2
+
+Input: nums = [0]
+Output: [[], [0]]
+
+Explanation: With one element there are 2^1 = 2 subsets: the empty set
+and [0].
+
+Hints
+
+1.  There are exactly 2^n subsets, so the output alone takes O(n x 2^n).
+
+2.  Iterative: start with [[]]. For each number, copy every existing
+      subset and append the number to the copy.
+
+3.  Backtracking: at each index, choose to include or exclude the
+      element and recurse. Bitmasks from 0 to 2^n - 1 also work.
+
+Solution:
+
+def subsets(nums):
+result = [[]]
+for x in nums:
+result += [s + [x] for s in result]
+return result
+
+ B15. Sort Colors (Moderate)
+
+Given an array nums of n objects coloured red, white or blue, written as
+0, 1 and 2, sort them in place so that objects of the same colour are
+adjacent, in the order red, white, blue.
+
+You must not use the library sort. Aim for a single pass with O(1) extra
+space.
+
+def sort_colors(nums: list[int]) -> None:
+# modify nums in place
+
+Constraints
+
+-   1 <= nums.length <= 300
+
+-   nums[i] is 0, 1 or 2
+
+Test case 1
+
+Input: nums = [2, 0, 2, 1, 1, 0]
+Output: [0, 0, 1, 1, 2, 2]
+
+Explanation: The two 0s move to the front, the two 1s to the middle and
+the two 2s to the end.
+
+Test case 2
+
+Input: nums = [2, 0, 1]
+Output: [0, 1, 2]
+
+Explanation: Each colour appears once, so the result is simply 0, 1, 2.
+
+Hints
+
+1.  Counting the 0s, 1s and 2s, then rewriting the array, takes two
+      passes. Can you do it in one?
+
+2.  Dutch National Flag: keep pointers low, mid and high. Everything
+      before low is 0, everything after high is 2.
+
+3.  If nums[mid] is 0, swap it with nums[low] and advance both. If it is
+      1, advance mid. If it is 2, swap it with nums[high] and decrement
+      high only, because the swapped-in value is still unchecked.
+
+Solution:
+
+def sort_colors(nums):
+low, mid, high = 0, 0, len(nums) - 1
+while mid <= high:
+if nums[mid] == 0:
+nums[low], nums[mid] = nums[mid], nums[low]
+low += 1
+mid += 1
+elif nums[mid] == 1:
+mid += 1
+else:
+nums[mid], nums[high] = nums[high], nums[mid]
+high -= 1

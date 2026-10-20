@@ -1,0 +1,3 @@
+# Talo is a private assessment tool: nothing here should be indexed.
+User-agent: *
+Disallow: /

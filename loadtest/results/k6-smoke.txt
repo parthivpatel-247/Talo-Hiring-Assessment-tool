@@ -1,0 +1,102 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+     execution: local
+        script: loadtest/candidate-flow.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 3 max VUs, 3m30s max duration (incl. graceful stop):
+              * smoke: 1 iterations for each of 3 VUs (maxDuration: 3m0s, gracefulStop: 30s)
+
+
+running (0m01.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m01.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m02.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m02.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m03.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m03.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m04.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m04.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m05.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m05.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m06.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m06.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m07.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m07.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m08.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m08.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m09.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m09.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m10.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m10.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m11.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m11.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m12.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m12.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m13.0s), 3/3 VUs, 0 complete and 0 interrupted iterations
+smoke   [   0% ] 3 VUs  0m13.0s/3m0s  0/3 iters, 1 per VU
+
+running (0m14.0s), 2/3 VUs, 1 complete and 0 interrupted iterations
+smoke   [  33% ] 3 VUs  0m14.0s/3m0s  1/3 iters, 1 per VU
+
+running (0m15.0s), 2/3 VUs, 1 complete and 0 interrupted iterations
+smoke   [  33% ] 3 VUs  0m15.0s/3m0s  1/3 iters, 1 per VU
+
+running (0m16.0s), 2/3 VUs, 1 complete and 0 interrupted iterations
+smoke   [  33% ] 3 VUs  0m16.0s/3m0s  1/3 iters, 1 per VU
+
+running (0m17.0s), 2/3 VUs, 1 complete and 0 interrupted iterations
+smoke   [  33% ] 3 VUs  0m17.0s/3m0s  1/3 iters, 1 per VU
+
+running (0m18.0s), 1/3 VUs, 2 complete and 0 interrupted iterations
+smoke   [  67% ] 3 VUs  0m18.0s/3m0s  2/3 iters, 1 per VU
+
+running (0m19.0s), 1/3 VUs, 2 complete and 0 interrupted iterations
+smoke   [  67% ] 3 VUs  0m19.0s/3m0s  2/3 iters, 1 per VU
+
+     ✓ login 200
+     ✓ me 200
+     ✓ part1 start 200
+     ✓ part1 submit 200
+     ✓ part2 start 200
+     ✓ part2 submit 200
+
+     checks.........................: 100.00% 18 out of 18
+     data_received..................: 9.6 kB  502 B/s
+     data_sent......................: 18 kB   935 B/s
+     http_req_blocked...............: avg=62.29µs  min=1.41µs  med=4.72µs  p(90)=8.99µs  p(95)=48.47µs p(99)=1.47ms   max=1.65ms  
+     http_req_connecting............: avg=46.39µs  min=0s      med=0s      p(90)=0s      p(95)=25.76µs p(99)=1.2ms    max=1.35ms  
+     http_req_duration..............: avg=16.26ms  min=7.66ms  med=11.86ms p(90)=27.29ms p(95)=30.72ms p(99)=77.38ms  max=77.89ms 
+       { expected_response:true }...: avg=16.26ms  min=7.66ms  med=11.86ms p(90)=27.29ms p(95)=30.72ms p(99)=77.38ms  max=77.89ms 
+     http_req_failed................: 0.00%   0 out of 54
+     http_req_receiving.............: avg=280.86µs min=17.01µs med=86.45µs p(90)=1.06ms  p(95)=1.17ms  p(99)=1.74ms   max=1.75ms  
+     http_req_sending...............: avg=28.94µs  min=4.84µs  med=15.72µs p(90)=43.27µs p(95)=82.57µs p(99)=125.41µs max=163.83µs
+     http_req_tls_handshaking.......: avg=0s       min=0s      med=0s      p(90)=0s      p(95)=0s      p(99)=0s       max=0s      
+     http_req_waiting...............: avg=15.95ms  min=7.52ms  med=11.56ms p(90)=27.06ms p(95)=30.66ms p(99)=77.3ms   max=77.79ms 
+     http_reqs......................: 54      2.822033/s
+     iteration_duration.............: avg=16.82s   min=13.49s  med=17.84s  p(90)=18.87s  p(95)=19s     p(99)=19.1s    max=19.13s  
+     iterations.....................: 3       0.15678/s
+     journey_completed..............: 3       0.15678/s
+     journey_duration_ms............: avg=16.82s   min=13.49s  med=17.84s  p(90)=18.87s  p(95)=19s     p(99)=19.1s    max=19.13s  
+     vus............................: 1       min=1        max=3
+     vus_max........................: 3       min=3        max=3
+
+
+running (0m19.1s), 0/3 VUs, 3 complete and 0 interrupted iterations
+smoke ✓ [ 100% ] 3 VUs  0m19.1s/3m0s  3/3 iters, 1 per VU

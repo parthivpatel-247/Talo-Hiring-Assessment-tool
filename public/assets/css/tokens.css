@@ -1,0 +1,163 @@
+/* Talo design tokens — Hevo brand (hevodata.com): ink-black actions, Inter, pill buttons,
+   neutral greys, Hevo purple for focus and selection, and the Hevo state colours. */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/assets/fonts/inter-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/assets/fonts/inter-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Neutrals (Hevo / AlignUI scale) */
+  --n-0: #ffffff;
+  --n-50: #f7f7f7;
+  --n-100: #f2f2f2;
+  --n-200: #ebebeb;
+  --n-300: #d1d1d1;
+  --n-400: #a3a3a3;
+  --n-500: #737373;
+  --n-600: #5c5c5c;
+  --n-700: #333333;
+  --n-800: #262626;
+  --n-900: #1c1c1c;
+  --n-950: #171717;
+
+  /* Surfaces & text */
+  --bg: var(--n-0);
+  --bg-subtle: var(--n-50);
+  --bg-muted: var(--n-100);
+  --bg-inverse: var(--n-950);
+  --surface: var(--n-0);
+  --surface-raised: var(--n-0);
+  --text: var(--n-950);
+  --text-2: var(--n-600);
+  --text-3: var(--n-500);
+  --text-inverse: var(--n-0);
+  --border: var(--n-200);
+  --border-strong: var(--n-300);
+
+  /* Actions */
+  --primary: var(--n-950);
+  --primary-hover: var(--n-800);
+  --primary-press: var(--n-700);
+  --on-primary: var(--n-0);
+
+  /* Hevo purple: focus, selection, links, progress */
+  --accent: #7d52f4;
+  --accent-strong: #6b3fe7;
+  --accent-text: #5b36d6;
+  --accent-soft: #efebff;
+  --accent-ring: rgb(125 82 244 / 0.35);
+
+  /* State colours */
+  --success: #1fc16b;
+  --success-text: #0e7a3e;
+  --success-soft: #e0faec;
+  --warning: #fa7319;
+  --warning-text: #a6460a;
+  --warning-soft: #fff1eb;
+  --danger: #fb3748;
+  --danger-text: #c81e2c;
+  --danger-soft: #ffebec;
+  --info: #335cff;
+  --info-text: #2547d0;
+  --info-soft: #ebf1ff;
+
+  /* Type */
+  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --fs-xs: 0.75rem;   /* 12 */
+  --fs-sm: 0.8125rem; /* 13 */
+  --fs-md: 0.875rem;  /* 14: product base */
+  --fs-base: 1rem;    /* 16 */
+  --fs-lg: 1.125rem;  /* 18 */
+  --fs-xl: 1.375rem;  /* 22 */
+  --fs-2xl: 1.75rem;  /* 28 */
+  --fs-3xl: 2.25rem;  /* 36 */
+  --fs-4xl: 3rem;     /* 48 */
+  --lh-tight: 1.2;
+  --lh: 1.5;
+
+  /* Space (4px grid) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+
+  /* Shape */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --r-pill: 999px;
+
+  /* Depth: only things that float get a shadow */
+  --shadow-pop: 0 16px 40px -12px rgb(23 23 23 / 0.22), 0 2px 8px rgb(23 23 23 / 0.06);
+  --shadow-overlay: 0 24px 64px -16px rgb(23 23 23 / 0.32);
+
+  /* Motion (Emil Kowalski's curves: strong ease-out for UI) */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --t-fast: 140ms;
+  --t-med: 200ms;
+  --t-slow: 320ms;
+
+  --sidebar-w: 248px;
+  --topbar-h: 60px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121212;
+  --bg-subtle: #191919;
+  --bg-muted: #222222;
+  --bg-inverse: #f7f7f7;
+  --surface: #181818;
+  --surface-raised: #1f1f1f;
+  --text: #f2f2f2;
+  --text-2: #b8b8b8;
+  --text-3: #8f8f8f;
+  --text-inverse: #171717;
+  --border: #2c2c2c;
+  --border-strong: #3d3d3d;
+  --primary: #f7f7f7;
+  --primary-hover: #e6e6e6;
+  --primary-press: #d1d1d1;
+  --on-primary: #171717;
+  --accent: #9b7bff;
+  --accent-strong: #b69cff;
+  --accent-text: #c4b1ff;
+  --accent-soft: rgb(125 82 244 / 0.18);
+  --accent-ring: rgb(155 123 255 / 0.45);
+  --success-text: #4fdb92;
+  --success-soft: rgb(31 193 107 / 0.16);
+  --warning-text: #ffa36b;
+  --warning-soft: rgb(250 115 25 / 0.16);
+  --danger-text: #ff7d88;
+  --danger-soft: rgb(251 55 72 / 0.16);
+  --info-text: #8aa4ff;
+  --info-soft: rgb(51 92 255 / 0.18);
+  --shadow-pop: 0 16px 40px -12px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.4);
+  --shadow-overlay: 0 24px 64px -16px rgb(0 0 0 / 0.7);
+}

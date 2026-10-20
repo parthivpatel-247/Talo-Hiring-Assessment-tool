@@ -1,132 +1,111 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import worker from '../src/index';
-import m1 from '../migrations/0001_init.sql?raw';
-import m2 from '../migrations/0002_written_answers.sql?raw';
-import m3 from '../migrations/0003_expected_output.sql?raw';
-import m4 from '../migrations/0004_audit_and_login.sql?raw';
-import m5 from '../migrations/0005_college.sql?raw';
-import m6 from '../migrations/0006_settings.sql?raw';
-import m7 from '../migrations/0007_admin_users.sql?raw';
-import m8 from '../migrations/0008_part3.sql?raw';
-import m9 from '../migrations/0009_part2_ai_pct.sql?raw';
-import m10 from '../migrations/0010_expand_categories.sql?raw';
-import m11 from '../migrations/0011_interview_answer.sql?raw';
-import m12 from '../migrations/0012_question_hint.sql?raw';
-import m13 from '../migrations/0013_question_soft_delete.sql?raw';
-import m14 from '../migrations/0014_question_checkpoints.sql?raw';
-import m15 from '../migrations/0015_perf.sql?raw';
-import { resetEnsureCache } from '../src/lib/db';
+import { resetSchemaCache } from '../src/db/migrate';
+import { invalidateSettings } from '../src/lib/settings';
+import { Db } from '../src/db/db';
 
-/** Apply the real migration files, in order, to the test D1. */
-export async function migrate() {
-  // Storage is reset between tests, so the once-per-instance schema cache must be too.
-  resetEnsureCache();
-  for (const sql of [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15]) {
-    // Strip both full-line and inline "-- ..." comments before splitting on ';'
-    // (some inline comments contain semicolons, which would break naive splitting).
-    const clean = sql
-      .split('\n')
-      .map((l) => l.replace(/--.*$/, ''))
-      .join('\n');
-    for (const stmt of clean.split(';').map((s) => s.trim()).filter(Boolean)) {
-      // PRAGMA foreign_keys toggles aren't needed in the test D1 (tables are empty
-      // during migration) and miniflare's D1 rejects them — skip them.
-      if (/^PRAGMA\s/i.test(stmt)) continue;
-      await env.DB.prepare(stmt).run();
-    }
-  }
+export const BOOT = { email: 'admin@test.local', password: 'bootstrap-setup-pass' };
+export const MANAGER_PASSWORD = 'Correct-Horse-42-battery';
+
+/** Fresh empty database for each test (storage is isolated per test by the pool). */
+export async function fresh(): Promise<Db> {
+  resetSchemaCache();
+  invalidateSettings();
+  const db = new Db(env.DB);
+  // Trigger schema creation through the real Worker path.
+  await req('/api/health');
+  await req('/api/public/config');
+  return db;
 }
 
-/** Drive the actual Worker with a Request and return the Response. */
-export async function req(path: string, init: RequestInit = {}): Promise<Response> {
-  const request = new Request('https://test.local' + path, init);
+export async function req(path: string, init: RequestInit & { json?: unknown } = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  let body = init.body;
+  if (init.json !== undefined) {
+    headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(init.json);
+  }
+  const request = new Request('https://test.local' + path, { ...init, headers, body });
   const ctx = createExecutionContext();
-  const res = await worker.fetch(request, env, ctx);
+  const res = await worker.fetch(request, env as never, ctx);
   await waitOnExecutionContext(ctx);
   return res;
 }
 
-function cookieFrom(res: Response): string {
-  const set = res.headers.get('Set-Cookie') || '';
-  return set.split(';')[0]; // "name=value"
+export function cookieOf(res: Response, name: string): string {
+  const all = res.headers.getSetCookie?.() ?? [res.headers.get('Set-Cookie') || ''];
+  const c = all.find((x) => x.startsWith(name + '='));
+  return c ? c.split(';')[0] : '';
 }
 
-/** Log in as admin, return the Cookie header value to reuse. */
-export async function adminCookie(): Promise<string> {
-  const res = await req('/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@test.local', password: 'test-admin-pass' }),
-  });
-  if (res.status !== 200) throw new Error('admin login failed: ' + res.status);
-  return cookieFrom(res);
+/** Complete first-run setup and return the manager's cookie. */
+export async function managerCookie(): Promise<string> {
+  const login = await req('/api/admin/auth/login', { method: 'POST', json: BOOT });
+  const lb = await login.json<any>();
+  if (lb.next === 'setup') {
+    const setup = await req('/api/admin/auth/setup', { method: 'POST', json: { token: lb.token, name: 'Test Manager', password: MANAGER_PASSWORD } });
+    if (setup.status !== 200) throw new Error('setup failed: ' + (await setup.text()));
+    return cookieOf(setup, '__Host-talo_admin');
+  }
+  const again = await req('/api/admin/auth/login', { method: 'POST', json: { email: BOOT.email, password: MANAGER_PASSWORD } });
+  return cookieOf(again, '__Host-talo_admin');
 }
 
-/** Log in as a panel member (limited role), return the Cookie header value. */
-export async function panelCookie(): Promise<string> {
-  const res = await req('/api/admin/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: 'panel@test.local', password: 'test-panel-pass' }),
-  });
-  if (res.status !== 200) throw new Error('panel login failed: ' + res.status);
-  return cookieFrom(res);
+export async function memberCookie(manager: string, email = 'member@test.local'): Promise<string> {
+  const pw = 'Temporary-pass-77';
+  await req('/api/admin/members', { method: 'POST', headers: { Cookie: manager }, json: { name: 'Panel Member', email, role: 'member', temporaryPassword: pw } });
+  const l1 = await (await req('/api/admin/auth/login', { method: 'POST', json: { email, password: pw } })).json<any>();
+  const ch = await req('/api/admin/auth/change-password', { method: 'POST', json: { token: l1.token, password: 'Panel-fresh-pass-88' } });
+  return cookieOf(ch, '__Host-talo_admin');
 }
 
-/** Log in as a candidate by email, return the Cookie header value. */
-export async function candidateCookie(email: string): Promise<{ cookie: string; res: Response }> {
-  const res = await req('/api/candidate/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email }),
-  });
-  return { cookie: cookieFrom(res), res };
-}
-
-/** Seed an active question bank across all four sections (enough for a per-student
- *  set of 2 SQL + 1 Python + 1 DSA + 1 Scenario, with spare for weighted spread). */
-export async function seedQuestions() {
-  const rows: [string, string, string, string, string, string, string, number][] = [
-    ['qb-sql-1', 'sql', 'Table: orders. Total per customer.', 'SELECT customer_id, SUM(amount) FROM orders GROUP BY customer_id', 'Table: orders\n| id | amount |', '| customer_id | sum |\n| 1 | 100 |', 'Groups correctly', 3],
-    ['qb-sql-2', 'sql', 'Table: students. Marks > 80.', 'SELECT name FROM students WHERE marks > 80', 'Table: students', '| name |\n| A |', 'Filters correctly', 3],
-    ['qb-sql-3', 'sql', 'Table: employees. Above avg salary.', 'SELECT name FROM employees WHERE salary > (SELECT AVG(salary) FROM employees)', 'Table: employees', '| name |\n| B |', 'Subquery correct', 3],
-    ['qb-py-1', 'python', 'Remove duplicates keeping order.', 'def f(x): ...', '', '[1, 2, 3]', 'Preserves order', 4],
-    ['qb-py-2', 'python', 'Count words in a string.', 'def f(s): return len(s.split())', '', '6', 'Correct count', 4],
-    ['qb-dsa-1', 'dsa', 'Two Sum: indices adding to target.', 'def f(a,t): ...', '', '[0, 1]', 'Correct indices', 5],
-    ['qb-dsa-2', 'dsa', 'Valid parentheses.', 'def f(s): ...', '', 'True', 'Stack logic', 5],
-    ['qb-scn-1', 'scenario', 'Best day to buy and sell a share.', 'def f(p): ...', '', '5', 'Min-so-far logic', 5],
-    ['qb-scn-2', 'scenario', 'Minimum railway platforms.', 'def f(a,d): ...', '', '3', 'Two-pointer sweep', 5],
+export async function seedPaperQuestions(db: Db) {
+  const rows = [
+    ['q-sql-1', 'sql', 'easy', 'Write a SQL query that returns every product priced above 100.'],
+    ['q-sql-2', 'sql', 'medium', 'Write a SQL query that returns the total order amount per customer.'],
+    ['q-sql-3', 'sql', 'medium', 'Write a SQL query that lists customers with no orders.'],
+    ['q-sql-4', 'sql', 'hard', 'Write a SQL query that finds the second highest salary per department.'],
+    ['q-code-1', 'coding', 'easy', 'Write a function that returns the sum of an array of numbers.'],
+    ['q-code-2', 'coding', 'medium', 'Write a function that counts the vowels in a string.'],
   ];
-  const stmt = env.DB.prepare(
-    `INSERT INTO question_bank (id, category, prompt, reference_answer, sample_data, expected_output, rubric, marks, difficulty, status, active)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`
+  await db.batch(rows.map(([id, cat, diff, prompt]) => db.stmt(
+    "INSERT INTO questions (id, category, difficulty, prompt, reference_answer, rubric, marks, source) VALUES (?, ?, ?, ?, 'ref', 'rubric', 3, 'test')",
+    id, cat, diff, prompt
+  )));
+}
+
+export async function createDrive(manager: string, name = 'Test College Drive', live = true): Promise<{ id: string; code: string }> {
+  const res = await req('/api/admin/drives', { method: 'POST', headers: { Cookie: manager }, json: { name, scheduledOn: '2026-11-04' } });
+  const b = await res.json<any>();
+  // Drives start "scheduled"; the invigilator sets them live on the day (tests start live).
+  if (live) await req(`/api/admin/drives/${b.id}`, { method: 'PATCH', headers: { Cookie: manager }, json: { status: 'live' } });
+  return { id: b.id, code: b.accessCode };
+}
+
+/** Insert a ready candidate directly (bypassing resume parsing). */
+export async function createCandidate(db: Db, id: string, email: string, opts: { driveId?: string | null; status?: string; name?: string } = {}) {
+  await db.run(
+    "INSERT INTO candidates (id, email, email_status, name, status, drive_id, resume_key) VALUES (?, ?, 'parsed', ?, ?, ?, NULL)",
+    id, email, opts.name ?? 'Asha Kulkarni', opts.status ?? 'ready', opts.driveId ?? null
   );
-  await env.DB.batch(rows.map((r) => stmt.bind(...r)));
 }
 
-/** Insert a candidate ready to take the test. */
-export async function seedCandidate(id: string, email: string, status = 'part2_ready', college: string | null = null) {
-  await env.DB.prepare(
-    `INSERT INTO candidates (id, email, name, resume_r2_key, resume_filename, status, college)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(id, email, 'Test User', `resumes/${id}.pdf`, 'resume.pdf', status, college)
-    .run();
+export async function candidateLogin(email: string, code?: string): Promise<{ res: Response; cookie: string }> {
+  const res = await req('/api/candidate/login', { method: 'POST', json: { email, code } });
+  return { res, cookie: cookieOf(res, '__Host-talo_cand') };
 }
 
-/** Seed two Part 2 questions for a candidate. */
-export async function seedPart2(candidateId: string) {
-  const stmt = env.DB.prepare(
-    `INSERT INTO part2_questions (id, candidate_id, position, prompt, based_on_skill, rubric, marks)
-     VALUES (?, ?, ?, ?, ?, ?, 5)`
-  );
-  await env.DB.batch([
-    stmt.bind('p2-1', candidateId, 0, 'Scenario about your project.', 'Python', '{"strong_answer_looks_like":"x","weak_answer_looks_like":"y"}'),
-    stmt.bind('p2-2', candidateId, 1, 'Scenario about SQL tuning.', 'SQL', '{"strong_answer_looks_like":"x","weak_answer_looks_like":"y"}'),
-  ]);
-}
-
-/** Build a fake OpenAI chat-completions JSON body. */
 export function openAiReply(obj: unknown) {
   return { choices: [{ message: { content: JSON.stringify(obj) } }] };
+}
+
+/** Load the legacy v1 schema from db/legacy-v1 (used by the upgrade tests). */
+export async function loadV1Schema(files: string[]): Promise<void> {
+  for (const sql of files) {
+    const clean = sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+    for (const stmt of clean.split(';').map((s) => s.trim()).filter(Boolean)) {
+      if (/^PRAGMA\s/i.test(stmt)) continue;
+      await env.DB.prepare(stmt).run();
+    }
+  }
 }
