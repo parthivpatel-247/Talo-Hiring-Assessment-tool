@@ -242,6 +242,41 @@ UI fixes from the same run: a failing row action (Resume, Retake, Revoke…) now
   - support smoke run: 13/13.
 - **Parallel parsing:** 26 resumes, two of them duplicates, were parsed with 5 requests at a time. 24 were parsed and the 2 duplicates were reported clearly; no resume was parsed twice and none was left claimed.
 
+### Security audit round 4 — Cloudflare security-audit skill (2026-10-21)
+
+A quick-profile run of Cloudflare's `security-audit` skill (report in `docs/security-audit/run-1/REPORT.md`) found three leads. All three were reproduced locally and fixed, and the two areas the run deferred were reviewed and fixed too:
+
+- **Question sets:** overlapping start requests on the support site could give a candidate two Part 1 sets. Positions are now inserted only if free. Support migration `0017` adds `UNIQUE(candidate_id, position)`; the writers database already had it.
+- **Config admin sign-ins** (`ADMIN_EMAIL`/`PANEL_EMAIL`) end as soon as that email or password changes. Signing in ends the browser's previous admin session.
+- **Sign-in counters** group IPv6 by /48.
+- **Grading:**
+  - every score write requires the grading claim;
+  - Shortlist/Reject only for graded candidates;
+  - Analyze keeps a shortlist;
+  - Manual fix keeps a finished candidate finished;
+  - the interview guide is dropped if a new attempt starts meanwhile;
+  - edited or resumed answers lose their old marks.
+- **Sweeps** use each part's own hard end time, so changing the duration mid-drive can't close running tests. Writers Resume reopens a Part 1 that closed at its deadline.
+- **One browser per part:**
+  - the sign-in that starts a part owns it (`attempts.part1_sid` / `part2_sid`);
+  - Resume, Retake, Restore access and email fixes void older sign-ins (`attempts.sessions_valid_after`);
+  - these three columns are added on first use, like the deadline columns, so no migration is needed.
+- **Hardening:**
+  - strict token shape;
+  - generic AI error text on the admin page;
+  - the AI base URL must be https or local;
+  - resume-parse output coerced to a safe shape;
+  - resume files never orphaned;
+  - HSTS.
+
+Tests:
+- `npm test`: 228/228;
+- limits: 9/9;
+- UI audit: 71/71;
+- parity: 17/17;
+- 429s: 13/13 and 12/12;
+- support browser smoke (`scripts/support-smoke.mjs`): 18/18.
+
 ## 5. Changes in shared code (support site gets them only when it is next deployed from `main`)
 
 - **Admin session expiry:** compares ISO timestamps correctly (section 2).

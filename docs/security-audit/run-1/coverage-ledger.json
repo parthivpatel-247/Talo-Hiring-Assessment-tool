@@ -1,0 +1,1896 @@
+[
+  {
+    "coverage_id": "package.json%23dependencies%20and%20package-lock.json::package-lock.json%23resolved%20versions%20and%20integrity::profile%2Fquick%2Fall-in-scope-subsystems::SUPPLY-CHAIN-AND-RELEASE.md%23Dependency%20source%20and%20namespace%20confusion",
+    "canonical_refs": {
+      "surface": "package.json#dependencies and package-lock.json",
+      "boundary": "package-lock.json#resolved versions and integrity",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "SUPPLY-CHAIN-AND-RELEASE.md#Dependency source and namespace confusion"
+    },
+    "surface": "Dependencies and build scripts",
+    "boundary": "Third-party code shipped in the Worker",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Dependency source and namespace confusion",
+    "starting_paths": [
+      "package.json",
+      "package-lock.json",
+      "scripts/build-writers-assets.mjs",
+      "scripts/check-headers.mjs",
+      "wrangler.toml"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Dependency source and namespace confusion",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-lifecycle-misc",
+    "reviewed_paths": [
+      "package-lock.json",
+      "package.json",
+      "scripts/build-writers-assets.mjs",
+      "scripts/check-headers.mjs",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "package.json",
+          "package-lock.json"
+        ],
+        "invariant": "Every dependency that can reach the Worker bundle or the build resolves from one intended public registry, pinned by the lockfile with an integrity hash, with no alternate source, git/file/URL spec, private-scope name or registry override that a third party could claim.",
+        "method": "source",
+        "result": "package-lock.json is lockfileVersion 3 with 317 package entries; every 'resolved' URL is https://registry.npmjs.org/ and every entry carries a sha512 integrity value. No git, file, tarball-URL or link sources, no scoped private names, and no .npmrc in the repository. The only runtime dependency is unpdf (package.json range ^0.12.1, locked 0.12.2) with optional canvas 2.11.2 (install-time native addon; src/lib/resume.ts imports only 'unpdf', so canvas is not bundled into the Worker). All other packages are devDependencies (wrangler 4.140.0, vitest 3.2.7, @cloudflare/vitest-pool-workers 0.8.30, workerd, esbuild, playwright). The root package is private: true and named campus-hiring-assessment, so no publish path exists. No namespace or source-confusion path was found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "scripts/build-writers-assets.mjs",
+          "scripts/check-headers.mjs",
+          "wrangler.toml"
+        ],
+        "invariant": "Deploy-time build commands only transform repository files and cannot pull in remote or lower-trust inputs before the Worker and assets are published.",
+        "method": "source",
+        "result": "wrangler.toml [build] runs node scripts/check-headers.mjs and [env.docs.build] runs node scripts/build-writers-assets.mjs. Both read only public/, writers/ and public/_headers, use node:fs/node:crypto/node:child_process (execFileSync of process.execPath on the repo-local check script only), and fetch nothing. dist-docs/ is rebuilt from public/ plus writers/index.html on every docs deploy and is gitignored. There is no CI workflow in the repository; deploys are run by the owner with wrangler. No release-integrity handoff to a lower-trust actor was found.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "public%2Fadmin%2Fadmin.js%23innerHTML%20rendering%20of%20server%20data::public%2Fadmin%2Fadmin.js%23escapeHtml%20and%20num%2C%20public%2F_headers%23CSP::profile%2Fquick%2Fall-in-scope-subsystems::CLIENT-SIDE.md%23DOM-based%20XSS",
+    "canonical_refs": {
+      "surface": "public/admin/admin.js#innerHTML rendering of server data",
+      "boundary": "public/admin/admin.js#escapeHtml and num, public/_headers#CSP",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "CLIENT-SIDE.md#DOM-based XSS"
+    },
+    "surface": "Admin panel browser rendering",
+    "boundary": "Stored text into the admin DOM",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "DOM-based XSS",
+    "starting_paths": [
+      "public/admin/admin.js",
+      "public/admin/index.html",
+      "public/_headers"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#DOM-based XSS",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-content-browser",
+    "reviewed_paths": [
+      "public/_headers",
+      "public/admin/admin.js",
+      "public/admin/index.html",
+      "src/lib/db.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/candidate-docs.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "public/admin/admin.js"
+        ],
+        "invariant": "Every server- or attacker-influenced string (candidate name, email, college, resume filename, skills, projects, answers, AI reasoning or deductions, interview text, question text, audit detail, flag labels, member fields, error messages) is escaped with escapeHtml/num before it reaches innerHTML or insertAdjacentHTML, including attribute contexts.",
+        "method": "source",
+        "result": "Every innerHTML/insertAdjacentHTML sink was traced (L149, L259-270, L278, L290/313/317, L422, L447-465, L504-513, L567, L823-855, L883, L896-921, L943-962, L1022-1028, L1040-1082, L1185, L1300-1349, L1364-1392). All text fields go through escapeHtml (L62: textContent then innerHTML, plus quote escaping, so it is safe in double-quoted attributes) or num (L60). renderRich/renderInline (L67-136) escape before adding the fixed <code>/<strong>/<table> markup, so $1 captures are already escaped. The only raw interpolations are constants (IC icons, STATUS_FILTERS, statusPill/DIFF class names, avColor gradients), Number-derived values (sum/max of ai_score, Math.round(ai_content_pct), countWordsAdmin, renderStats counts, pasteCount/pasteMax), and server-generated ids. setNotice uses textContent (L137).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/lib/db.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Values interpolated into the admin DOM without escaping (c.id, q.id, m.id, integrity.pastes/maxPaste, tab-switch counts) cannot be controlled by a candidate or resume author.",
+        "method": "source",
+        "result": "Ids come from newId (src/lib/db.ts L5-7: prefix plus a randomUUID hex slice). The writers integrity.maxPaste/pastes (src/routes/admin-docs.ts L322, L335) are SQL COUNT/MAX over attempt_events.chars. That column is written only through n(), which returns a clamped integer or null (src/routes/candidate-docs.ts L166-170). Tab-switch counts are integer columns incremented server-side. No candidate-controlled string reaches an unescaped slot.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "public/_headers",
+          "public/admin/index.html"
+        ],
+        "invariant": "Defence in depth: the CSP blocks injected inline script on the admin page.",
+        "method": "source",
+        "result": "public/_headers L6 sets script-src 'self' plus two sha256 hashes for the inline theme script, object-src 'none', base-uri 'self', frame-ancestors 'none'. The admin page loads only /admin/admin.js plus the hashed inline script. No eval or new Function appears in admin.js. style-src allows 'unsafe-inline', but no HTML injection was found that could use it.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "public%2Fapp.js%23question%20and%20message%20rendering::public%2Fapp.js%23renderRich%20and%20escapeHtml::profile%2Fquick%2Fall-in-scope-subsystems::CLIENT-SIDE.md%23Clickjacking",
+    "canonical_refs": {
+      "surface": "public/app.js#question and message rendering",
+      "boundary": "public/app.js#renderRich and escapeHtml",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "CLIENT-SIDE.md#Clickjacking"
+    },
+    "surface": "Candidate page browser rendering",
+    "boundary": "Question and server text into the candidate DOM",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Clickjacking",
+    "starting_paths": [
+      "public/app.js",
+      "public/index.html",
+      "writers/index.html",
+      "public/_headers"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#Clickjacking",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-content-browser",
+    "reviewed_paths": [
+      "public/_headers",
+      "public/app.js",
+      "public/index.html",
+      "scripts/build-writers-assets.mjs",
+      "scripts/check-headers.mjs",
+      "src/index.ts",
+      "src/routes/admin.ts",
+      "wrangler.toml",
+      "writers/index.html"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "public/_headers",
+          "scripts/check-headers.mjs",
+          "scripts/build-writers-assets.mjs",
+          "wrangler.toml"
+        ],
+        "invariant": "No state-changing candidate or admin page can be framed by another origin, on either deployment.",
+        "method": "source",
+        "result": "public/_headers L5-7 applies frame-ancestors 'none' and X-Frame-Options: DENY to /* (every static page and file). The writers build copies public/ wholesale into dist-docs/, including _headers (scripts/build-writers-assets.mjs L17-18); the checked-out dist-docs/_headers is identical to public/_headers. check-headers.mjs refuses a deploy if framing protection is missing or an inline script hash does not match. Both wrangler.toml build commands run it.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Responses generated by the Worker do not reopen framing.",
+        "method": "source",
+        "result": "API routes return JSON. The only framable Worker response is the resume PDF (src/routes/admin.ts L674-681). It sets frame-ancestors 'self' and X-Frame-Options SAMEORIGIN, so only same-origin pages can frame it, and it is read-only content. Fallback paths go to env.ASSETS.fetch (src/index.ts L41).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "public/app.js",
+          "public/index.html",
+          "writers/index.html"
+        ],
+        "invariant": "Question, sample-data, hint, title and code-snippet text reach the candidate DOM only after escaping.",
+        "method": "source",
+        "result": "renderRich/renderInline (public/app.js L122-218) escape every captured fragment before adding fixed markup. In renderQuestion (L303-325), badge, title, codeSnippet and hint pass through escapeHtml (L94-98). renderNav (L289) interpolates only an index and constants. The overlays (L632, L915) use constants and a local numeric countdown. There is no postMessage, no location, referrer or window.name source, and no eval. The pages load only /app.js and the hashed inline theme script.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "repository%23all%20source::repository%23no%20single%20control::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "repository#all source",
+      "boundary": "repository#no single control",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "Whole repository",
+    "boundary": "Basic exposures",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Obvious things",
+    "starting_paths": [
+      "src",
+      "public",
+      "writers",
+      "wrangler.toml",
+      ".gitignore",
+      "package-lock.json"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-lifecycle-misc",
+    "reviewed_paths": [
+      ".dev.vars.docs",
+      ".dev.vars.example",
+      ".gitignore",
+      "README.md",
+      "loadtest/LOAD-TEST-REPORT.md",
+      "loadtest/prod-cleanup.sql",
+      "loadtest/prod-seed-100.sql",
+      "package-lock.json",
+      "public/_headers",
+      "public/admin/admin.js",
+      "public/app.js",
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          ".gitignore",
+          ".dev.vars.example",
+          ".dev.vars.docs",
+          "wrangler.toml",
+          "README.md"
+        ],
+        "invariant": "No real password, API key, session secret or private key is committed in tracked files or git history, and .gitignore covers local secret files, local state and build output.",
+        "method": "source",
+        "result": "git ls-files tracks only .dev.vars.example (placeholder values). .dev.vars.docs exists in the working tree with local-only test values but is untracked and matched by the '.dev.vars*' ignore rule; .wrangler/ local state and dist-docs/ are also ignored. A grep of tracked files and of the full history (git log -p --all) found no sk- keys, PEM blocks or committed secret values; wrangler.toml lists secrets only by name (OPENAI_API_KEY, ADMIN_PASSWORD, SESSION_SECRET). The only env file in history is e2e/e2e.env on the v2 branch, holding e2e-only values, outside the audited ref. wrangler.toml exposes ADMIN_EMAIL (the manager's sign-in email), which is half of a credential and not a secret.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "public/app.js",
+          "public/admin/admin.js"
+        ],
+        "invariant": "There is no unprotected debug, test, env, config or metrics endpoint, no eval/Function/child_process with dynamic input, no CORS header, no open redirect, and no security TODO or FIXME.",
+        "method": "source",
+        "result": "The only anonymous API routes are /api/health (returns ok and the server time; src/index.ts:36), /api/candidate/config (assessment length or the writers test shape only), both login routes and both logout routes. /api/admin/config and every other admin route come after getAdminRole (src/routes/admin.ts:272-273). A grep for eval(, new Function, child_process, vm., dynamic import(, Access-Control-*, redirect/Location and TODO/FIXME/HACK/XXX across src and the page scripts finds no matches; the 'debug' hits are question-category labels. No debug or dev mode is switched by env, query or header.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Session-bearing cookies are HttpOnly, Secure and SameSite, and JavaScript never needs to read them.",
+        "method": "source",
+        "result": "setCookieHeader and clearCookieHeader (src/lib/auth.ts:67-74) give chs_candidate and chs_admin 'Path=/; HttpOnly; Secure; SameSite=Lax'. The trusted-device cookie chs_admin_dev is HttpOnly, Secure, SameSite=Strict and limited to Path=/api/admin/login (src/lib/auth.ts:235). The page scripts call the API with credentials and do not read document.cookie for these values.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin.ts",
+          "src/lib/ratelimit.ts"
+        ],
+        "invariant": "Error responses to anonymous and candidate callers carry no stack trace, SQL error or internal path.",
+        "method": "source",
+        "result": "Unhandled errors are logged with console.error and return {error:'Internal error'} (src/index.ts:46-47). Raw exception messages are returned only on admin-authenticated routes (resume upload skip reasons, parse errors with D1/SQLITE text masked at src/routes/admin.ts:644, grading, enrich and interview 502s). Candidate routes return fixed strings, and 429s from the limiter carry fixed messages (src/lib/ratelimit.ts tooMany).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "public/_headers",
+          "wrangler.toml"
+        ],
+        "invariant": "TLS is enforced for the deployed hosts and static pages carry framing and content-type protections.",
+        "method": "source",
+        "result": "public/_headers sets a CSP with script-src 'self' plus two hashes, frame-ancestors 'none', X-Frame-Options DENY, nosniff, Referrer-Policy same-origin and a restrictive Permissions-Policy. All cookies are Secure. There is no Strict-Transport-Security header, but the hosts are *.workers.dev under the HSTS-preloaded .dev TLD, so plain-HTTP access is not reachable there (see hardening).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "loadtest/prod-seed-100.sql",
+          "loadtest/prod-cleanup.sql",
+          "loadtest/LOAD-TEST-REPORT.md"
+        ],
+        "invariant": "Test or seed accounts that would work in production are not left there.",
+        "method": "source",
+        "result": "loadtest/prod-seed-100.sql inserts 120 email-only candidates (load0001@load.test ...) with status part2_ready into the production database, and anyone who reads the repository could sign in with them. LOAD-TEST-REPORT.md states they were deleted afterwards with prod-cleanup.sql, and the daily retention purge removes any leftover after DATA_RETENTION_DAYS. No seeded admin account targets production (admin_users and admin_sessions appear only in local e2e/load seeds). Recorded as hardening, not a finding.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "package-lock.json"
+        ],
+        "invariant": "Runtime dependencies are pinned and do not carry a known applicable vulnerability in the code path the Worker uses.",
+        "method": "source",
+        "result": "The lockfile pins all versions with integrity. The one runtime dependency, unpdf 0.12.2, bundles pdf.js 4.6.82 (node_modules/unpdf/package.json pins pdfjs-dist ~4.6.82), which is later than the 4.2.67 fix for CVE-2024-4367. Its getDocumentProxy default sets isEvalSupported:false, and Workers blocks code generation from strings in any case. No advisory database was consulted (offline run, no registry contact), so this is a source-level judgement, not an audit result.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "repository%23all%20source::repository%23no%20single%20control::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "repository#all source",
+      "boundary": "repository#no single control",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "Whole repository",
+    "boundary": "Anything outside the assigned classes",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Wildcard",
+    "starting_paths": [
+      "src",
+      "public",
+      "writers",
+      "wrangler.toml"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-lifecycle-misc",
+    "reviewed_paths": [
+      ".gitignore",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "src/lib/roles.ts",
+      "src/lib/team.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          ".gitignore"
+        ],
+        "invariant": "Git history contains no reverted security fix, commented-out auth check or once-committed secret that still affects the audited ref.",
+        "method": "source",
+        "result": "There are 11 commits on the audited branch (8c4f48e to d08390b) plus other branches (v2, writers-security-audit and others). git log --all --diff-filter=D and a history-wide grep for keys and secret assignments found only placeholders ('your-admin-password', 'sk-your...') and the v2-only e2e/e2e.env of local test values. No secret removed from the audited tree was found in history.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "wrangler.toml",
+          "src/lib/team.ts",
+          "src/lib/auth.ts"
+        ],
+        "invariant": "The two deployments built from one source (talo and talo-docs) cannot accept each other's sessions or data, even though they are same-site subdomains of one workers.dev account.",
+        "method": "source",
+        "result": "isDocs keys only on env.TEAM (src/lib/team.ts:41-43). Each env has its own D1, R2, rate-limit namespaces and secrets (wrangler.toml [env.docs]). Cookies are host-only (no Domain attribute, src/lib/auth.ts:67-69). An admin token is valid only if its row exists in that site's admin_sessions. A candidate token names a random cid that exists only in its own site's D1. Even if both sites shared one SESSION_SECRET, a token from one site maps to no row on the other. Cross-site writes between the two hosts are stopped by the exact-origin Origin guard, whose CSRF coverage belongs to a peer unit.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/lib/roles.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Retired or dormant features (Part 2 and Part 3 code paths, shared routes that the writers site falls through to) stay behind admin authentication and do not offer an unreviewed way to change state.",
+        "method": "source",
+        "result": "Part 3 routes (/api/admin/part3/questions GET and /api/admin/part3/seed POST, manager-only via isManagerOnlyRoute) and the support-only grading paths are reached only after getAdminRole. On the writers site, unmatched admin routes fall through to the shared handler after the same manager-only check (src/routes/admin.ts:301-308). Whether each inline role check is enough belongs to the peer access-control unit and was not re-reviewed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/lib/ratelimit.ts",
+          "src/routes/candidate.ts"
+        ],
+        "invariant": "Environment assumptions (client address source, limiter availability, clock) cannot be swayed by the client to bypass a control.",
+        "method": "source",
+        "result": "clientIp trusts only CF-Connecting-IP (src/lib/ratelimit.ts clientIp), which Cloudflare overwrites at the edge; X-Forwarded-For is ignored. IPv6 is grouped by /64 (networkKey, src/lib/ratelimit.ts:179). The per-request limiter fails open by design (src/lib/ratelimit.ts:308); the D1 sign-in counters do not depend on it. Timers use the server clock. The quota consequences of per-network grouping are reported under the pre-authentication unit.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Findex.ts%23%2Fapi%2F%2A%20and%20src%2Froutes%2Fadmin.ts%23grading%2C%20parsing%20and%20interview%20routes::src%2Flib%2Fratelimit.ts%23requestGuard%20and%20sign-in%20counters::profile%2Fquick%2Fall-in-scope-subsystems::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
+    "canonical_refs": {
+      "surface": "src/index.ts#/api/* and src/routes/admin.ts#grading, parsing and interview routes",
+      "boundary": "src/lib/ratelimit.ts#requestGuard and sign-in counters",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance"
+    },
+    "surface": "Requests that spend OpenAI or D1 quota",
+    "boundary": "Quota and spend containment",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Pre-authentication work imbalance",
+    "starting_paths": [
+      "src/index.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "wrangler.toml"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-lifecycle-misc",
+    "reviewed_paths": [
+      "docs/WRITERS-DATA-DESIGN.md",
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "No OpenAI call, PDF parse or R2 read happens before admin authentication.",
+        "method": "source",
+        "result": "Every OpenAI path (resume process, enrich, grading, analysis/run, shortlist, interview) and every R2 read is reached only after getAdminRole at src/routes/admin.ts:272-273. Writers admin routes run after the same check (src/routes/admin.ts:301-308). Candidate routes make no OpenAI calls. There is no pre-auth spend on paid APIs.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/routes/candidate.ts"
+        ],
+        "invariant": "Unauthenticated requests carrying forged session cookies cost no D1 work before the HMAC check.",
+        "method": "source",
+        "result": "getCandidateIdFromRequest and getAdminRole verify the HMAC signature first and touch D1 only for a validly signed token (src/lib/auth.ts:103-109, 174-189). requireCandidate does its D1 read only after that (src/routes/candidate.ts:22-27). Forged cookies cost one HMAC. requestGuard keys RL_CANDIDATE and RL_ADMIN on a hash of the raw cookie, which a client can rotate, but RL_IP still applies.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/lib/ratelimit.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Pre-auth sign-in attempts are bounded so they cannot spend shared persistent resources without limit.",
+        "method": "source",
+        "result": "Candidate sign-in with an unlisted email does 1 read (candidateSigninPaused) plus 1 D1 upsert (candidateUnknownEmail -> recordFailure -> countStmt) per request, up to CANDIDATE_UNKNOWN_PER_IP=200 per network per 10-minute window; then that network is paused and further attempts cost 1 read (src/lib/ratelimit.ts:47, 97-121, 284-295; src/routes/candidate.ts:43-49; src/routes/candidate-docs.ts:200-205). Admin sign-in does up to 3 upserts per attempt, bounded per network (20 per 15 min) and per account (5 per network, 50 per hour globally). PBKDF2 runs only for an existing named account, after counting. Every bound is per network (an IPv4 address or an IPv6 /64). No bound covers all networks together.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "wrangler.toml",
+          "docs/WRITERS-DATA-DESIGN.md",
+          "src/lib/ratelimit.ts",
+          "src/index.ts"
+        ],
+        "invariant": "The in-Worker request ceilings protect the shared, account-wide daily allowances that both sites depend on during a live test.",
+        "method": "source",
+        "result": "RL_IP allows 3000 requests per minute per network (wrangler.toml:40-42, 150-152) and runs inside the Worker (src/index.ts:26-28), so a refused request is still a Worker invocation. The repository's own budget (docs/WRITERS-DATA-DESIGN.md:19-20, 42) says both sites share one account's Free-plan allowance of 100,000 requests and 100,000 D1 rows written per day. The source has no aggregate guard on either. Whether this matters depends on the Cloudflare plan, which the source does not show; it is reported as a needs_validation candidate.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verifier-3",
+        "reviewed_paths": [
+          "docs/WRITERS-DATA-DESIGN.md",
+          "src/index.ts",
+          "src/lib/ratelimit.ts",
+          "src/routes/candidate-docs.ts",
+          "src/routes/candidate.ts",
+          "wrangler.toml"
+        ],
+        "invariant": "Independent re-check of candidate src/lib/ratelimit.ts:requestGuard:per-network-ceiling-vs-account-daily-quota",
+        "method": "source",
+        "result": "Decision needs_validation: every cited trace and evidence location was re-read; the decisive behavioural fact still needs execution or deployment observation (see findings.json blockers).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "src/lib/ratelimit.ts:requestGuard:per-network-ceiling-vs-account-daily-quota"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Findex.ts%23non-GET%20%2Fapi%2F%2A%20requests::src%2Findex.ts%23Origin%20guard%20and%20src%2Flib%2Fauth.ts%23SameSite%20cookies::profile%2Fquick%2Fall-in-scope-subsystems::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+    "canonical_refs": {
+      "surface": "src/index.ts#non-GET /api/* requests",
+      "boundary": "src/index.ts#Origin guard and src/lib/auth.ts#SameSite cookies",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+    },
+    "surface": "All state-changing API requests",
+    "boundary": "Cross-site request protection",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Ordinary CSRF",
+    "starting_paths": [
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "public/app.js",
+      "public/admin/admin.js"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-admin-auth",
+    "reviewed_paths": [
+      "public/_headers",
+      "public/admin/admin.js",
+      "public/app.js",
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/index.ts",
+          "public/app.js",
+          "public/admin/admin.js"
+        ],
+        "invariant": "Every cookie-authenticated non-GET/HEAD /api/* request whose Origin header names another origin is refused before admin or candidate dispatch",
+        "method": "source",
+        "result": "src/index.ts:20-23 runs before requestGuard and before the admin and candidate dispatch (L30-35). It refuses any Origin that is present and not equal to url.origin, and the literal 'null' is refused too. Every mutation in public/app.js and public/admin/admin.js is a same-origin fetch with method POST/PUT/DELETE, so browsers attach Origin. A missing Origin is allowed, but a cross-site browser POST/PUT/DELETE always carries one, and the SameSite layer below covers that case as well. No method-override or form-encoded alternate route exists: dispatch matches request.method exactly.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Ambient session cookies are not sent on cross-site state-changing requests",
+        "method": "source",
+        "result": "The chs_candidate and chs_admin cookies are issued with an explicit SameSite=Lax; HttpOnly; Secure; Path=/ (auth.ts:67-74), and chs_admin_dev with SameSite=Strict and Path=/api/admin/login (auth.ts:235). Because SameSite is explicit, Chrome's Lax-by-default POST exception does not apply, so cross-site POST/PUT/DELETE subrequests carry no session. The cookies are host-only (no Domain attribute), so the support and writers hosts never share them.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "No GET route (which bypasses the Origin guard and receives Lax cookies on top-level navigation) performs an unauthorized state change",
+        "method": "source",
+        "result": "The admin GET handlers (config, flags, members, candidates/:id/resume, questions, part3/questions, candidates, candidates/:id, export.csv, audit, analysis/status) only read data, apart from idempotent schema self-heal. One exception: GET /api/admin/analysis/status (admin.ts:1148-1149) calls closeTimedOut, which only closes attempts already past their allotted time plus grace, the same sweep analysis/run performs. The candidate GET handlers (me, part1/questions, part2/questions, config) are read-only (candidate.ts:106-110,176-181; candidate-docs.ts:268-271,366-369,420-423). No candidate-visible or cross-principal effect.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/index.ts",
+          "public/_headers"
+        ],
+        "invariant": "Login CSRF and framing-based request forgery are blocked",
+        "method": "source",
+        "result": "POST /api/admin/login and POST /api/candidate/login are non-GET /api/* requests and pass through the same Origin guard (index.ts:20-23). public/_headers sets frame-ancestors 'none' and form-action 'self', so a cross-site page can neither frame the UI nor submit a cross-site sign-in.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Flib%2Fopenai.ts%23parseResume%2C%20gradeWrittenAnswer%2C%20gradeWritingAnswer%2C%20generateInterviewQuestions%2C%20enrichQuestion::src%2Flib%2Fopenai.ts%23answer%20boundary%20and%20src%2Froutes%2Fadmin.ts%23email%20literal-in-text%20check::profile%2Fquick%2Fall-in-scope-subsystems::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+    "canonical_refs": {
+      "surface": "src/lib/openai.ts#parseResume, gradeWrittenAnswer, gradeWritingAnswer, generateInterviewQuestions, enrichQuestion",
+      "boundary": "src/lib/openai.ts#answer boundary and src/routes/admin.ts#email literal-in-text check",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+    },
+    "surface": "Untrusted text into OpenAI prompts",
+    "boundary": "Model decisions driven by resume and answer text",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Indirect injection through retrieved or ingested content",
+    "starting_paths": [
+      "src/lib/openai.ts",
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/lib/resume.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-content-browser",
+    "reviewed_paths": [
+      "src/lib/openai.ts",
+      "src/lib/resume.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "One candidate's text never enters a model context that decides another candidate's score or data (cross-principal isolation).",
+        "method": "source",
+        "result": "gradeCandidate (src/routes/admin.ts L1420-1555) and the writers grader (src/routes/admin-docs.ts L379-397) make one chatJson call per answer. Each call contains only that candidate's answer plus admin-authored question, rubric and reference fields. The result is written with candidate_id and question_id bound from the DB row, not taken from model output. Interview generation (admin.ts L171-187) uses only that candidate's resume fields and answers, and writes to that candidate_id. No batch prompt mixes candidates.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/lib/openai.ts"
+        ],
+        "invariant": "Deterministic bounds on model-driven grading output: an answer cannot close the quoted block, and the score cannot exceed the question maximum.",
+        "method": "source",
+        "result": "The boundary is a fresh ANSWER-<randomUUID> per request. Any occurrence of it is stripped from the answer (L259, L274; L368, L379). The score is reconciled with the deductions, snapped to 0.25 and clamped to [0, maxMarks] (L290-302, L388-394). ai_content_percent is clamped to 0-100. Persuasive answer text can still sway the model's judgement within those bounds, but only for the candidate's own answer, and a guardrail prompt is the only control there. That is inherent to LLM grading, not a code-level boundary failure.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/resume.ts"
+        ],
+        "invariant": "The candidate allowlist email taken from a resume is checked deterministically and cannot be invented by the model, and it cannot collide with an existing candidate.",
+        "method": "source",
+        "result": "src/routes/admin.ts L599-611 accepts the model's email only if it literally appears in the extracted text or link annotations (emailsInText, src/lib/resume.ts L40-44); otherwise it falls back to the first literal email. It rejects in-batch duplicates and emails already used by another candidate, and the UNIQUE constraint backs this up. A resume author can only pick an email that their own resume contains, which they could equally print visibly. This is the deliberate product trust in resume content, not a model boundary. nameFromResume (L211-217) applies the same literal-in-text rule to the name.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Model output fed to sinks grants no authority: it is stored as data and rendered escaped.",
+        "method": "source",
+        "result": "Parse output updates only that candidate's name, skills and projects (L615-619). Enrichment output (admin-authored question input, manager-only) fills question_bank fields that the candidate page renders through escaping renderRich. Interview output is stored per candidate and escaped in admin.js. No model output selects a route, role, SQL identifier, URL or another record.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2F%2A.ts%23D1%20prepared%20statements::src%2Froutes%2Fadmin.ts%23prepare%28%29.bind%28%29%20and%20interpolated%20identifiers::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "src/routes/*.ts#D1 prepared statements",
+      "boundary": "src/routes/admin.ts#prepare().bind() and interpolated identifiers",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "All SQL built in route handlers",
+    "boundary": "Untrusted input into SQL",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/db.ts",
+      "src/lib/ratelimit.ts",
+      "src/index.ts",
+      "src/lib/scoring.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-content-browser",
+    "reviewed_paths": [
+      "src/index.ts",
+      "src/lib/db.ts",
+      "src/lib/part3bank.ts",
+      "src/lib/randomize.ts",
+      "src/lib/ratelimit.ts",
+      "src/lib/scoring.ts",
+      "src/lib/team.ts",
+      "src/lib/timer.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/db.ts",
+          "src/lib/ratelimit.ts",
+          "src/index.ts",
+          "src/lib/scoring.ts",
+          "src/lib/timer.ts",
+          "src/lib/randomize.ts",
+          "src/lib/team.ts",
+          "src/lib/part3bank.ts"
+        ],
+        "invariant": "No request-, candidate-, resume- or model-derived value is concatenated into SQL text. Only bound parameters carry data, and interpolated identifiers come from fixed sets.",
+        "method": "source",
+        "result": "A scripted scan found every template-literal SQL passed to prepare (25 sites). The interpolations are: fixed table lists (src/index.ts L85, src/routes/admin-docs.ts L562); the typed table union (src/lib/scoring.ts L70); part/column names built from literal 'part1'/'part2'/'part3' arguments at every call site (src/lib/timer.ts L70/92/102/117, src/routes/candidate-docs.ts L173/181/284/317/337, where part comes from a literal or path.includes ternary at L372); '?' placeholder lists (ratelimit.ts L88/111/268/269, randomize.ts L244, team.ts L65, admin.ts L406/416); fixed SET fragments chosen by type checks (admin.ts L478, admin-docs.ts L240); constant WHERE strings (admin.ts L696, L801/L817); and constant DDL (part3bank.ts L216, db.ts addColumn callers). The export filters (college/status) are applied in JS, not SQL. The LIKE pattern in ratelimit.ts L144 is built from a hash. All data values are bound.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23%2Fapi%2Fadmin%2F%2A%20%28shared%29%20and%20src%2Froutes%2Fadmin-docs.ts%23%2Fapi%2Fadmin%2F%2A%20%28writers%29::src%2Flib%2Froles.ts%23isManagerOnlyRoute%20and%20inline%20role%20checks::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#/api/admin/* (shared) and src/routes/admin-docs.ts#/api/admin/* (writers)",
+      "boundary": "src/lib/roles.ts#isManagerOnlyRoute and inline role checks",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Admin API (both sites)",
+    "boundary": "Manager vs panel-member authority",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/lib/roles.ts",
+      "src/lib/auth.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-admin-auth",
+    "reviewed_paths": [
+      "src/lib/auth.ts",
+      "src/lib/roles.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/roles.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Every manager-only shared handler is reached only after the isManagerOnlyRoute gate, with identical path/method matching on both sides",
+        "method": "source",
+        "result": "admin.ts:489-492 applies isManagerOnlyRoute(path, request.method) before every handler from L495 to L1405. Each manager-only handler (resumes/upload, resumes/process, part3/seed, questions POST, questions/:id PUT/DELETE, enrich, enrich-all, toggle-active, restore, bulk-import, candidates/:id DELETE, force-submit, manual, retake, resume POST, revoke/unrevoke, college) uses the same exact string or a [^/]+ regex identical to roles.ts:9-24. The gate and the handler both use the same url.pathname string (index.ts:13), so no normalization, case or trailing-slash difference exists between them. GET candidates/:id/resume (viewing the PDF) is correctly left open to members, while POST is gated.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Manager-only routes handled before the central gate carry their own inline role check",
+        "method": "source",
+        "result": "Each of these routes checks role !== 'manager' before any write: signin-pauses/clear (L279-280), start-open (L288-289), assessment-duration (L328-329), colleges POST (L384-385), members GET/POST (L429-436) and members/:id POST/DELETE (L455-457). A request body field cannot affect role: role comes only from getAdminRole (L272), and members POST/role updates (L443, L469) sit behind the manager check.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "Writers-site overrides cannot run a manager-only action for a panel member",
+        "method": "source",
+        "result": "admin.ts:301-305 applies isManagerOnlyRoute before handleDocsAdminRoute. The docs handlers for assessment-length, questions POST/PUT, bulk-import, retake and resume also call managerOnly(role) (admin-docs.ts:97,121,143,165,208,231). The docs enrich and assessment-duration routes only return errors. Docs shortlist/reject, grade precheck, detail and export are member-level, consistent with roles.ts:1-6. Every other path returns null and falls through to the shared central gate.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Member-permitted mutations cannot reach manager-only state (access, attempt reopening, accounts, settings)",
+        "method": "source",
+        "result": "Members can call analysis/run (L1172), candidates/:id/grade (L1218), shortlist/reject (L1374) and interview (L1394). These only write grading columns, status shortlisted/rejected/evaluated and interview_questions. None touches access_revoked, the attempts timers, admin_users, settings or rate_limits. The sole role source is getAdminRole (auth.ts:174-196), which reads live admin_users.role/active for named sessions.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23GET%20%2Fapi%2Fadmin%2Fexport.csv%2C%20DELETE%20%2Fcandidates%2F%3Aid%20and%20src%2Findex.ts%23scheduled%20purge::src%2Findex.ts%23purgeExpiredCandidates%20and%20src%2Froutes%2Fadmin-docs.ts%23purgeExpiredDocs::profile%2Fquick%2Fall-in-scope-subsystems::DATA-ISOLATION-AND-LIFECYCLE.md%23Retention%20and%20queued-work%20overrun",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#GET /api/admin/export.csv, DELETE /candidates/:id and src/index.ts#scheduled purge",
+      "boundary": "src/index.ts#purgeExpiredCandidates and src/routes/admin-docs.ts#purgeExpiredDocs",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun"
+    },
+    "surface": "Export, deletion and retention",
+    "boundary": "Data lifecycle and export scope",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Retention and queued-work overrun",
+    "starting_paths": [
+      "src/index.ts",
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "migrations",
+      "migrations-docs"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-lifecycle-misc",
+    "reviewed_paths": [
+      "docs/WRITERS-DATA-DESIGN.md",
+      "migrations-docs/0004_audit_and_login.sql",
+      "migrations-docs/0017_writers_indexes.sql",
+      "migrations/0001_init.sql",
+      "migrations/0002_written_answers.sql",
+      "migrations/0004_audit_and_login.sql",
+      "migrations/0008_part3.sql",
+      "migrations/0015_perf.sql",
+      "src/index.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "test/audit-round3.test.ts",
+      "test/docs.test.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin-docs.ts",
+          "migrations/0001_init.sql",
+          "migrations/0002_written_answers.sql",
+          "migrations/0008_part3.sql",
+          "migrations/0015_perf.sql",
+          "migrations-docs/0017_writers_indexes.sql",
+          "test/audit-round3.test.ts"
+        ],
+        "invariant": "The daily retention purge removes every table holding a candidate's data, in an order the foreign keys accept, so one leftover child table cannot abort the purge or keep data past DATA_RETENTION_DAYS.",
+        "method": "source",
+        "result": "Every table with candidate_id (part1_assignments, part2_questions, attempts, part1_answers, part2_answers, interview_questions, part3_assignments, part3_answers, part1_seen, plus attempt_events on writers) appears in the purge lists (src/index.ts:83; src/routes/admin-docs.ts:560). Children are deleted before parents (part2_answers before part2_questions, everything before candidates) in one D1 batch. The cutoff compares created_at (default datetime('now')) with datetime('now', '-N days') in the same format. ensurePart3Schema runs first so a missing Part 3 table cannot abort the batch. test/audit-round3.test.ts:224-243 covers the support purge, including part1_seen, the audit log and R2.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "test/docs.test.ts",
+          "migrations-docs/0017_writers_indexes.sql"
+        ],
+        "invariant": "Manager DELETE /api/admin/candidates/:id removes all of the candidate's rows and their resume on both sites.",
+        "method": "source",
+        "result": "The shared handler (src/routes/admin.ts:963-1006, manager-only via isManagerOnlyRoute) deletes the R2 resume, all child tables, the candidate and part1_seen, and gives back question_usage. On writers the same handler runs; attempt_events is not listed but has REFERENCES candidates(id) ON DELETE CASCADE (migrations-docs/0017_writers_indexes.sql:67), and test/docs.test.ts:328-334 asserts that deletion removes the events. A full snapshot (name, email, scores) is written to admin_audit and follows the audit log's own retention period (documented design).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/routes/admin.ts"
+        ],
+        "invariant": "In-flight queued work (parse claims, grading claims, interview generation) cannot recreate a candidate's data after deletion or purge.",
+        "method": "source",
+        "result": "Parse and grade completions are conditional UPDATEs keyed on id and a claim token (src/routes/admin.ts:619-622, 1202, 1206), so they change no rows once the candidate is gone. Interview generation does DELETE then INSERT into interview_questions (src/routes/admin.ts:180-186), whose candidate_id REFERENCES candidates(id), so D1's foreign-key enforcement rejects a re-insert for a deleted id. No other background job writes candidate data. No path that recreates deleted data was found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "The CSV export contains only this site's candidate data for authenticated admins and neutralises spreadsheet formulas in untrusted text.",
+        "method": "source",
+        "result": "GET /api/admin/export.csv is served only after getAdminRole (both roles may export, by design; README and roles.ts). The support export (src/routes/admin.ts:1065-1139) and the writers export (src/routes/admin-docs.ts:464-535) apply esc/csvEsc (prefix ' for =, +, -, @, tab, CR; quote on comma, quote and newline) to every free-text cell. Unescaped cells are numeric or integer columns. Responses are no-store attachments. Every filter narrows the result and none widens it.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-lifecycle-misc",
+        "reviewed_paths": [
+          "src/index.ts",
+          "src/routes/admin-docs.ts",
+          "migrations/0004_audit_and_login.sql",
+          "migrations-docs/0004_audit_and_login.sql",
+          "docs/WRITERS-DATA-DESIGN.md"
+        ],
+        "invariant": "Derived copies of candidate data (the activity log, expired sessions) follow the stated retention contract.",
+        "method": "source",
+        "result": "Both purges delete admin_audit rows older than the same period and expired admin_sessions (src/index.ts:86-90; src/routes/admin-docs.ts:563-567), matching docs/WRITERS-DATA-DESIGN.md:131, which ages each activity-log row from its own created_at. rate_limits holds only keyed hashes and is purged daily. No derived copy outlives the documented contract. The failure-path orphaning of R2 objects is noted as hardening because no in-app reader can reach those objects.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Flogin%20and%20src%2Flib%2Fauth.ts%23admin%20and%20candidate%20sessions::src%2Flib%2Fratelimit.ts%23adminSigninBegin%20and%20src%2Flib%2Fauth.ts%23getAdminRole::profile%2Fquick%2Fall-in-scope-subsystems::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/login and src/lib/auth.ts#admin and candidate sessions",
+      "boundary": "src/lib/ratelimit.ts#adminSigninBegin and src/lib/auth.ts#getAdminRole",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    },
+    "surface": "Admin sign-in and sessions",
+    "boundary": "Admin authentication, sign-in limits, session lifecycle",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Session fixation and invalidation",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/lib/roles.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-admin-auth",
+    "reviewed_paths": [
+      "README.md",
+      "docs/WRITERS-SITE.md",
+      "migrations/0001_init.sql",
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/ratelimit.ts",
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Admin sign-in counts and refuses paused attempts before verifying the password, and the trusted-device exemption is bound to the named account",
+        "method": "source",
+        "result": "admin.ts:241-245 calls adminSigninBegin before verifyPassword (L247) and before the bootstrap compare (L254-255). ratelimit.ts:231-240 refuses paused or over-limit buckets after the counting batch. adminDeviceFor requires p.a === account (auth.ts:241), so a device cookie earned on one account gives no exemption on another.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/routes/admin.ts",
+          "migrations/0001_init.sql"
+        ],
+        "invariant": "Each login issues a fresh server-side session with expiry, and logout ends it",
+        "method": "source",
+        "result": "createAdminSession (auth.ts:154-165) signs a new token and inserts it into admin_sessions (the token is the PRIMARY KEY, migrations/0001_init.sql:112) with a 12h expires_at. getAdminRole requires that row and an expiry later than an ISO now (auth.ts:182-189). Logout deletes the row (auth.ts:81-87, admin.ts:267-270). No client-supplied token is ever adopted, so session fixation is not possible.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Named-account sessions end on delete, password change and deactivation, and role changes apply live",
+        "method": "source",
+        "result": "revokeUserSessions runs on delete (admin.ts:462) and on password change or deactivation (L481). getAdminRole re-reads u.role/u.active for every request with user_id set (auth.ts:190-194).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/routes/admin.ts",
+          "src/index.ts",
+          "README.md",
+          "docs/WRITERS-SITE.md"
+        ],
+        "invariant": "Bootstrap (config-credential) sessions end when the credential that minted them is rotated or removed",
+        "method": "source",
+        "result": "Not enforced. Bootstrap sessions are stored with user_id NULL (admin.ts:261, auth.ts:161). getAdminRole then trusts the role in the token (auth.ts:195) and never consults ADMIN_EMAIL/ADMIN_PASSWORD/PANEL_EMAIL/PANEL_PASSWORD. No code path deletes user_id IS NULL sessions apart from that token's own logout and the expiry purge (index.ts:87). See candidate talo/auth/bootstrap-admin-session-survives-credential-rotation.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/routes/candidate.ts"
+        ],
+        "invariant": "Candidate sessions expire and are invalidated by revoke/delete",
+        "method": "source",
+        "result": "The candidate token carries cid and iat and expires after 12h (auth.ts:92-108). requireCandidate reloads the candidate row on every request and returns null if the row is missing or access_revoked is set (candidate.ts:22-28), so revoke and delete take effect immediately. The cookie is cleared on logout and submit. A remaining copy is bounded by the 12h expiry and the per-candidate one-sitting rules.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verifier-1",
+        "reviewed_paths": [
+          "README.md",
+          "src/index.ts",
+          "src/lib/auth.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Independent re-check of candidate talo/auth/bootstrap-admin-session-survives-credential-rotation",
+        "method": "source",
+        "result": "Decision needs_validation: every cited trace and evidence location was re-read; the decisive behavioural fact still needs execution or deployment observation (see findings.json blockers).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "talo/auth/bootstrap-admin-session-survives-credential-rotation"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Fresumes%2Fupload%20and%20%2Fresumes%2Fprocess%20and%20GET%20%2Fcandidates%2F%3Aid%2Fresume::src%2Froutes%2Fadmin.ts%23PDF%20signature%20check%2C%20R2%20key%20generation%2C%20parse%20claims::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/resumes/upload and /resumes/process and GET /candidates/:id/resume",
+      "boundary": "src/routes/admin.ts#PDF signature check, R2 key generation, parse claims",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Resume upload, parse and viewer",
+    "boundary": "Untrusted files into storage and parser",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/lib/resume.ts",
+      "src/lib/db.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-content-browser",
+    "reviewed_paths": [
+      "src/lib/db.ts",
+      "src/lib/resume.ts",
+      "src/routes/admin.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/db.ts"
+        ],
+        "invariant": "An uploaded file cannot pick or traverse its storage key, and a stored key cannot point outside the resume namespace.",
+        "method": "source",
+        "result": "The R2 key is resumes/${newId('cand')}.pdf (src/routes/admin.ts L528-530), generated server-side from randomUUID. The upload filename is stored only as the resume_filename column. The GET viewer reads resume_r2_key from the DB row selected by a bound id (L663-667). No user input reaches a key or path.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/routes/admin.ts"
+        ],
+        "invariant": "An uploaded resume cannot be rendered as active same-origin content (HTML or script) in the admin's session.",
+        "method": "source",
+        "result": "Upload requires a .pdf name or application/pdf type, a %PDF- magic header and at most 10 MB (L514-519). The viewer always returns Content-Type application/pdf with X-Content-Type-Options nosniff, frame-ancestors 'self', X-Frame-Options SAMEORIGIN and no-store (L672-683). A polyglot file is therefore never sniffed as HTML. The Content-Disposition filename is restricted to [\\w.\\- ] and 120 characters (L671), which prevents header injection.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-content-browser",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/resume.ts"
+        ],
+        "invariant": "The parse pipeline has no SSRF, deserialization or path sink, and its claims prevent double-processing.",
+        "method": "source",
+        "result": "extractResumeText (src/lib/resume.ts L16-36) only reads text and annotation URLs as strings and never fetches them. A malformed mailto decode is caught. Parse claims use a token UPDATE with a 10-minute takeover, and the final save is conditioned on parse_claim (admin.ts L562-571, L615-624). A resume claimed more than 3 times is marked parse_failed (L567-571), which bounds retries of a PDF that crashes the parser.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23candidate%20lifecycle%20and%20grading%20actions%20%28both%20sites%29::src%2Froutes%2Fadmin.ts%23retake%2C%20resume%2C%20revoke%2C%20force-submit%2C%20stale%20sweep%20and%20grading%20claims::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#candidate lifecycle and grading actions (both sites)",
+      "boundary": "src/routes/admin.ts#retake, resume, revoke, force-submit, stale sweep and grading claims",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Admin candidate lifecycle and grading actions (both sites): retake, resume, revoke/unrevoke, force-submit, stale sweep, grading claims, shortlist/reject",
+    "boundary": "State-machine consistency of admin-driven attempt and grading transitions (which columns and rows each action clears or keeps, and the candidate and score state that results)",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/timer.ts",
+      "migrations/0001_init.sql",
+      "migrations-docs/0017_writers_indexes.sql"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "deferred",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "quick_profile_final_critic: Hunter-reported gap (hunter-candidate) that no unit closed: the admin access-control unit checked only role gating, and the candidate business-logic unit checked only that Resume/Retake leave no deadline-less save window. Source shows cross-action sequences nobody traced: support Resume (src/routes/admin.ts:1309-1325) re-opens Part 1 and sets status back to part2_ready from any status (including evaluated/shortlisted/rejected) while keeping part1_answers, and the answer upsert (src/routes/candidate.ts:197-206; src/routes/candidate-docs.ts:283-290) updates only answer_text, so existing ai_score/grading columns survive edits and the re-grade selection and per-answer score writes need checking; force-submit and revoke change status only from part2_ready/in_progress (admin.ts:1263-1272, 1328-1356); writers Resume has three branches keyed on part timestamps (src/routes/admin-docs.ts:228-285); grading claims (admin.ts:1185-1237) can be in flight while Resume/Retake clear grading_claim, but per-answer score writes are not claim-conditioned; closeTimedOut/closeTimedOutDocs (admin.ts:1415, 1575; admin-docs.ts:415) also force-close attempts measured from resumed_at."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fcandidate.ts%23%2Fapi%2Fcandidate%2F%2A%20%28support%29%20and%20src%2Froutes%2Fcandidate-docs.ts%23%2Fapi%2Fcandidate%2F%2A%20%28writers%29::src%2Froutes%2Fcandidate-docs.ts%23saveAnswer%20conditional%20INSERT%2C%20deadlines%20and%20open%20gate::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/routes/candidate.ts#/api/candidate/* (support) and src/routes/candidate-docs.ts#/api/candidate/* (writers)",
+      "boundary": "src/routes/candidate-docs.ts#saveAnswer conditional INSERT, deadlines and open gate",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Candidate test API (both sites)",
+    "boundary": "Server-enforced test lifecycle (start, deadline, close, re-login)",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/timer.ts",
+      "src/lib/randomize.ts",
+      "src/lib/auth.ts",
+      "src/lib/db.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-candidate",
+    "reviewed_paths": [
+      "migrations-docs/0017_writers_indexes.sql",
+      "migrations/0001_init.sql",
+      "src/lib/randomize.ts",
+      "src/lib/scoring.ts",
+      "src/lib/timer.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Answers are saved only while the part is started, not submitted, and before its wall-clock deadline, enforced at write time",
+        "method": "source",
+        "result": "Both sites put the condition inside the INSERT ... SELECT ... WHERE EXISTS: started_at IS NOT NULL, submitted_at IS NULL, deadline NULL or later than an ISO now (src/routes/candidate.ts:197-206, src/routes/candidate-docs.ts:283-290). Deadlines are ISO toISOString values compared with an ISO now, so the string comparison holds. Close stamps (datetime('now')) are only tested for IS NULL, so the format difference is harmless. No save path skips the condition.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Questions are not visible before the clock starts, and Part 2 (writers) cannot open before Part 1 closes",
+        "method": "source",
+        "result": "prepare returns questions: [] (candidate.ts:149, candidate-docs.ts:347,408). The /questions routes need started_at (candidate.ts:177, candidate-docs.ts:367,421). part2Gate needs part1_submitted_at and no part2_submitted_at (candidate-docs.ts:399-403). The test-open gate applies to the first start unless reopen_until is in the future (candidate.ts:156-159, candidate-docs.ts:354-357).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Resume and Retake cannot leave a window in which answers save without a deadline",
+        "method": "source",
+        "result": "Every admin path that clears a deadline also clears started_at (admin.ts:1284-1285,1319; admin-docs.ts:212-214,262,278). The save condition needs started_at IS NOT NULL, so nothing saves until /start runs again, and /start sets a new deadline (candidate.ts:167-169, candidate-docs.ts:335-339,360,415).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/lib/timer.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Holding back or racing heartbeats cannot extend the attempt past its hard limit",
+        "method": "source",
+        "result": "The heartbeat clock pauses by design (timer.ts:78-97, candidate-docs.ts:306-332). Lost updates from concurrent syncs and skipped heartbeats can only stretch the attempt up to part deadline = duration + maxPauseSeconds (default 10 min, capped at 60; candidate-docs.ts:39-42). That ceiling is the designed hard stop, so this is not a finding (see hardening).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/lib/randomize.ts",
+          "src/routes/candidate.ts",
+          "migrations/0001_init.sql",
+          "migrations-docs/0017_writers_indexes.sql"
+        ],
+        "invariant": "Each candidate gets exactly one Part 1 question set, even when requests overlap",
+        "method": "source",
+        "result": "Writers enforces this with a per-position NOT EXISTS insert (randomize.ts:219-225) plus UNIQUE(candidate_id, position) (migrations-docs/0017_writers_indexes.sql:15). Support assignPart1Questions does a SELECT existence check and then a plain batch INSERT (randomize.ts:32-35,59-62). The only uniqueness is PRIMARY KEY(candidate_id, question_id) (migrations/0001_init.sql:40-45). Overlapping /part1/prepare or /part1/start calls that pick disjoint question sets can both commit. Recorded as a needs_validation candidate.",
+        "artifact": null
+      },
+      {
+        "agent_id": "verifier-2",
+        "reviewed_paths": [
+          "migrations-docs/0017_writers_indexes.sql",
+          "migrations/0001_init.sql",
+          "src/lib/randomize.ts",
+          "src/lib/scoring.ts",
+          "src/routes/candidate.ts",
+          "wrangler.toml"
+        ],
+        "invariant": "Independent re-check of candidate src/lib/randomize.ts:assignPart1Questions:non-atomic-existence-check-duplicate-question-set",
+        "method": "source",
+        "result": "Decision needs_validation: every cited trace and evidence location was re-read; the decisive behavioural fact still needs execution or deployment observation (see findings.json blockers).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "src/lib/randomize.ts:assignPart1Questions:non-atomic-existence-check-duplicate-question-set"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fcandidate.ts%23%2Fapi%2Fcandidate%2F%2A%20%28support%29%20and%20src%2Froutes%2Fcandidate-docs.ts%23%2Fapi%2Fcandidate%2F%2A%20%28writers%29::src%2Froutes%2Fcandidate.ts%23login%2C%20me%20and%20config%20responses::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+    "canonical_refs": {
+      "surface": "src/routes/candidate.ts#/api/candidate/* (support) and src/routes/candidate-docs.ts#/api/candidate/* (writers)",
+      "boundary": "src/routes/candidate.ts#login, me and config responses",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+    },
+    "surface": "Candidate test API (both sites)",
+    "boundary": "What a candidate or anonymous caller can learn",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Feature abuse and data leakage",
+    "starting_paths": [
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/timer.ts",
+      "src/lib/randomize.ts",
+      "src/lib/auth.ts",
+      "src/lib/db.ts",
+      "src/lib/ratelimit.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-candidate",
+    "reviewed_paths": [
+      "migrations/0001_init.sql",
+      "migrations/0004_audit_and_login.sql",
+      "migrations/0008_part3.sql",
+      "src/index.ts",
+      "src/lib/part3bank.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "migrations/0001_init.sql",
+          "migrations/0004_audit_and_login.sql",
+          "migrations/0008_part3.sql",
+          "src/lib/part3bank.ts"
+        ],
+        "invariant": "/api/candidate/me returns no scores, hiring outcome or other candidates' data",
+        "method": "source",
+        "result": "/me returns name, email and candidateStage(status), which maps shortlisted, rejected and evaluated to 'submitted' (candidate-docs.ts:85-90,268-271; candidate.ts:106-111). It also returns the caller's own attempts row via SELECT *. Every attempts column, from all migrations and self-heal ALTERs, holds timers, tab-switch counts and logs, login counts, deadlines, reopen_until or resumed_at. None hold scores; ai_score and max_marks live in the *_answers tables.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Question payloads sent to candidates never include reference answers, rubrics, checkpoints or marks",
+        "method": "source",
+        "result": "Support questionsFor selects id, category, prompt, sample_data, hint and the candidate's own answer (candidate.ts:130-139). Writers part1Questions and part2Questions select id, prompt, word_limit and the candidate's own answer (candidate-docs.ts:113-135). Answer responses carry no correctness.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/ratelimit.ts",
+          "src/index.ts"
+        ],
+        "invariant": "Anonymous config and login responses leak nothing beyond what the email-only design already grants",
+        "method": "source",
+        "result": "/config returns only test length, question counts and the open flag (candidate.ts:99-101, candidate-docs.ts:249-261). Login responses tell unknown, revoked, not-ready and already-started apart. With email-only identity by design, a known email already grants a session, so this adds nothing. Unknown-email probes count against a per-network limit (ratelimit.ts:291-294). Unhandled errors return a generic message (index.ts:42-47).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fcandidate.ts%23%2Fapi%2Fcandidate%2F%2A%20%28support%29%20and%20src%2Froutes%2Fcandidate-docs.ts%23%2Fapi%2Fcandidate%2F%2A%20%28writers%29::src%2Froutes%2Fcandidate.ts%23requireCandidate%20and%20per-candidate%20WHERE%20candidate_id%20scoping::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/routes/candidate.ts#/api/candidate/* (support) and src/routes/candidate-docs.ts#/api/candidate/* (writers)",
+      "boundary": "src/routes/candidate.ts#requireCandidate and per-candidate WHERE candidate_id scoping",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Candidate test API (both sites)",
+    "boundary": "Candidate identity and per-candidate data scope",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/timer.ts",
+      "src/lib/randomize.ts",
+      "src/lib/auth.ts",
+      "src/lib/db.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-candidate",
+    "reviewed_paths": [
+      "src/lib/auth.ts",
+      "src/lib/db.ts",
+      "src/lib/timer.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Candidate identity comes only from an HMAC-signed, unexpired token, and other token types cannot stand in for it",
+        "method": "source",
+        "result": "getCandidateIdFromRequest verifies an HMAC-SHA256 with a constant-time compare, needs a cid, and enforces the 12 h iat window (auth.ts:43-59,103-109). Admin tokens ({admin, role}) and device tokens ({k:'dev',a,d}) share the secret but carry no cid, so they are rejected as candidate tokens.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/db.ts"
+        ],
+        "invariant": "Revoked or deleted candidates are refused on every authenticated route",
+        "method": "source",
+        "result": "requireCandidate reloads the candidate row on each request and returns null if the row is missing or access_revoked is set (candidate.ts:22-28, candidate-docs.ts:92-98). Both run before any authenticated route (candidate.ts:103-104, candidate-docs.ts:263-264).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-candidate",
+        "reviewed_paths": [
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/timer.ts"
+        ],
+        "invariant": "Every read and write is scoped to the session candidate, and a client-supplied question id must be owned",
+        "method": "source",
+        "result": "Every query binds candidate.id from the session; no route accepts a candidate id from the client. Support answer checks part1_assignments(candidate_id, question_id) (candidate.ts:188-191). Writers ownedQuestion checks part1_assignments or part2_questions.candidate_id (candidate-docs.ts:293-298), and the answer and heartbeat save paths both use it (candidate-docs.ts:321-327,375). Timer and event updates are keyed by candidate_id (timer.ts:70-74,92-94; candidate-docs.ts:150-176). Parts 2 and 3 are switched off on the support site (candidate.ts:233-235).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fcandidate.ts%23POST%20%2Fapi%2Fcandidate%2Flogin%20%28both%20sites%29%20and%20src%2Flib%2Fauth.ts%23candidate%20tokens::src%2Froutes%2Fcandidate-docs.ts%23one-sitting%20rule%20and%20between-parts%20re-login::profile%2Fquick%2Fall-in-scope-subsystems::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+    "canonical_refs": {
+      "surface": "src/routes/candidate.ts#POST /api/candidate/login (both sites) and src/lib/auth.ts#candidate tokens",
+      "boundary": "src/routes/candidate-docs.ts#one-sitting rule and between-parts re-login",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+    },
+    "surface": "Candidate sign-in and session reuse (src/routes/candidate.ts and src/routes/candidate-docs.ts login, plus stateless candidate tokens in src/lib/auth.ts)",
+    "boundary": "One-sitting-per-email rule and the writers between-parts re-login window versus stateless 12h candidate session tokens",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/candidate.ts",
+      "src/routes/candidate-docs.ts",
+      "src/lib/auth.ts",
+      "src/lib/db.ts",
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "deferred",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "quick_profile_final_critic: Unit closed without checks for part of its boundary: the candidate business-logic unit names 're-login' in its boundary but none of its five local checks examines it, and the session unit's candidate check defers to 'the per-candidate one-sitting rules' without verifying them. Source enforces one sitting only at login time (src/routes/candidate.ts:62-79 blocks once part1_started_at is set; src/routes/candidate-docs.ts:218-234 additionally allows a new sign-in between parts), while candidate tokens are stateless HMAC tokens valid 12h and not bound to a sitting or login_count (src/lib/auth.ts:91-111; requireCandidate only checks the row exists and is not revoked). Needed checks: whether several sessions minted before start (or in the writers between-parts window) can run one attempt concurrently from different people, whether Resume/Retake resetting login_count=0 (admin.ts:1284-1285, 1319; admin-docs.ts:212-278) revives old tokens, and whether email normalisation (src/lib/db.ts:10-13) matches how allowlist emails are stored at resume parse."
+    ]
+  },
+  {
+    "coverage_id": "wrangler.toml%23vars%2C%20secrets%20and%20bindings::src%2Ftypes.ts%23Env%20and%20src%2Flib%2Fopenai.ts%23OPENAI_BASE_URL::profile%2Fquick%2Fall-in-scope-subsystems::CLOUD-AND-DEPLOYMENT.md%23Secret%20exposure%20across%20workload%20boundaries",
+    "canonical_refs": {
+      "surface": "wrangler.toml#vars, secrets and bindings",
+      "boundary": "src/types.ts#Env and src/lib/openai.ts#OPENAI_BASE_URL",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries"
+    },
+    "surface": "Deployment configuration and secrets",
+    "boundary": "Secret handling and runtime configuration",
+    "subsystem": "All in-scope subsystems (quick profile)",
+    "attack_class": "Secret exposure across workload boundaries",
+    "starting_paths": [
+      "wrangler.toml",
+      "src/types.ts",
+      "src/lib/openai.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      ".gitignore"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "No native, binary or unsafe code: TypeScript/JavaScript on Cloudflare Workers only (tsconfig.json, src/)."
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "No RPC, queue, broker, webhook or streaming protocol in source; only HTTP JSON routes in src/index.ts."
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "No native app, deep link, webview bridge or local IPC; browser pages only."
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-admin-auth",
+    "reviewed_paths": [
+      ".dev.vars.example",
+      ".gitignore",
+      "scripts/build-writers-assets.mjs",
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/lib/openai.ts",
+      "src/lib/ratelimit.ts",
+      "src/types.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "wrangler.toml",
+          ".gitignore",
+          ".dev.vars.example",
+          "scripts/build-writers-assets.mjs"
+        ],
+        "invariant": "No credential is committed or shipped in a lower-trust readable artifact (vars, static assets, build output)",
+        "method": "source",
+        "result": "Neither [vars] nor [env.docs.vars] in wrangler.toml contains a secret. OPENAI_API_KEY, ADMIN_PASSWORD, PANEL_PASSWORD and SESSION_SECRET are documented as wrangler secrets. .gitignore excludes .dev.vars*, and git ls-files lists only .dev.vars.example, which holds placeholders. The assets directories are ./public and ./dist-docs, and build-writers-assets.mjs copies only public/ plus writers/index.html. Neither directory contains env or config files. The untracked local .dev.vars.docs is never deployed or served.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/types.ts",
+          "wrangler.toml"
+        ],
+        "invariant": "The OpenAI key is sent only to the configured API host and never returned to clients",
+        "method": "source",
+        "result": "The key appears only in the Authorization header in chatJson (openai.ts:29-31). OPENAI_BASE_URL is optional (types.ts:8) and set in neither deployed environment's vars, so production uses https://api.openai.com. The only way to redirect the key is an owner-set binding. No route echoes env values. Error text includes up to 300 characters of the provider's error body (openai.ts:62), which is admin-only and contains no key (see hardening).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/lib/ratelimit.ts"
+        ],
+        "invariant": "SESSION_SECRET-signed tokens cannot be substituted across roles, and the secret's other use is domain-separated",
+        "method": "source",
+        "result": "Candidate tokens require cid (auth.ts:106), admin tokens require admin plus a matching admin_sessions row (auth.ts:177-189), and device tokens require k='dev' plus account (auth.ts:241). No payload satisfies another role's check. The rate-limit HMAC keys on 'rate-limit:'+secret (ratelimit.ts:68), and its output is stored only as truncated bucket names, so no signing oracle exists. Signature comparison is constant-time (auth.ts:36-53).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-admin-auth",
+        "reviewed_paths": [
+          "src/index.ts"
+        ],
+        "invariant": "Unhandled errors do not disclose internals to anonymous or candidate callers",
+        "method": "source",
+        "result": "The top-level catch logs server-side and returns a generic 'Internal error' (index.ts:42-47).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]

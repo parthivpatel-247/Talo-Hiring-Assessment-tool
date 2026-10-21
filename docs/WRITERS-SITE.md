@@ -106,6 +106,9 @@ This works the same as the support site. Some points specific to the two parts:
 - Refreshing the page while a part is running ends the assessment (the same rule as support). Refreshing between the parts is safe.
 - **Each part has a hard end time:** its minutes plus up to 10 minutes for connection drops (`DOCS_MAX_PAUSE_MINUTES`). After that the server closes the part and refuses further saves, even if the page is still open.
 - A candidate sign-in lasts 12 hours. If you **Revoke** a candidate, their page shows "Your session was ended by the hiring team" at its next sync.
+- **One browser per part.** The browser that starts a part is the only one that can continue it. Another browser signed in with the same email (before the start, or between the parts) is shut out with "This test is running in another browser". Between the parts a candidate may sign in again on another device, and Part 2 then belongs to whichever browser starts it.
+- After **Resume**, **Retake** or **Restore access**, every earlier sign-in for that candidate ends: **the candidate signs in again** to continue. (Restore access doesn't do this to a candidate who is in the middle of a part.)
+- **Shortlist and Reject** are offered only once a candidate has been graded.
 - Removing or demoting a panel member in **Access** takes effect on their very next click; they don't keep their old role until they sign out.
 
 ## Updating the writers site later

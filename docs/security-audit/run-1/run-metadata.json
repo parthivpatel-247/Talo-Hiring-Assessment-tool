@@ -1,0 +1,45 @@
+{
+  "run_id": "talo-run-1",
+  "repo": "talo (campus-hiring-assessment)",
+  "target": "/home/claude/talo-repo",
+  "source_ref": "d08390bf2f8acb8283d78bab3550557a781f2965",
+  "worktree_dirty": false,
+  "profile": "quick",
+  "scope_paths": [
+    "src/",
+    "public/",
+    "writers/",
+    "migrations/",
+    "migrations-docs/",
+    "wrangler.toml",
+    "package.json",
+    "package-lock.json",
+    "scripts/build-writers-assets.mjs",
+    "scripts/check-headers.mjs"
+  ],
+  "budget": 24,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "target_execution": "none: no OS-enforced sandbox (network-off, empty env, read-only target, scratch-only writes, resource limits) is available to agents in this workspace, so all audit agents are source-only; decisive local facts become needs_validation",
+  "companions": [
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "AI-AND-LLM.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md",
+    "CLOUD-AND-DEPLOYMENT.md",
+    "SUPPLY-CHAIN-AND-RELEASE.md"
+  ],
+  "prior_runs": [],
+  "shared_file_owner": "parent",
+  "run_status": "complete",
+  "agents_spent": {
+    "reconnaissance": 4,
+    "hunters": 4,
+    "final_critic": 1,
+    "verifiers": 3,
+    "total": 12,
+    "budget": 24
+  },
+  "completed_at": "2026-10-21",
+  "post_run_owner_actions": "The parent (acting for the owner, outside the audit agents boundary) ran each lead's local validation plan as a vitest case in the repository, reproduced all three, fixed them, and reviewed the two deferred units in a follow-up. Fix commits: 3a10927, 2784b16 on branch audit-round-4."
+}
