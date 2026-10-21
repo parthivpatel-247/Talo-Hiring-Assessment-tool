@@ -124,8 +124,9 @@ npx wrangler dev --env docs        # http://127.0.0.1:8787, local secrets in .de
 npx vitest run test/docs.test.ts   # the writers' tests (the full suite: npm test)
 npm run test:limits                # 100-candidate drive against the Workers Free limits
 node scripts/writers-parity-check.mjs   # browser check of the candidate protections (needs wrangler dev --env docs)
-ADMIN_EMAIL=... ADMIN_PASSWORD=... QA_DIR=./qa node scripts/writers-ui-audit.mjs   # clicks every admin and candidate control (70 checks)
+ADMIN_EMAIL=... ADMIN_PASSWORD=... QA_DIR=./qa node scripts/writers-ui-audit.mjs   # clicks every admin and candidate control (71 checks)
 SITE=writers BASE=http://127.0.0.1:8788 CAND_EMAIL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/ratelimit-ui-check.mjs   # 429s and sign-in pauses in the browser (13 checks; SITE=support: 12)
+BASE=http://127.0.0.1:8789 ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/support-smoke.mjs   # support site in the browser, incl. one browser per sitting (18 checks; needs `npx wrangler dev --port 8789`)
 ```
 
 **Load tests:** the per-request ceilings (`[[ratelimits]]` in `wrangler.toml`) allow 3,000 requests a minute from one network. A load test run from one machine that simulates more than about 300 students will hit that ceiling. Run load tests against a local `wrangler dev`, or raise `RL_IP` for the test and put it back afterwards.
