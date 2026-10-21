@@ -164,7 +164,7 @@ export async function handleCandidateRoute(
     await ensureQuestionHintCol(env);
     await ensureQuestionDeletedCol(env);
     await assignPart1Questions(env, candidate.id);
-    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
+    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused('other');
     await startPart(env, candidate.id, 'part1');
     const seconds = await durationSeconds(env, 'part1');
     // Hard end time: the test's minutes plus an allowance for connection drops. After
@@ -195,12 +195,6 @@ export async function handleCandidateRoute(
       .first();
     if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
     if (started && !closed && pastDeadline()) { await finish(); return json({ error: 'Time is up. Your assessment has been submitted.', closed: true }, { status: 409 }); }
-    // A save also moves the clock (as on the writers site), so a page that stops
-    // sending heartbeats can't keep the clock paused while answers keep arriving.
-    if (started && !closed) {
-      const left = await heartbeat(env, candidate.id, 'part1');
-      if (left <= 0) { await finish(); return json({ error: 'Time is up. Your assessment has been submitted.', closed: true }, { status: 409 }); }
-    }
     const text = String(body.answerText ?? '').slice(0, MAX_ANSWER_CHARS); // hard server cap
     // Saved only if, at the moment of writing, the test is running and before its end
     // time. The condition is inside the INSERT, so a request already in flight when
@@ -217,6 +211,11 @@ export async function handleCandidateRoute(
       .bind(candidate.id, questionId, text, candidate.id, new Date().toISOString())
       .run();
     if (!r.meta?.changes) return json({ error: 'Your assessment is not running, so this answer was not saved.', closed: true }, { status: 409 });
+    // A save also moves the clock (as on the writers site), so a page that stops
+    // sending heartbeats can't keep the clock paused while answers keep arriving.
+    // The answer is stored first: the final save sent as time runs out must land.
+    const left = await heartbeat(env, candidate.id, 'part1');
+    if (left <= 0) { await finish(); return json({ ok: true, closed: true }); }
     return json({ ok: true }); // no correctness, ever
   }
 

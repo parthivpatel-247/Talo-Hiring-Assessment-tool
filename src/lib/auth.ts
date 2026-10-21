@@ -116,14 +116,16 @@ export async function createCandidateSession(env: Env, candidateId: string): Pro
   return setCookieHeader(CANDIDATE_COOKIE, token, CANDIDATE_SESSION_SECONDS);
 }
 
-export type CandidateSession = { cid: string; sid: string | null; iat: number };
+export type CandidateSession = { cid: string; sid: string; iat: number };
 
 export async function getCandidateSession(env: Env, request: Request): Promise<CandidateSession | null> {
   const token = readCookie(request, CANDIDATE_COOKIE);
   const payload = await verify<{ cid: string; iat?: number; sid?: string }>(env.SESSION_SECRET, token);
   if (!payload?.cid) return null;
   if (typeof payload.iat !== 'number' || Date.now() - payload.iat > CANDIDATE_SESSION_SECONDS * 1000) return null;
-  return { cid: payload.cid, sid: typeof payload.sid === 'string' ? payload.sid : null, iat: payload.iat };
+  // A sign-in from before sittings were tracked has no sid: its own sign-in time
+  // stands in (unique per sign-in), so it keeps working without a new sign-in.
+  return { cid: payload.cid, sid: typeof payload.sid === 'string' ? payload.sid : `legacy-${payload.iat}`, iat: payload.iat };
 }
 
 /** Set-Cookie that signs the candidate out of this browser. */

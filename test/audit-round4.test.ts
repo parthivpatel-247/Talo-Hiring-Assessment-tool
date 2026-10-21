@@ -349,3 +349,37 @@ describe('hardening', () => {
     expect(normalizeParsed(null)).toEqual({ name: '', email: null, skills: [], projects: [] });
   });
 });
+
+describe('review of round 4 (regressions caught before release)', () => {
+  beforeEach(async () => { await migrate(); await seedQuestions(); await seedCandidate('v1', 'v1@x.com'); });
+
+  it('support: the final save sent as time runs out is stored', async () => {
+    const { cookie } = await candidateCookie('v1@x.com');
+    const qs = (await (await req('/api/candidate/part1/start', post(cookie))).json<any>()).questions;
+    // 3 s left at the last sync, 3.2 s ago: the clock reaches zero on this save.
+    await env.DB.prepare("UPDATE attempts SET part1_remaining_seconds = 3, part1_last_heartbeat_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-3.2 seconds') WHERE candidate_id = 'v1'").run();
+    const r = await req('/api/candidate/part1/answer', post(cookie, { questionId: qs[0].id, answerText: 'last words' }));
+    expect(r.status).toBe(200);
+    expect((await env.DB.prepare("SELECT answer_text FROM part1_answers WHERE candidate_id = 'v1'").first<any>()).answer_text).toBe('last words');
+    expect((await env.DB.prepare("SELECT part1_submitted_at FROM attempts WHERE candidate_id = 'v1'").first<any>()).part1_submitted_at).not.toBeNull();
+  });
+
+  it('Restore access on a candidate who is testing (stale screen) does not strand them', async () => {
+    const { cookie } = await candidateCookie('v1@x.com');
+    await req('/api/candidate/part1/start', post(cookie));
+    const admin = await adminCookie();
+    expect((await req('/api/admin/candidates/v1/unrevoke', post(admin))).status).toBe(200);
+    expect((await req('/api/candidate/part1/heartbeat', post(cookie))).status).toBe(200);
+  });
+
+  it('a sign-in from before sittings were tracked (no sid) still starts and continues', async () => {
+    await req('/api/candidate/login', post('', { email: 'v1@x.com' }));
+    // Hand-make an old-style token {cid, iat} signed with the test secret.
+    const body = btoa(JSON.stringify({ cid: 'v1', iat: Date.now() }));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(env.SESSION_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const sig = btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body))))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const legacy = `chs_candidate=${body}.${sig}`;
+    expect((await req('/api/candidate/part1/start', post(legacy))).status).toBe(200);
+    expect((await req('/api/candidate/part1/heartbeat', post(legacy))).status).toBe(200);
+  });
+});

@@ -1070,9 +1070,9 @@ function renderCandidateTable() {
             <button class="kebab" data-kebab aria-label="More actions">${svg('dots', 16)}</button>
             <div class="menu" hidden>
               ${['submitted', 'evaluated', 'shortlisted', 'rejected'].includes(c.status) ? `<button data-grade="${c.id}">${svg('bolt', 15)} Grade now</button>` : ''}${mgrItems}
-              <div class="sep"></div>
+              ${['evaluated', 'shortlisted', 'rejected'].includes(c.status) ? `<div class="sep"></div>
               <button data-shortlist="${c.id}">${svg('star', 15)} Shortlist</button>
-              <button class="danger" data-reject="${c.id}">${svg('x', 15)} Reject</button>
+              <button class="danger" data-reject="${c.id}">${svg('x', 15)} Reject</button>` : ''}
               ${delItem}
             </div>
           </div>

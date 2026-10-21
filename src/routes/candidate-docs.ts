@@ -98,8 +98,7 @@ export function sittingRefused(kind: 'ended' | 'other'): Response {
 }
 
 /** Bind `part` to this sign-in when it starts. False if another sign-in already holds it. */
-export async function bindSitting(env: Env, candidateId: string, part: 'part1' | 'part2', sid: string | null): Promise<boolean> {
-  if (!sid) return false; // a sign-in from before sittings were tracked: sign in again
+export async function bindSitting(env: Env, candidateId: string, part: 'part1' | 'part2', sid: string): Promise<boolean> {
   await env.DB.prepare(`UPDATE attempts SET ${part}_sid = ? WHERE candidate_id = ? AND ${part}_sid IS NULL`).bind(sid, candidateId).run();
   const row = await env.DB.prepare(`SELECT ${part}_sid AS sid FROM attempts WHERE candidate_id = ?`).bind(candidateId).first<{ sid: string | null }>();
   return row?.sid === sid;
@@ -405,7 +404,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       return json({ error: 'The assessment has not opened yet. Please wait for the invigilator to open it.', notOpen: true }, { status: 409 });
     }
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
-    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
+    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused('other');
     await startPart(env, candidate.id, 'part1');
     await setDeadline('part1');
     if (at?.part1_reopen_until) await env.DB.prepare('UPDATE attempts SET part1_reopen_until = NULL WHERE candidate_id = ?').bind(candidate.id).run();
@@ -461,7 +460,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   if (path === '/api/candidate/part2/start' && request.method === 'POST') {
     const blocked = part2Gate(); if (blocked) return blocked;
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
-    if (!(await bindSitting(env, candidate.id, 'part2', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
+    if (!(await bindSitting(env, candidate.id, 'part2', session.sid))) return sittingRefused('other');
     await startPart(env, candidate.id, 'part2');
     await setDeadline('part2');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();

@@ -1401,9 +1401,15 @@ export async function handleAdminRoute(
       // Restoring access voids every sign-in from before (the one that caused a revoke
       // among them): the candidate signs in again.
       await ensureDocsAttemptCols(env);
+      // Only when access was actually revoked, and never for a test that is running
+      // (that candidate couldn't sign in again until a Resume).
       await env.DB.batch([
+        env.DB.prepare(
+          `UPDATE attempts SET sessions_valid_after = ? WHERE candidate_id = ?
+             AND (part1_started_at IS NULL OR part1_submitted_at IS NOT NULL)
+             AND EXISTS (SELECT 1 FROM candidates WHERE id = ? AND access_revoked = 1)`
+        ).bind(nowIso(), cid, cid),
         env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(cid),
-        env.DB.prepare('UPDATE attempts SET sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIso(), cid),
       ]);
     }
     await audit(env, action, cid);
