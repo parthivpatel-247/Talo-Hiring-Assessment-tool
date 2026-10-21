@@ -40,12 +40,31 @@ export function timingSafeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * Compare a typed secret with the configured one without leaking its length or
+ * content through timing: both sides are hashed first, so the compare always
+ * runs over 32 equal-length bytes.
+ */
+export async function secretEqual(a: string, b: string): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [da, db] = await Promise.all([
+    crypto.subtle.digest('SHA-256', enc.encode('talo-secret:' + a)),
+    crypto.subtle.digest('SHA-256', enc.encode('talo-secret:' + b)),
+  ]);
+  const x = new Uint8Array(da), y = new Uint8Array(db);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= x[i] ^ y[i];
+  return diff === 0;
+}
+
 async function verify<T = Record<string, unknown>>(
   secret: string,
   token: string | undefined
 ): Promise<T | null> {
   if (!token) return null;
-  const [body, sig] = token.split('.');
+  const parts = token.split('.');
+  if (parts.length !== 2) return null; // exactly body.signature, nothing appended
+  const [body, sig] = parts;
   if (!body || !sig) return null;
   const expected = await hmac(secret, body);
   // Constant-time compare so an attacker can't forge a signature byte-by-byte
@@ -90,9 +109,21 @@ export async function clearAdminSession(env: Env, request: Request): Promise<str
 // of up to 4 hours each) and the signed token itself expires then too, so a copied
 // cookie can't be replayed later.
 const CANDIDATE_SESSION_SECONDS = 60 * 60 * 12;
+// sid: a random id for this sign-in. The first sign-in to start a part binds the
+// part to its sid, so other browsers signed in earlier can't take part in that sitting.
 export async function createCandidateSession(env: Env, candidateId: string): Promise<string> {
-  const token = await sign(env.SESSION_SECRET, { cid: candidateId, iat: Date.now() });
+  const token = await sign(env.SESSION_SECRET, { cid: candidateId, iat: Date.now(), sid: crypto.randomUUID() });
   return setCookieHeader(CANDIDATE_COOKIE, token, CANDIDATE_SESSION_SECONDS);
+}
+
+export type CandidateSession = { cid: string; sid: string | null; iat: number };
+
+export async function getCandidateSession(env: Env, request: Request): Promise<CandidateSession | null> {
+  const token = readCookie(request, CANDIDATE_COOKIE);
+  const payload = await verify<{ cid: string; iat?: number; sid?: string }>(env.SESSION_SECRET, token);
+  if (!payload?.cid) return null;
+  if (typeof payload.iat !== 'number' || Date.now() - payload.iat > CANDIDATE_SESSION_SECONDS * 1000) return null;
+  return { cid: payload.cid, sid: typeof payload.sid === 'string' ? payload.sid : null, iat: payload.iat };
 }
 
 /** Set-Cookie that signs the candidate out of this browser. */
@@ -101,11 +132,7 @@ export function clearCandidateSessionCookie(): string {
 }
 
 export async function getCandidateIdFromRequest(env: Env, request: Request): Promise<string | null> {
-  const token = readCookie(request, CANDIDATE_COOKIE);
-  const payload = await verify<{ cid: string; iat?: number }>(env.SESSION_SECRET, token);
-  if (!payload?.cid) return null;
-  if (typeof payload.iat !== 'number' || Date.now() - payload.iat > CANDIDATE_SESSION_SECONDS * 1000) return null;
-  return payload.cid;
+  return (await getCandidateSession(env, request))?.cid ?? null;
 }
 
 export type AdminRole = 'manager' | 'member';
@@ -156,12 +183,32 @@ export async function createAdminSession(env: Env, role: AdminRole = 'manager', 
   // client-side. For a named account the session also records the account, so
   // deactivating, demoting or deleting the account takes effect at once.
   await ensureSessionUserCol(env);
-  const token = await sign(env.SESSION_SECRET, { admin: true, role, iat: Date.now() });
+  // n: a random nonce, so two sign-ins in the same millisecond never collide.
+  // bc: for a config (bootstrap) sign-in, a keyed tag of the credential that issued
+  // it — changing ADMIN_EMAIL/ADMIN_PASSWORD (or the panel pair) ends those sessions.
+  const payload: Record<string, unknown> = { admin: true, role, iat: Date.now(), n: crypto.randomUUID() };
+  if (!userId) {
+    const bc = await bootstrapTag(env, role);
+    if (!bc) throw new Error('No config credential for this role');
+    payload.bc = bc;
+  }
+  const token = await sign(env.SESSION_SECRET, payload);
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
   await env.DB.prepare('INSERT INTO admin_sessions (token, expires_at, user_id) VALUES (?, ?, ?)')
     .bind(token, expiresAt, userId)
     .run();
   return { cookie: setCookieHeader(ADMIN_COOKIE, token, 60 * 60 * 12), token, role };
+}
+
+/**
+ * A keyed fingerprint of the config credential behind a bootstrap role, or null
+ * when that login is switched off (email or password empty).
+ */
+async function bootstrapTag(env: Env, role: AdminRole): Promise<string | null> {
+  const email = ((role === 'manager' ? env.ADMIN_EMAIL : env.PANEL_EMAIL) || '').trim().toLowerCase();
+  const pass = (role === 'manager' ? env.ADMIN_PASSWORD : env.PANEL_PASSWORD) || '';
+  if (!email || !pass || !env.SESSION_SECRET) return null;
+  return (await hmac(env.SESSION_SECRET, `bootstrap:${role}:${email}:${pass}`)).slice(0, 32);
 }
 
 /** End every session of one named account (after its role, password or status changes). */
@@ -173,7 +220,7 @@ export async function revokeUserSessions(env: Env, userId: string): Promise<void
 /** Returns the admin's role if the request carries a valid, unexpired admin session, else null. */
 export async function getAdminRole(env: Env, request: Request): Promise<AdminRole | null> {
   const token = readCookie(request, ADMIN_COOKIE);
-  const payload = await verify<{ admin: boolean; role?: AdminRole }>(env.SESSION_SECRET, token);
+  const payload = await verify<{ admin: boolean; role?: AdminRole; bc?: string }>(env.SESSION_SECRET, token);
   if (!payload?.admin || !token) return null;
   // expires_at is stored as an ISO timestamp ("2026-10-21T20:00:00.000Z"), so compare
   // it with an ISO "now". (datetime('now') returns "2026-10-21 08:00:00", and the space
@@ -192,7 +239,12 @@ export async function getAdminRole(env: Env, request: Request): Promise<AdminRol
     if (!row.user_active) return null;
     return row.user_role === 'manager' ? 'manager' : 'member';
   }
-  return payload.role === 'member' ? 'member' : 'manager'; // bootstrap login (or a legacy token)
+  // Config (bootstrap) sign-in: valid only while the credential that issued it is
+  // unchanged. Older tokens without a tag (issued before this check) must sign in again.
+  const bootRole: AdminRole = payload.role === 'member' ? 'member' : 'manager';
+  const tag = await bootstrapTag(env, bootRole);
+  if (!tag || typeof payload.bc !== 'string' || !timingSafeEqual(tag, payload.bc)) return null;
+  return bootRole;
 }
 
 export async function isAdminRequest(env: Env, request: Request): Promise<boolean> {

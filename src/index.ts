@@ -74,8 +74,14 @@ export async function purgeExpiredCandidates(env: Env): Promise<void> {
   const expired = (await env.DB.prepare("SELECT resume_r2_key FROM candidates WHERE created_at < datetime('now', ?)")
     .bind(age).all<{ resume_r2_key: string | null }>()).results ?? [];
   const keys = expired.map((r) => r.resume_r2_key).filter((k): k is string => !!k);
-  for (let i = 0; i < keys.length; i += 1000) {
-    await env.RESUMES.delete(keys.slice(i, i + 1000)).catch(() => {});
+  // If a resume file can't be deleted, nothing is deleted this run: the rows are
+  // what point at the files, so deleting them anyway would leave files no purge can find.
+  // Tomorrow's run tries again.
+  try {
+    for (let i = 0; i < keys.length; i += 1000) await env.RESUMES.delete(keys.slice(i, i + 1000));
+  } catch (err) {
+    console.error('Retention purge postponed: resume files could not be deleted', err);
+    return;
   }
   // Every table that holds a candidate's data, so nothing lingers past
   // DATA_RETENTION_DAYS (retention contract). One batch = one transaction.

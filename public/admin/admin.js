@@ -1122,7 +1122,7 @@ function wireCandidateRows(tb) {
   }));
   tb.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', () => {
     if (!confirm(IS_DOCS ? 'Re-open the part this candidate was cut off in? They keep the SAME questions and every saved answer, with a fresh clock for that part.' : 'Re-open this candidate\'s test? They keep the SAME questions, and every answer they already typed is restored. Use this when a connection drop submitted them early.')) return;
-    act('Resume', async () => { const r = await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); if (IS_DOCS && r && r.message) alert(r.message); });
+    act('Resume', async () => { const r = await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); if (r && r.message) alert(r.message); });
   }));
   tb.querySelectorAll('[data-toggle-access]').forEach((b) => b.addEventListener('click', () => {
     const c = allCandidates.find((x) => x.id === b.dataset.toggleAccess);

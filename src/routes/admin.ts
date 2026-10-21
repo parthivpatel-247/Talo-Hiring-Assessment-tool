@@ -1,5 +1,5 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
-import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, timingSafeEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
+import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
 import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
@@ -7,6 +7,7 @@ import {
   enrichQuestion,
   gradeWrittenAnswer,
   generateInterviewQuestions,
+  normalizeParsed,
 } from '../lib/openai';
 import { part1Summary, part2Summary, part3Summary, cohortSummaries, EMPTY_SUMMARY } from '../lib/scoring';
 import { ensurePart3Schema, seedDefaultPart3 } from '../lib/part3bank';
@@ -166,24 +167,37 @@ async function assessmentQAForInterview(env: Env, candidateId: string) {
   return (rows.results ?? []).map((r) => ({ question: r.question, category: r.category, answer: r.answer ?? '', score: r.score }));
 }
 
+/** JSON.parse that falls back instead of throwing on malformed stored data. */
+function jsonOr<T>(text: string | null | undefined, fallback: T): unknown {
+  if (!text) return fallback;
+  try { return JSON.parse(text); } catch { return fallback; }
+}
+
 /** Generate personalised interview questions (with model answers) for a candidate
  *  from their resume + latest answers, REPLACING any previous set. Returns the count. */
 async function generateAndStoreInterview(env: Env, candidate: Candidate): Promise<number> {
   await ensureInterviewAnswerCol(env);
-  const parsed: ParsedResume = {
+  const parsed: ParsedResume = normalizeParsed({
     name: candidate.name ?? '', email: candidate.email,
-    skills: candidate.skills ? JSON.parse(candidate.skills) : [],
-    projects: candidate.projects ? JSON.parse(candidate.projects) : [],
-  };
+    skills: jsonOr(candidate.skills, []),
+    projects: jsonOr(candidate.projects, []),
+  });
+  // The attempt this guide is built from: if a Retake or Resume starts a new attempt
+  // while the model is writing, the guide is dropped instead of stored on it.
+  await ensureDocsAttemptCols(env);
+  const at = await env.DB.prepare('SELECT resumed_at FROM attempts WHERE candidate_id = ?').bind(candidate.id).first<{ resumed_at: string | null }>();
+  const attemptMark = at?.resumed_at ?? null;
   const qa = await assessmentQAForInterview(env, candidate.id);
   const generated = await generateInterviewQuestions(env, parsed, qa);
-  await env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(candidate.id).run();
-  if (generated.length) {
-    const stmt = env.DB.prepare(
-      'INSERT INTO interview_questions (id, candidate_id, position, question, model_answer, follow_up, based_on) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    );
-    await env.DB.batch(generated.map((q, i) => stmt.bind(newId('iq'), candidate.id, i, q.question, q.model_answer ?? null, q.follow_up ?? null, q.based_on ?? null)));
-  }
+  const same = 'EXISTS (SELECT 1 FROM attempts WHERE candidate_id = ? AND resumed_at IS ?) OR NOT EXISTS (SELECT 1 FROM attempts WHERE candidate_id = ?)';
+  const stmts = [env.DB.prepare(`DELETE FROM interview_questions WHERE candidate_id = ? AND (${same})`).bind(candidate.id, candidate.id, attemptMark, candidate.id)];
+  const ins = env.DB.prepare(
+    `INSERT INTO interview_questions (id, candidate_id, position, question, model_answer, follow_up, based_on)
+     SELECT ?, ?, ?, ?, ?, ?, ? WHERE ${same}`
+  );
+  generated.forEach((q, i) => stmts.push(ins.bind(newId('iq'), candidate.id, i, q.question, q.model_answer ?? null, q.follow_up ?? null, q.based_on ?? null, candidate.id, attemptMark, candidate.id)));
+  const res = await env.DB.batch(stmts);
+  if (generated.length && !res.slice(1).some((r) => r.meta?.changes)) throw new Error('The candidate started a new attempt while the interview guide was being written; generate it again.');
   return generated.length;
 }
 
@@ -251,13 +265,16 @@ export async function handleAdminRoute(
       // 2) Bootstrap logins from config — the email must match too (not just the password).
       const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
       const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
-      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && timingSafeEqual(pass, env.ADMIN_PASSWORD)) loginRole = 'manager';
-      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && timingSafeEqual(pass, env.PANEL_PASSWORD)) loginRole = 'member';
+      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && (await secretEqual(pass, env.ADMIN_PASSWORD))) loginRole = 'manager';
+      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && (await secretEqual(pass, env.PANEL_PASSWORD))) loginRole = 'member';
     }
     if (!loginRole) return adminSigninFailed(env, begun.state, loginEmail, newId);
     // A good sign-in gives its count back and marks this browser as trusted for the
     // account (see adminSigninSucceeded).
     const deviceCookie = await adminSigninSucceeded(env, request, begun.state, account ?? `u:${loginUserId}`);
+    // This browser's previous admin session (e.g. manager, now signing in as a panel
+    // member on a shared laptop) ends here instead of living on until it expires.
+    await clearAdminSession(env, request);
     const { cookie } = await createAdminSession(env, loginRole, loginUserId);
     return withCookie(withCookie(json({ ok: true, role: loginRole }), cookie), deviceCookie);
   }
@@ -542,7 +559,13 @@ export async function handleAdminRoute(
       const stmt = env.DB.prepare(
         'INSERT INTO candidates (id, email, resume_r2_key, resume_filename, status, college) VALUES (?, ?, ?, ?, ?, ?)'
       );
-      await env.DB.batch(good.map((p) => stmt.bind(p.id, `pending+${p.id}@unresolved.local`, p.r2Key, p.filename, 'uploaded', college)));
+      try {
+        await env.DB.batch(good.map((p) => stmt.bind(p.id, `pending+${p.id}@unresolved.local`, p.r2Key, p.filename, 'uploaded', college)));
+      } catch (err) {
+        // No rows were saved, so remove the files just stored (nothing else would find them).
+        await env.RESUMES.delete(good.map((p) => p.r2Key)).catch(() => {});
+        throw err;
+      }
       for (const p of good) created.push({ id: p.id, filename: p.filename });
     }
     return json({ ok: true, uploaded: created, skipped });
@@ -977,7 +1000,12 @@ export async function handleAdminRoute(
       },
       scores: { part1: p1, part2: p2, part3: p3 },
     };
-    if (c.resume_r2_key) await env.RESUMES.delete(c.resume_r2_key).catch(() => {});
+    // The resume file goes first; if it can't be deleted, nothing is (try again), so a
+    // file is never left behind without the row that points at it.
+    if (c.resume_r2_key) {
+      try { await env.RESUMES.delete(c.resume_r2_key); }
+      catch { return json({ error: 'Could not delete the resume file just now. Nothing was deleted; please try again.' }, { status: 502 }); }
+    }
     await ensurePart3Schema(env);
     await env.DB.batch([
       env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(id),
@@ -1046,8 +1074,9 @@ export async function handleAdminRoute(
     return json({
       candidate: {
         ...candidate,
-        skills: candidate.skills ? JSON.parse(candidate.skills) : [],
-        projects: candidate.projects ? JSON.parse(candidate.projects) : [],
+        // Shaped the same way however it was stored, so the detail view always renders.
+        skills: normalizeParsed({ skills: jsonOr(candidate.skills, []) }).skills,
+        projects: normalizeParsed({ projects: jsonOr(candidate.projects, []) }).projects,
       },
       attempt,
       part1Answers: part1Answers.results ?? [],
@@ -1196,10 +1225,10 @@ export async function handleAdminRoute(
 
     const results = await mapPool(batch, conc, async (c) => {
       try {
-        await gradeAny(env, c.id);
+        await gradeAny(env, c.id, token);
         // Only if this call still holds the claim: a Resume or Retake meanwhile drops
         // it, and the candidate's new attempt must not be marked graded.
-        await env.DB.prepare("UPDATE candidates SET status = 'evaluated', grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(c.id, token).run();
+        await env.DB.prepare("UPDATE candidates SET status = CASE WHEN status IN ('shortlisted','rejected') THEN status ELSE 'evaluated' END, grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(c.id, token).run();
         return { id: c.id, name: c.name, ok: true as const };
       } catch (err) {
         // Release the claim so a later call retries this candidate.
@@ -1226,12 +1255,21 @@ export async function handleAdminRoute(
     // Claim the candidate, as Analyze does, so a double-click or a running Analyze
     // can't grade (and pay for) the same candidate twice.
     const token = newId('grade');
+    // The finished-test check is repeated inside the claim, so a Resume landing
+    // between the check above and this claim can't let a reopened attempt be graded.
+    const doneCol = isDocs(env) ? 'part2_submitted_at' : 'part1_submitted_at';
     const claim = await env.DB.prepare(
-      "UPDATE candidates SET grading_claim = ?, grading_claimed_at = datetime('now') WHERE id = ? AND (grading_claim IS NULL OR grading_claimed_at IS NULL OR grading_claimed_at < datetime('now','-3 minutes'))"
-    ).bind(token, id).run();
-    if (!claim.meta?.changes) return json({ error: 'This candidate is being graded right now. Try again in a minute.' }, { status: 409 });
+      `UPDATE candidates SET grading_claim = ?, grading_claimed_at = datetime('now')
+       WHERE id = ? AND (grading_claim IS NULL OR grading_claimed_at IS NULL OR grading_claimed_at < datetime('now','-3 minutes'))
+         AND EXISTS (SELECT 1 FROM attempts WHERE candidate_id = ? AND ${doneCol} IS NOT NULL)`
+    ).bind(token, id, id).run();
+    if (!claim.meta?.changes) {
+      const still = await env.DB.prepare(`SELECT ${doneCol} AS done FROM attempts WHERE candidate_id = ?`).bind(id).first<{ done: string | null }>();
+      if (!still?.done) return json({ error: "This candidate hasn't finished the test yet, so there is nothing final to grade." }, { status: 409 });
+      return json({ error: 'This candidate is being graded right now. Try again in a minute.' }, { status: 409 });
+    }
     try {
-      await gradeAny(env, id);
+      await gradeAny(env, id, token);
       await env.DB.prepare("UPDATE candidates SET status = CASE WHEN status IN ('shortlisted','rejected') THEN status ELSE 'evaluated' END, grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(id, token).run();
     } catch (err) {
       await env.DB.prepare('UPDATE candidates SET grading_claim = NULL WHERE id = ? AND grading_claim = ?').bind(id, token).run().catch(() => {});
@@ -1251,9 +1289,15 @@ export async function handleAdminRoute(
     if (!email || !email.includes('@')) return json({ error: 'A valid email is required' }, { status: 400 });
     const clash = await env.DB.prepare('SELECT id FROM candidates WHERE email = ? AND id != ?').bind(email, id).first();
     if (clash) return json({ error: 'Another candidate already has that email.' }, { status: 409 });
-    await env.DB.prepare("UPDATE candidates SET email = ?, name = COALESCE(NULLIF(?, ''), name), status = 'part2_ready' WHERE id = ?")
+    // Only a candidate who isn't ready yet becomes ready; a candidate already in or
+    // past the test keeps their status (resetting it stranded finished candidates).
+    await env.DB.prepare("UPDATE candidates SET email = ?, name = COALESCE(NULLIF(?, ''), name), status = CASE WHEN status IN ('uploaded','parsed','parse_failed') THEN 'part2_ready' ELSE status END WHERE id = ?")
       .bind(email, b.name || '', id)
       .run();
+    // Sign-ins made under the old address end, unless a test is already running
+    // (that candidate couldn't sign in again until a Resume).
+    await ensureDocsAttemptCols(env);
+    await env.DB.prepare('UPDATE attempts SET sessions_valid_after = ? WHERE candidate_id = ? AND part1_started_at IS NULL').bind(nowIso(), id).run();
     await audit(env, 'manual_fix', id, email);
     return json({ ok: true });
   }
@@ -1282,11 +1326,12 @@ export async function handleAdminRoute(
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0, part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL, part3_started_at=NULL, part3_remaining_seconds=NULL, part3_last_heartbeat_at=NULL, part3_submitted_at=NULL, part3_tab_switch_count=0, part3_tab_switch_log=NULL,
-         part1_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0 WHERE candidate_id = ?`
-      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), id),
+         part1_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0, part1_sid=NULL, part2_sid=NULL, sessions_valid_after=? WHERE candidate_id = ?`
+      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), new Date().toISOString(), id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM part2_questions WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part3_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part3_answers WHERE candidate_id = ?').bind(id),
       // Clear stale interview questions from the previous trial — they'll be
@@ -1316,13 +1361,17 @@ export async function handleAdminRoute(
       // deliberately NOT touched. The candidate may start within 3 hours even if the
       // test is closed.
       env.DB.prepare(
-        'UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0 WHERE candidate_id = ?'
-      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), id),
+        'UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0, part1_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?'
+      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), new Date().toISOString(), id),
+      // The answers will be edited and graded again: drop the old marks so nothing
+      // shows them as current, and the old interview guide with them.
+      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(id),
       // Allow login again and restore access; drop any grading claim in flight.
       env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'resume', id);
-    return json({ ok: true });
+    return json({ ok: true, message: 'The test is reopened with the same questions and saved answers. The candidate signs in again to continue.' });
   }
 
   const revokeMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/(revoke|unrevoke)$/);
@@ -1337,20 +1386,25 @@ export async function handleAdminRoute(
       // A candidate who never started is only blocked: nothing is stamped closed, so
       // Restore access later lets them start normally. (On the writers site a started
       // test is finalized as a whole: both parts are closed.)
-      const started = await env.DB.prepare('SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_started_at IS NOT NULL').bind(cid).first();
+      // One batch (one transaction): the started check sits inside each statement, so
+      // a candidate starting at this very moment can't end up revoked but still running.
       await env.DB.batch([
         env.DB.prepare('UPDATE candidates SET access_revoked = 1 WHERE id = ?').bind(cid),
-        ...(started ? [
-          env.DB.prepare(
-            "UPDATE attempts SET part1_submitted_at = COALESCE(part1_submitted_at, ?), part2_submitted_at = COALESCE(part2_submitted_at, ?), part3_submitted_at = COALESCE(part3_submitted_at, ?) WHERE candidate_id = ?"
-          ).bind(now, now, now, cid),
-          env.DB.prepare(
-            "UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')"
-          ).bind(cid),
-        ] : []),
+        env.DB.prepare(
+          "UPDATE attempts SET part1_submitted_at = COALESCE(part1_submitted_at, ?), part2_submitted_at = COALESCE(part2_submitted_at, ?), part3_submitted_at = COALESCE(part3_submitted_at, ?) WHERE candidate_id = ? AND part1_started_at IS NOT NULL"
+        ).bind(now, now, now, cid),
+        env.DB.prepare(
+          "UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress') AND EXISTS (SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_submitted_at IS NOT NULL)"
+        ).bind(cid, cid),
       ]);
     } else {
-      await env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(cid).run();
+      // Restoring access voids every sign-in from before (the one that caused a revoke
+      // among them): the candidate signs in again.
+      await ensureDocsAttemptCols(env);
+      await env.DB.batch([
+        env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(cid),
+        env.DB.prepare('UPDATE attempts SET sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIso(), cid),
+      ]);
     }
     await audit(env, action, cid);
     return json({ ok: true });
@@ -1373,7 +1427,10 @@ export async function handleAdminRoute(
   const shortlistMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/(shortlist|reject)$/);
   if (shortlistMatch && request.method === 'POST') {
     const [, id, action] = shortlistMatch;
-    await env.DB.prepare('UPDATE candidates SET status = ? WHERE id = ?').bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
+    // Only a graded candidate can be shortlisted or rejected: a stale screen can't
+    // flip a candidate who is testing again (after Resume) or being graded.
+    const decided = await env.DB.prepare("UPDATE candidates SET status = ? WHERE id = ? AND status IN ('evaluated','shortlisted','rejected')").bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
+    if (!decided.meta?.changes) return json({ error: 'Only a graded candidate can be shortlisted or rejected. Refresh the list.' }, { status: 409 });
     if (action === 'shortlist') {
       const candidate = (await env.DB.prepare('SELECT * FROM candidates WHERE id = ?').bind(id).first()) as Candidate | null;
       if (candidate) {
@@ -1408,8 +1465,11 @@ export async function handleAdminRoute(
 }
 
 /** Grade one candidate with the grader for this site's test (writers or support). */
-async function gradeAny(env: Env, candidateId: string): Promise<void> {
-  return isDocs(env) ? gradeDocsCandidate(env, candidateId) : gradeCandidate(env, candidateId);
+// `claim` is the grading_claim this call holds: every score is written only while
+// the candidate still carries it, so a Resume or Retake (which drops the claim)
+// stops a slow grader from writing old scores onto the new attempt.
+async function gradeAny(env: Env, candidateId: string, claim: string): Promise<void> {
+  return isDocs(env) ? gradeDocsCandidate(env, candidateId, claim) : gradeCandidate(env, candidateId, claim);
 }
 /** Close abandoned attempts using the rules for this site's test (writers or support). */
 async function closeTimedOut(env: Env): Promise<number> {
@@ -1417,7 +1477,7 @@ async function closeTimedOut(env: Env): Promise<number> {
 }
 
 /** Grade all of one candidate's Part 1 and Part 2 answers with partial credit + deduction reasons. */
-async function gradeCandidate(env: Env, candidateId: string): Promise<void> {
+async function gradeCandidate(env: Env, candidateId: string, claim: string): Promise<void> {
   await ensurePart2AiCol(env); // Part 2 stores an AI-content estimate
   // Part 1
   await ensureQuestionCheckpointsCol(env);
@@ -1447,11 +1507,11 @@ async function gradeCandidate(env: Env, candidateId: string): Promise<void> {
     });
     await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, scored_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, scored_at = excluded.scored_at`
     )
-      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso())
+      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso(), candidateId, claim)
       .run();
   }));
 
@@ -1510,11 +1570,11 @@ async function gradeCandidate(env: Env, candidateId: string): Promise<void> {
     });
     await env.DB.prepare(
       `INSERT INTO part2_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, ai_content_pct, scored_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, ai_content_pct = excluded.ai_content_pct, scored_at = excluded.scored_at`
     )
-      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, g.aiContentPercent ?? null, nowIso())
+      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, g.aiContentPercent ?? null, nowIso(), candidateId, claim)
       .run();
   }));
 
@@ -1547,11 +1607,11 @@ async function gradeCandidate(env: Env, candidateId: string): Promise<void> {
     });
     await env.DB.prepare(
       `INSERT INTO part3_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, scored_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, scored_at = excluded.scored_at`
     )
-      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso())
+      .bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso(), candidateId, claim)
       .run();
   }));
 }
@@ -1574,6 +1634,7 @@ async function audit(env: Env, action: string, candidateId: string | null, detai
  */
 async function closeTimedOutAttempts(env: Env): Promise<number> {
   await ensurePart3Schema(env);
+  await ensureDocsAttemptCols(env);
   const grace = Number(env.STALE_GRACE_MINUTES ?? 30) * 60;
   const p1Cutoff = (await getAssessmentMinutes(env)) * 60 + grace;
   const p2Cutoff = Number(env.PART2_DURATION_MINUTES) * 60 + grace;
@@ -1582,7 +1643,7 @@ async function closeTimedOutAttempts(env: Env): Promise<number> {
   // A Part 2 that finished but never advanced to Part 3, left idle past a Part 3
   // duration + grace, is also stale (the candidate walked away between parts).
   const rows = await env.DB.prepare(
-    `SELECT candidate_id, part1_started_at, part1_submitted_at, part2_started_at, part2_submitted_at, part3_started_at, part3_submitted_at
+    `SELECT candidate_id, part1_started_at, part1_submitted_at, part1_deadline_at, part2_started_at, part2_submitted_at, part3_started_at, part3_submitted_at
      FROM attempts
      WHERE (part1_started_at IS NOT NULL AND part1_submitted_at IS NULL)
         OR (part2_started_at IS NOT NULL AND part2_submitted_at IS NULL)
@@ -1593,7 +1654,13 @@ async function closeTimedOutAttempts(env: Env): Promise<number> {
   let closed = 0;
   for (const a of rows.results ?? []) {
     const cid = a.candidate_id as string;
-    const p1Stale = a.part1_started_at && !a.part1_submitted_at && (now - new Date(a.part1_started_at).getTime()) / 1000 > p1Cutoff;
+    // An attempt's own hard end time (fixed when it started) decides; the current
+    // duration setting is only a fallback for attempts started before deadlines existed,
+    // so shortening the duration mid-drive can't close running tests early.
+    const p1Deadline = a.part1_deadline_at ? Date.parse(a.part1_deadline_at) : NaN;
+    const p1Stale = a.part1_started_at && !a.part1_submitted_at && (Number.isFinite(p1Deadline)
+      ? (now - p1Deadline) / 1000 > grace
+      : (now - new Date(a.part1_started_at).getTime()) / 1000 > p1Cutoff);
     const p2Stale = a.part2_started_at && !a.part2_submitted_at && (now - new Date(a.part2_started_at).getTime()) / 1000 > p2Cutoff;
     const p3Stale = a.part3_started_at && !a.part3_submitted_at && (now - new Date(a.part3_started_at).getTime()) / 1000 > p3Cutoff;
     // Between Part 2 and Part 3: finished Part 2, never started Part 3, idle too long.
@@ -1608,3 +1675,6 @@ async function closeTimedOutAttempts(env: Env): Promise<number> {
   }
   return closed;
 }
+
+/** Test hook: run the grader as a call holding `claim`. */
+export const gradeAnyForTests = gradeAny;

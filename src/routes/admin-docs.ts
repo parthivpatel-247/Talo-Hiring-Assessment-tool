@@ -211,9 +211,10 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare(
         `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0,
          part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL,
-         part1_deadline_at=NULL, part2_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0
+         part1_deadline_at=NULL, part2_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0,
+         part1_sid=NULL, part2_sid=NULL, sessions_valid_after=?
          WHERE candidate_id = ?`
-      ).bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), new Date().toISOString(), id),
+      ).bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), new Date().toISOString(), new Date().toISOString(), id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
@@ -244,7 +245,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       // Never started. If a revoke or force-submit stamped it closed, clear that so
       // they can start normally.
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part1_submitted_at = NULL, part2_submitted_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        env.DB.prepare('UPDATE attempts SET part1_submitted_at = NULL, part2_submitted_at = NULL, resumed_at = ?, login_count = 0, part1_sid = NULL, part2_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIsoStr, nowIsoStr, id),
         restore("part2_ready"),
       ]);
       await audit(env, 'resume', id, 'not started — can sign in as usual');
@@ -254,29 +255,41 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     // Part 1 closed on its own, before the test as a whole was closed: the candidate
     // was between the parts (or in Part 2). Closed together = cut off during Part 1.
     const p1Closed = ms(at.part1_submitted_at), allClosed = ms(at.part2_submitted_at);
-    const closedBetween = !!at.part1_submitted_at && !at.part2_started_at && (!at.part2_submitted_at || (Number.isFinite(p1Closed) && Number.isFinite(allClosed) && allClosed - p1Closed >= 1000));
+    // A Part 1 closed at (or after) its hard end time was cut off by an outage longer
+    // than the pause allowance, not finished: Resume reopens it like any cut-off.
+    const p1Deadline = ms(at.part1_deadline_at);
+    const p1TimedOut = Number.isFinite(p1Closed) && Number.isFinite(p1Deadline) && p1Closed + 1000 >= p1Deadline;
+    const closedBetween = !!at.part1_submitted_at && !at.part2_started_at && !p1TimedOut && (!at.part2_submitted_at || (Number.isFinite(p1Closed) && Number.isFinite(allClosed) && allClosed - p1Closed >= 1000));
+    // Every branch below reopens something to be graded again: drop the old marks.
+    const unscore = [
+      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('UPDATE part2_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, ai_content_pct = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
+    ];
     if (at.part2_started_at) {
       // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed.
       reopened = 'part2';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL, resumed_at = ?, login_count = 0, part2_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIsoStr, nowIsoStr, id),
         restore('in_progress'),
+        ...unscore,
       ]);
     } else if (closedBetween) {
       // Between the parts: nothing to reopen except the final close, if one happened.
       // They sign in again and start Part 2.
       reopened = null;
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part2_submitted_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        env.DB.prepare('UPDATE attempts SET part2_submitted_at = NULL, resumed_at = ?, login_count = 0, part2_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIsoStr, nowIsoStr, id),
         restore('in_progress'),
+        ...unscore,
       ]);
     } else {
       // Cut off during Part 1: reopen Part 1 (it may be started while the test is
       // closed, for the next 3 hours).
       reopened = 'part1';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(reopenUntil, nowIsoStr, id),
+        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0, part1_sid = NULL, part2_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?').bind(reopenUntil, nowIsoStr, nowIsoStr, id),
         restore('part2_ready'),
+        ...unscore,
       ]);
     }
     await audit(env, 'resume', id, reopened ? `reopened ${partLabel(reopened)}` : 'between parts — can sign in again');
@@ -291,7 +304,9 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
   const shortlistMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/(shortlist|reject)$/);
   if (shortlistMatch && request.method === 'POST') {
     const [, id, action] = shortlistMatch;
-    await env.DB.prepare('UPDATE candidates SET status = ? WHERE id = ?').bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
+    // Only a graded candidate can be shortlisted or rejected (see the support route).
+    const decided = await env.DB.prepare("UPDATE candidates SET status = ? WHERE id = ? AND status IN ('evaluated','shortlisted','rejected')").bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
+    if (!decided.meta?.changes) return json({ error: 'Only a graded candidate can be shortlisted or rejected. Refresh the list.' }, { status: 409 });
     await audit(env, action, id);
     return json({ ok: true });
   }
@@ -366,7 +381,7 @@ async function pasteSignals(env: Env, candidateId: string): Promise<Record<strin
 }
 
 /** Grade every answer of one writers' candidate (both parts) and store marks + reasoning. */
-export async function gradeDocsCandidate(env: Env, candidateId: string): Promise<void> {
+export async function gradeDocsCandidate(env: Env, candidateId: string, claim: string): Promise<void> {
   const cfg = await getDocsConfig(env);
   const p1 = await env.DB.prepare(
     `SELECT qb.id AS question_id, qb.prompt, qb.marks, qb.word_limit, a.answer_text
@@ -379,10 +394,10 @@ export async function gradeDocsCandidate(env: Env, candidateId: string): Promise
     const g = await gradeWritingAnswer(env, { part: 'part1', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '', wordLimit: q.word_limit || cfg.wordLimit });
     await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, scored_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, scored_at = excluded.scored_at`
-    ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso()).run();
+    ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso(), candidateId, claim).run();
   }));
 
   const signals = await pasteSignals(env, candidateId);
@@ -400,10 +415,10 @@ export async function gradeDocsCandidate(env: Env, candidateId: string): Promise
     });
     await env.DB.prepare(
       `INSERT INTO part2_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, ai_content_pct, scored_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       SELECT ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, ai_content_pct = excluded.ai_content_pct, scored_at = excluded.scored_at`
-    ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, g.aiContentPercent ?? null, nowIso()).run();
+    ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, g.aiContentPercent ?? null, nowIso(), candidateId, claim).run();
   }));
 }
 
@@ -418,7 +433,7 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
   const p1Cut = cfg.part1.minutes * 60 + grace;
   const p2Cut = cfg.part2.minutes * 60 + grace;
   const rows = await env.DB.prepare(
-    `SELECT candidate_id, part1_started_at, part1_submitted_at, part2_started_at, part2_submitted_at, resumed_at FROM attempts
+    `SELECT candidate_id, part1_started_at, part1_submitted_at, part1_deadline_at, part2_started_at, part2_submitted_at, part2_deadline_at, resumed_at FROM attempts
      WHERE part2_submitted_at IS NULL AND part1_started_at IS NOT NULL`
   ).all<Record<string, string | null>>();
   // Each close is 3 queries; at most 10 per request keeps this call inside the
@@ -428,8 +443,11 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
   const age = (t: string | null) => (t ? (now - new Date(t.includes('T') ? t : t.replace(' ', 'T') + 'Z').getTime()) / 1000 : 0);
   let closed = 0;
   for (const a of rows.results ?? []) {
-    const p1Stale = !a.part1_submitted_at && age(a.part1_started_at) > p1Cut;
-    const p2Stale = !!a.part2_started_at && age(a.part2_started_at) > p2Cut;
+    // Each part's own hard end time decides (see the support sweep); the current
+    // setting is only a fallback for attempts without one.
+    const pastDeadline = (d: string | null) => (d ? age(d) > grace : null);
+    const p1Stale = !a.part1_submitted_at && (pastDeadline(a.part1_deadline_at) ?? age(a.part1_started_at) > p1Cut);
+    const p2Stale = !!a.part2_started_at && !a.part2_submitted_at && (pastDeadline(a.part2_deadline_at) ?? age(a.part2_started_at) > p2Cut);
     // Between the parts, measured from Part 1's close or an admin Resume, whichever is
     // later, so a Resume isn't undone by this sweep a minute later.
     const betweenStale = !!a.part1_submitted_at && !a.part2_started_at && Math.min(age(a.part1_submitted_at), a.resumed_at ? age(a.resumed_at) : Infinity) > p2Cut;
@@ -553,8 +571,14 @@ export async function purgeExpiredDocs(env: Env): Promise<void> {
   const expired = (await env.DB.prepare("SELECT resume_r2_key FROM candidates WHERE created_at < datetime('now', ?)")
     .bind(age).all<{ resume_r2_key: string | null }>()).results ?? [];
   const keys = expired.map((r) => r.resume_r2_key).filter((k): k is string => !!k);
-  for (let i = 0; i < keys.length; i += 1000) {
-    await env.RESUMES.delete(keys.slice(i, i + 1000)).catch(() => {});
+  // If a resume file can't be deleted, nothing is deleted this run: the rows are
+  // what point at the files, so deleting them anyway would leave files no purge can find.
+  // Tomorrow's run tries again.
+  try {
+    for (let i = 0; i < keys.length; i += 1000) await env.RESUMES.delete(keys.slice(i, i + 1000));
+  } catch (err) {
+    console.error('Retention purge postponed: resume files could not be deleted', err);
+    return;
   }
   const sub = "SELECT id FROM candidates WHERE created_at < datetime('now', ?)";
   const tables = ['attempt_events', 'interview_questions', 'part3_answers', 'part2_answers', 'part1_answers', 'part3_assignments', 'part2_questions', 'part1_assignments', 'part1_seen', 'attempts'];

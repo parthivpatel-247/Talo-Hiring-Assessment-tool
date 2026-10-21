@@ -1,5 +1,5 @@
 import type { Env, Candidate } from '../types';
-import { createCandidateSession, getCandidateIdFromRequest, json, withCookie, clearCandidateSessionCookie } from '../lib/auth';
+import { createCandidateSession, getCandidateSession, json, withCookie, clearCandidateSessionCookie, type CandidateSession } from '../lib/auth';
 import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce, addColumn } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
@@ -56,7 +56,53 @@ export async function ensureDocsAttemptCols(env: Env): Promise<void> {
     if (!have.has('part1_reopen_until')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part1_reopen_until TEXT');
     // When an admin last used Resume or Retake (the stale sweep measures from it).
     if (!have.has('resumed_at')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN resumed_at TEXT');
+    // One browser per sitting: the sign-in (sid) that started each part, and a floor
+    // before which every candidate sign-in for this attempt is void (set by Resume,
+    // Retake, Restore access and email fixes, so old sessions can't come back).
+    if (!have.has('part1_sid')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part1_sid TEXT');
+    if (!have.has('part2_sid')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part2_sid TEXT');
+    if (!have.has('sessions_valid_after')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN sessions_valid_after TEXT');
   });
+}
+
+/**
+ * Is this sign-in allowed on the attempt right now?
+ *  'ended' — signed in before an admin Resume/Retake/Restore (sign in again);
+ *  'other' — the running part was started by a different sign-in (another browser).
+ * Support: Part 1 belongs to the sign-in that started it. Writers: the running part
+ * belongs to the sign-in that started it; between the parts any sign-in may continue
+ * (the one re-login window), and Part 2 then belongs to whoever starts it.
+ */
+export function sittingStatus(at: Record<string, unknown> | null, s: CandidateSession, twoPart: boolean): 'ok' | 'ended' | 'other' {
+  if (!at) return 'ok';
+  const floor = at.sessions_valid_after ? Date.parse(String(at.sessions_valid_after)) : NaN;
+  if (Number.isFinite(floor) && s.iat < floor) return 'ended';
+  let bound: unknown = null;
+  if (twoPart) bound = at.part2_sid || (!at.part1_submitted_at ? at.part1_sid : null);
+  else bound = at.part1_sid;
+  if (bound && bound !== s.sid) return 'other';
+  return 'ok';
+}
+
+/** The attempt as the candidate's page sees it: timers and counts, without the sitting ids. */
+export function publicAttempt(at: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!at) return null;
+  const { part1_sid, part2_sid, sessions_valid_after, ...rest } = at as Record<string, unknown>;
+  return rest;
+}
+
+export function sittingRefused(kind: 'ended' | 'other'): Response {
+  return kind === 'other'
+    ? json({ error: 'This test is running in another browser. Only the browser that started it can continue. Speak to the invigilator.', code: 'other_session' }, { status: 401 })
+    : json({ error: 'Your session has ended. Please sign in again.', code: 'session_ended' }, { status: 401 });
+}
+
+/** Bind `part` to this sign-in when it starts. False if another sign-in already holds it. */
+export async function bindSitting(env: Env, candidateId: string, part: 'part1' | 'part2', sid: string | null): Promise<boolean> {
+  if (!sid) return false; // a sign-in from before sittings were tracked: sign in again
+  await env.DB.prepare(`UPDATE attempts SET ${part}_sid = ? WHERE candidate_id = ? AND ${part}_sid IS NULL`).bind(sid, candidateId).run();
+  const row = await env.DB.prepare(`SELECT ${part}_sid AS sid FROM attempts WHERE candidate_id = ?`).bind(candidateId).first<{ sid: string | null }>();
+  return row?.sid === sid;
 }
 
 /** How long an admin Resume or Retake of Part 1 lets a candidate start while the test is closed. */
@@ -89,12 +135,12 @@ export function candidateStage(status: string): string {
   return 'not_ready';
 }
 
-async function requireCandidate(env: Env, request: Request): Promise<Candidate | null> {
-  const id = await getCandidateIdFromRequest(env, request);
-  if (!id) return null;
-  const candidate = (await getCandidateById(env, id)) as Candidate | null;
+async function requireCandidate(env: Env, request: Request): Promise<{ candidate: Candidate; session: CandidateSession } | null> {
+  const session = await getCandidateSession(env, request);
+  if (!session) return null;
+  const candidate = (await getCandidateById(env, session.cid)) as Candidate | null;
   if (!candidate || candidate.access_revoked) return null;
-  return candidate;
+  return { candidate, session };
 }
 
 function notReady(err: unknown): Response {
@@ -260,20 +306,22 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     });
   }
 
-  const candidate = await requireCandidate(env, request);
-  if (!candidate) return json({ error: 'Not logged in' }, { status: 401 });
+  const auth = await requireCandidate(env, request);
+  if (!auth) return json({ error: 'Not logged in' }, { status: 401 });
+  const { candidate, session } = auth;
 
   await ensureDocsAttemptCols(env);
+  const at = (await getAttempt(env, candidate.id)) as Attempt;
+  const sitting = sittingStatus(at as Record<string, unknown> | null, session, true);
+  if (sitting !== 'ok') return sittingRefused(sitting);
 
   if (path === '/api/candidate/me' && request.method === 'GET') {
-    const attempt = await getAttempt(env, candidate.id);
-    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt });
+    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt: publicAttempt(at) });
   }
 
   // Loaded once per request, and only by the routes that need them.
   let cfgCache: DocsConfig | null = null;
   const config = async () => (cfgCache ??= await getDocsConfig(env));
-  const at = (await getAttempt(env, candidate.id)) as Attempt;
 
   /**
    * Saves an answer only if, at the moment of writing, the part is started, not
@@ -286,7 +334,8 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
        SELECT ?, ?, ? WHERE EXISTS (
          SELECT 1 FROM attempts WHERE candidate_id = ? AND ${part}_started_at IS NOT NULL AND ${part}_submitted_at IS NULL
            AND (${part}_deadline_at IS NULL OR ${part}_deadline_at > ?))
-       ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
+       ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now'),
+         ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL`
     ).bind(candidate.id, questionId, text, candidate.id, nowIso());
 
   /** The question's word limit if it belongs to this candidate's part, else null. */
@@ -356,6 +405,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       return json({ error: 'The assessment has not opened yet. Please wait for the invigilator to open it.', notOpen: true }, { status: 409 });
     }
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
+    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
     await startPart(env, candidate.id, 'part1');
     await setDeadline('part1');
     if (at?.part1_reopen_until) await env.DB.prepare('UPDATE attempts SET part1_reopen_until = NULL WHERE candidate_id = ?').bind(candidate.id).run();
@@ -411,6 +461,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   if (path === '/api/candidate/part2/start' && request.method === 'POST') {
     const blocked = part2Gate(); if (blocked) return blocked;
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
+    if (!(await bindSitting(env, candidate.id, 'part2', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
     await startPart(env, candidate.id, 'part2');
     await setDeadline('part2');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
@@ -431,6 +482,8 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   // Ends the whole test: used by "Submit Part 2", and by the page when a reload or
   // leaving full screen in Part 1 closes the assessment early.
   if (path === '/api/candidate/part2/submit' && request.method === 'POST') {
+    // Ends a test that is under way; a test that hasn't started can't be ended from here.
+    if (!at?.part1_started_at) return json({ error: 'The assessment has not started.' }, { status: 409 });
     await finishAssessment(env, candidate.id);
     // The test is over: sign this browser out (shared lab PCs, no reuse of the session).
     return withCookie(json({ ok: true }), clearCandidateSessionCookie());

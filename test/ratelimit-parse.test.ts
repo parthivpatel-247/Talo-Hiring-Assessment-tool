@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { env, fetchMock, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import worker from '../src/index';
 import { migrate, adminCookie, seedCandidate, openAiReply, applySql } from './helpers';
-import { bucket, purgeRateLimits, ensureRateLimitTable, networkKey } from '../src/lib/ratelimit';
+import { bucket, purgeRateLimits, ensureRateLimitTable, networkKey, signinNetworkKey } from '../src/lib/ratelimit';
 import { resetEnsureCache, ensureParseClaimCols } from '../src/lib/db';
 import d16 from '../migrations-docs/0016_writers_two_part.sql?raw';
 import d17 from '../migrations-docs/0017_writers_indexes.sql?raw';
@@ -142,10 +142,11 @@ for (const site of ['support', 'writers'] as const) {
       expect((await adminLogin('admin@test.local', 'test-admin-pass', '10.0.1.4', E)).status).toBe(200);
     });
 
-    it('IPv6 addresses in one /64 count as one network', async () => {
+    it('IPv6 addresses in one /48 count as one sign-in network', async () => {
       for (let i = 0; i < 19; i++) expect((await adminLogin(`v6${i}@x.com`, 'wrong', `2001:db8:1:2::${(i + 1).toString(16)}`, E)).status).toBe(401);
       expect((await adminLogin('v6last@x.com', 'wrong', '2001:db8:1:2:ffff:ffff:ffff:fffe', E)).status).toBe(429);
-      expect((await adminLogin('admin@test.local', 'test-admin-pass', '2001:db8:1:3::1', E)).status).toBe(200);
+      expect((await adminLogin('admin@test.local', 'test-admin-pass', '2001:db8:1:3::1', E)).status).toBe(429); // same /48
+      expect((await adminLogin('admin@test.local', 'test-admin-pass', '2001:db8:2:3::1', E)).status).toBe(200);
     });
 
     it('a sign-in with an unknown email writes one counter, not three', async () => {
@@ -195,6 +196,8 @@ describe('networks', () => {
     expect(networkKey('2001:db8:1:2::a')).toBe('2001:0db8:0001:0002::/64');
     expect(networkKey('2001:DB8:1:2:ffff:ffff:ffff:fffe'.toLowerCase())).toBe('2001:0db8:0001:0002::/64');
     expect(networkKey('::1')).toBe('0000:0000:0000:0000::/64');
+    expect(signinNetworkKey('2001:db8:1:2::a')).toBe('2001:0db8:0001::/48');
+    expect(signinNetworkKey('203.0.113.9')).toBe('203.0.113.9');
   });
   it('a client-supplied X-Forwarded-For header is ignored', async () => {
     await migrate();

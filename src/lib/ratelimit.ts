@@ -62,7 +62,10 @@ export async function ensureRateLimitTable(env: Env): Promise<void> {
 
 const hmacKeys = new Map<string, Promise<CryptoKey>>();
 async function keyedHash(env: Env, value: string): Promise<string> {
-  const secret = env.SESSION_SECRET || 'unset';
+  // No secret = a misconfigured deploy; fail closed rather than store guessable
+  // hashes of addresses and emails.
+  const secret = env.SESSION_SECRET;
+  if (!secret) throw new Error('SESSION_SECRET is not set');
   let key = hmacKeys.get(secret);
   if (!key) {
     key = crypto.subtle.importKey('raw', new TextEncoder().encode('rate-limit:' + secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -186,6 +189,20 @@ export function clientNetwork(request: Request): string {
   return networkKey(clientIp(request));
 }
 
+/** IPv4 as is; IPv6 reduced to its /48 site prefix. Used for the sign-in counters
+ *  (which write to D1), so one routed IPv6 block can't mint thousands of fresh
+ *  /64 budgets. A /48 is normally one site or customer, so honest users still
+ *  each keep their own budget. */
+export function signinNetworkKey(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  const g = expandV6(ip);
+  return g ? g.slice(0, 3).join(':') + '::/48' : ip;
+}
+
+export function signinNetwork(request: Request): string {
+  return signinNetworkKey(clientIp(request));
+}
+
 export function waitText(seconds: number): string {
   if (seconds < 60) return `${seconds} second${seconds === 1 ? '' : 's'}`;
   const m = Math.ceil(seconds / 60);
@@ -217,7 +234,7 @@ const ADMIN_PAUSED = (s: number) =>
  */
 export async function adminSigninBegin(env: Env, request: Request, account: string | null): Promise<{ refused: Response } | { state: AdminSigninState }> {
   await ensureRateLimitTable(env);
-  const net = clientNetwork(request);
+  const net = signinNetwork(request);
   const deviceId = account ? await adminDeviceFor(env, request, account) : null;
   const buckets: Bucket[] = deviceId
     ? [{ b: await bucket(env, 'adm-dev', deviceId), limit: ADMIN_FAIL_PER_DEVICE, window: ADMIN_LOCK_SECONDS, resetOnSuccess: true }]
@@ -283,13 +300,13 @@ const CANDIDATE_PAUSED = (s: number) =>
 /** Refuse a candidate sign-in while this network is paused (one read). */
 export async function candidateSigninPaused(env: Env, request: Request): Promise<Response | null> {
   await ensureRateLimitTable(env);
-  const left = await longestBlock(env, [await bucket(env, 'cand-ip', clientNetwork(request))]);
+  const left = await longestBlock(env, [await bucket(env, 'cand-ip', signinNetwork(request))]);
   return left > 0 ? tooMany(CANDIDATE_PAUSED(left), left) : null;
 }
 
 /** Count a sign-in with an unknown email; returns a 429 once the network is paused. */
 export async function candidateUnknownEmail(env: Env, request: Request): Promise<Response | null> {
-  const r = await recordFailure(env, await bucket(env, 'cand-ip', clientNetwork(request)), CANDIDATE_UNKNOWN_PER_IP, CANDIDATE_LOCK_SECONDS, CANDIDATE_LOCK_SECONDS);
+  const r = await recordFailure(env, await bucket(env, 'cand-ip', signinNetwork(request)), CANDIDATE_UNKNOWN_PER_IP, CANDIDATE_LOCK_SECONDS, CANDIDATE_LOCK_SECONDS);
   return r.locked ? tooMany(CANDIDATE_PAUSED(CANDIDATE_LOCK_SECONDS), CANDIDATE_LOCK_SECONDS) : null;
 }
 

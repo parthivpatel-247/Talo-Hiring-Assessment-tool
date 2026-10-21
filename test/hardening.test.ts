@@ -54,7 +54,7 @@ describe('force-submit + auto-close', () => {
     const cookie = (await candidateCookie('f2@x.com')).cookie;
     await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } });
     // Simulate an attempt started long ago (well beyond 30min + 30min grace) that never submitted.
-    await env.DB.prepare("UPDATE attempts SET part1_started_at = datetime('now','-3 hours') WHERE candidate_id='f2'").run();
+    await env.DB.prepare("UPDATE attempts SET part1_started_at = datetime('now','-3 hours'), part1_deadline_at = strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 hours') WHERE candidate_id='f2'").run();
     await env.DB.prepare("UPDATE candidates SET status='in_progress' WHERE id='f2'").run();
 
     const admin = await adminCookie();

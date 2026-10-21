@@ -1,10 +1,11 @@
 # Security headers for every page and file of both sites (Cloudflare serves static
 # files before the Worker runs, so they are set here; API responses set their own).
 # The 'sha256-…' values allow ONLY the small inline theme script in each page. If you
-# edit that script, update its hash here (test/headers.test.ts checks they match).
+# edit that script, update its hash here (scripts/check-headers.mjs checks they match, in npm test and every deploy build).
 /*
   Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-E500/Hix9c/S/43KqpdoeFB/pK/daE3IQ2txltwphgY=' 'sha256-NsmleBNyVj0szBN9dxdIIdCAdPhqZ4nT463zsEUQN40='; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff
+  Strict-Transport-Security: max-age=31536000
   Referrer-Policy: same-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()

@@ -54,12 +54,23 @@ export async function assignPart1Questions(env: Env, candidateId: string): Promi
     );
   }
 
-  const chosen = [...sqlIds, ...pyIds, ...dsaIds, ...scenarioIds];
-  const ordered = shuffle(chosen);
+  const picked = [...sqlIds, ...pyIds, ...dsaIds, ...scenarioIds];
+  const ordered = shuffle(picked);
+  // Each row goes in only if its position is still free, so overlapping
+  // prepare/start calls can't give one candidate two sets (each batch is one
+  // transaction, so a later batch sees the earlier one's rows). Migration 0017
+  // backs this with UNIQUE(candidate_id, position).
   const stmt = env.DB.prepare(
-    'INSERT INTO part1_assignments (candidate_id, question_id, position) VALUES (?, ?, ?)'
+    `INSERT OR IGNORE INTO part1_assignments (candidate_id, question_id, position)
+     SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ? AND position = ?)`
   );
-  await env.DB.batch(ordered.map((qId, i) => stmt.bind(candidateId, qId, i)));
+  await env.DB.batch(ordered.map((qId, i) => stmt.bind(candidateId, qId, i, candidateId, i)));
+  // Book-keep only what was actually kept (a losing overlapping call keeps nothing).
+  const kept = await env.DB.prepare('SELECT question_id FROM part1_assignments WHERE candidate_id = ?')
+    .bind(candidateId)
+    .all<{ question_id: string }>();
+  const chosen = (kept.results ?? []).map((r) => r.question_id).filter((q) => picked.includes(q));
+  if (!chosen.length) return;
 
   // Record everything this candidate has now seen (so a future retake excludes it),
   // and bump the per-question usage counter for questions NEW to this candidate —

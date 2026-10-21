@@ -74,6 +74,7 @@ async function api(path, opts = {}, tries = 0) {
     }
     const err = new Error(body.error || `Request failed (${res.status})`);
     err.status = res.status;
+    err.code = body.code;
     throw err;
   }
   return res.json();
@@ -553,7 +554,7 @@ function makePart(part) {
       } catch (err) {
         // A 401 means the session was ended (access revoked by the invigilator), not a
         // network problem — say so instead of "connection lost".
-        if (err && err.status === 401) { stop(); sessionEnded(); return; }
+        if (err && err.status === 401) { stop(); sessionEnded(err.code); return; }
         // 429 = the server is up but asked us to slow down for a few seconds: skip
         // this sync (the local clock keeps running) rather than treat it as offline.
         if (err && err.status === 429) {
@@ -606,7 +607,7 @@ function startRecoveryProbe() {
   recoveryProbe = setInterval(async () => {
     if (!offline) { clearInterval(recoveryProbe); recoveryProbe = null; return; }
     try { await api('/api/candidate/me'); clearInterval(recoveryProbe); recoveryProbe = null; goOnline(); }
-    catch (err) { if (err && err.status === 401) { clearInterval(recoveryProbe); recoveryProbe = null; sessionEnded(); } /* else still offline */ }
+    catch (err) { if (err && err.status === 401) { clearInterval(recoveryProbe); recoveryProbe = null; sessionEnded(err.code); } /* else still offline */ }
   }, 10000);
 }
 function goOnline() {
@@ -654,6 +655,7 @@ async function beginPart(part, resuming) {
       currentPart = { ctrl: P1, onExpire: finishPart1 };
       P1.startHeartbeat(() => finishPart1());
     } catch (err) {
+      if (err && err.status === 401) { sessionEnded(err.code); return; }
       {
         // Go back to the start screen with the reason (for example "the assessment
         // has not opened yet"), out of full screen, so they can retry.
@@ -947,8 +949,9 @@ async function routeDocs(attempt, name) {
   P1.prefetch();
 }
 
-// Writers' site: the session was ended by the hiring team (access revoked).
-function sessionEnded() {
+// The session ended: access revoked, an admin Resume/Retake (sign in again), or the
+// test was started from another browser (only that browser can continue).
+function sessionEnded(code) {
   currentPart = null; offline = false; removeOfflineOverlay();
   lockdownArmed = false; clearInterval(fsWatch); clearAwayTimer();
   [P1, P2].forEach((c) => { if (c) { c.state.submitted = true; c.stop(); } });
@@ -957,7 +960,11 @@ function sessionEnded() {
   $('timer').classList.add('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const p = document.querySelector('#done-section p');
-  if (p) p.textContent = 'Your session was ended by the hiring team. Your saved answers have been kept. If you think this is a mistake, speak to the invigilator.';
+  if (p) p.textContent = code === 'other_session'
+    ? 'This test is running in another browser, and only the browser that started it can continue. Your saved answers have been kept. Speak to the invigilator.'
+    : code === 'session_ended'
+      ? 'Your session has ended. Reload the page and sign in again to continue. Your saved answers have been kept.'
+      : 'Your session was ended by the hiring team. Your saved answers have been kept. If you think this is a mistake, speak to the invigilator.';
   show('done-section');
 }
 
@@ -987,6 +994,7 @@ async function beginPart2() {
     currentPart = { ctrl: P2, onExpire: finishPart2 };
     P2.startHeartbeat(() => finishPart2());
   } catch (err) {
+    if (err && err.status === 401) { sessionEnded(err.code); return; }
     $('between-error').textContent = `Could not start Part 2: ${err.message}. Please tell the invigilator.`;
     btn.disabled = false; btn.textContent = 'Start Part 2';
   } finally { p2Starting = false; }

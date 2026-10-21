@@ -1,11 +1,11 @@
 import type { Env, Candidate } from '../types';
-import { createCandidateSession, getCandidateIdFromRequest, json, withCookie, clearCandidateSessionCookie } from '../lib/auth';
+import { createCandidateSession, getCandidateSession, json, withCookie, clearCandidateSessionCookie, type CandidateSession } from '../lib/auth';
 import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, ensureQuestionHintCol, ensureQuestionDeletedCol } from '../lib/db';
 import { assignPart1Questions } from '../lib/randomize';
 import { startPart, heartbeat, markSubmitted, logTabSwitch, durationSeconds } from '../lib/timer';
 import { isDocs } from '../lib/team';
-import { handleDocsCandidateRoute, ensureDocsAttemptCols, maxPauseSeconds, testIsOpen, candidateStage } from './candidate-docs';
+import { handleDocsCandidateRoute, ensureDocsAttemptCols, maxPauseSeconds, testIsOpen, candidateStage, sittingStatus, sittingRefused, bindSitting, publicAttempt } from './candidate-docs';
 
 /**
  * CANDIDATE API — privacy rule: this endpoint set NEVER returns marks, scores,
@@ -19,12 +19,12 @@ import { handleDocsCandidateRoute, ensureDocsAttemptCols, maxPauseSeconds, testI
 // of prose runs ~6-7k chars; 15000 leaves generous headroom for code/formatting.
 const MAX_ANSWER_CHARS = 15000;
 
-async function requireCandidate(env: Env, request: Request): Promise<Candidate | null> {
-  const id = await getCandidateIdFromRequest(env, request);
-  if (!id) return null;
-  const candidate = (await getCandidateById(env, id)) as Candidate | null;
+async function requireCandidate(env: Env, request: Request): Promise<{ candidate: Candidate; session: CandidateSession } | null> {
+  const session = await getCandidateSession(env, request);
+  if (!session) return null;
+  const candidate = (await getCandidateById(env, session.cid)) as Candidate | null;
   if (!candidate || candidate.access_revoked) return null;
-  return candidate;
+  return { candidate, session };
 }
 
 export async function handleCandidateRoute(
@@ -100,22 +100,26 @@ export async function handleCandidateRoute(
     return json({ assessmentMinutes: Math.round((await durationSeconds(env, 'part1')) / 60) });
   }
 
-  const candidate = await requireCandidate(env, request);
-  if (!candidate) return json({ error: 'Not logged in' }, { status: 401 });
+  const auth = await requireCandidate(env, request);
+  if (!auth) return json({ error: 'Not logged in' }, { status: 401 });
+  const { candidate, session } = auth;
+  await ensureDocsAttemptCols(env); // deadlines, reopen time, sitting ids (shared columns)
+  const at = (await getAttempt(env, candidate.id)) as Record<string, unknown> | null;
+  // One browser per sitting: once the test is started, only the sign-in that started
+  // it may continue; a Resume/Retake voids every earlier sign-in.
+  const sitting = sittingStatus(at, session, false);
+  if (sitting !== 'ok') return sittingRefused(sitting);
 
   if (path === '/api/candidate/me' && request.method === 'GET') {
-    const attempt = await getAttempt(env, candidate.id);
     // attempt carries timers + tab-switch counts only — no scores.
     // Stage only (not started / in progress / submitted): never the hiring outcome.
-    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt });
+    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt: publicAttempt(at) });
   }
 
   // --- The test: one closed-book, timed part (Part 1) ---
   // The server enforces the rules the page shows: questions only once the clock is
   // running, answers only while the part is open and before its hard end time, and
   // nothing after submit. (Same model as the writers site, candidate-docs.ts.)
-  await ensureDocsAttemptCols(env); // part1_deadline_at + part1_reopen_until (shared columns)
-  const at = (await getAttempt(env, candidate.id)) as Record<string, unknown> | null;
   const started = !!at?.part1_started_at;
   const closed = !!at?.part1_submitted_at;
   const pastDeadline = () => !!at?.part1_deadline_at && Date.now() > Date.parse(String(at.part1_deadline_at));
@@ -160,6 +164,7 @@ export async function handleCandidateRoute(
     await ensureQuestionHintCol(env);
     await ensureQuestionDeletedCol(env);
     await assignPart1Questions(env, candidate.id);
+    if (!(await bindSitting(env, candidate.id, 'part1', session.sid))) return sittingRefused(session.sid ? 'other' : 'ended');
     await startPart(env, candidate.id, 'part1');
     const seconds = await durationSeconds(env, 'part1');
     // Hard end time: the test's minutes plus an allowance for connection drops. After
@@ -190,6 +195,12 @@ export async function handleCandidateRoute(
       .first();
     if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
     if (started && !closed && pastDeadline()) { await finish(); return json({ error: 'Time is up. Your assessment has been submitted.', closed: true }, { status: 409 }); }
+    // A save also moves the clock (as on the writers site), so a page that stops
+    // sending heartbeats can't keep the clock paused while answers keep arriving.
+    if (started && !closed) {
+      const left = await heartbeat(env, candidate.id, 'part1');
+      if (left <= 0) { await finish(); return json({ error: 'Time is up. Your assessment has been submitted.', closed: true }, { status: 409 }); }
+    }
     const text = String(body.answerText ?? '').slice(0, MAX_ANSWER_CHARS); // hard server cap
     // Saved only if, at the moment of writing, the test is running and before its end
     // time. The condition is inside the INSERT, so a request already in flight when
@@ -200,7 +211,8 @@ export async function handleCandidateRoute(
          SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_started_at IS NOT NULL AND part1_submitted_at IS NULL
            AND (part1_deadline_at IS NULL OR part1_deadline_at > ?))
        ON CONFLICT (candidate_id, question_id)
-       DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
+       DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now'),
+         ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL`
     )
       .bind(candidate.id, questionId, text, candidate.id, new Date().toISOString())
       .run();

@@ -81,7 +81,10 @@ describe('resume keeps the same questions and restores answers', () => {
     expect(at.part1_started_at).toBeNull();
 
     // same questions, and the saved answer is returned to the candidate when they start again
-    const q2 = (await (await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } })).json<any>()).questions;
+    // The old sign-in ended with the Resume; the candidate signs in again.
+    expect((await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } })).status).toBe(401);
+    const cookie2 = (await candidateCookie('rs@x.com')).cookie;
+    const q2 = (await (await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie2 } })).json<any>()).questions;
     expect(q2.map((x: any) => x.id).sort()).toEqual(ids1);
     expect(q2.find((x: any) => x.id === q1[0].id).answer).toBe('MY SAVED ANSWER');
   });
