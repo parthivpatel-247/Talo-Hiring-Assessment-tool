@@ -120,6 +120,7 @@ describe('writers site stays inside Cloudflare Workers Free limits', () => {
     await migrate();
     await applySql(m16);
     await applySql(m17);
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', '1')").run(); // admin opened the test
     const qs = env.DB.prepare("INSERT INTO question_bank (id, category, prompt, marks, word_limit, status, active) VALUES (?, ?, ?, ?, ?, 'active', 1)");
     await env.DB.batch([
       ...Array.from({ length: 30 }, (_, i) => qs.bind(`p1-${i}`, 'part1', `Part 1 writing question ${i}`, 5, 300)),

@@ -162,6 +162,30 @@ A few queries still scan a table on purpose, because they need every row: the co
 
 The student security-report fixes, such as `__Host-` cookies and login lockout, were built in **v2**. They reach the writers site when it moves to v2.
 
+### Security re-audit and full UI test (2026-10-21)
+
+Every admin button and candidate control was clicked in a real browser against a local writers site (`scripts/writers-ui-audit.mjs`, 63 checks). The run had no console errors, page errors or unexpected API errors. The security review then found and fixed the following:
+
+| # | Finding | Fix |
+|---|---|---|
+| H1 | A candidate could open Part 1 before the drive started and read the questions. | The test is **closed by default**. A manager opens it from Overview. Questions are drawn and shown only after Start. |
+| H2 | A part had no hard end on the server; a page that stopped syncing kept its clock frozen. | Each part has a deadline: its minutes + `DOCS_MAX_PAUSE_MINUTES` (10). Every save also advances the clock. After the deadline the part is closed and saves are refused. |
+| M1 | A demoted or deactivated panel member kept their old role until their session expired. | Admin sessions carry the user id; every request checks the current role and active flag. Removing a member, deactivating them or changing their password signs them out. |
+| M2 | An answer could change the grader's instructions. | The answer is wrapped in a random per-call boundary and the grader is told to treat it only as text to mark. |
+| M3 | Grading could run on a half-finished attempt. | Grade is refused until both parts are submitted. |
+| M4 | A page could log unlimited integrity events, or spam the blocked-sign-in log. | At most 300 events per part, and only while the part is running. The blocked-sign-in log row is written at most once a minute per candidate. Per-IP rate limiting isn't available on workers.dev. |
+| M5 | Any file named `.pdf` was accepted as a resume. | It must also start with the PDF signature `%PDF-`. It is served with a sandbox policy, `nosniff`, a cleaned filename and `no-store`. |
+| L1 | `/me` showed the candidate their outcome (shortlisted / rejected). | The candidate only sees their stage (not started, between parts, done). |
+| L2 | Spreadsheet exports could carry formulas (`=`, `+`, `-`, `@`). | Such values are prefixed with `'`. |
+| L3 | Bootstrap passwords were compared with `===`. | Constant-time compare. |
+| L4 | Text shown in the pages escaped `<` and `>` but not quotes. | Quotes are escaped too. |
+| L5 | No cross-site request check. | Any POST, PUT or DELETE to `/api/` whose Origin header names another site is refused (403). |
+| L6 | Candidate sign-ins never expired. | 12 hours. A revoked candidate's page shows "Your session was ended by the hiring team". |
+
+UI fixes from the same run: a failing row action (Resume, Retake, Revoke…) now shows the error instead of failing silently, Revoke asks for confirmation, and a failed Start Part 1 returns the candidate to the start screen with a Try again button.
+
+**Tests:** 124 tests in 15 files pass, including the 88 support tests, which are unchanged. There are 11 new writers security tests and 3 new shared ones (`test/security-fixes.test.ts`). The 100-candidate limits run passes 9/9. The browser parity check passes 17/17, and a smoke run of the support site passes 13/13 with no writers controls showing.
+
 ## 5. Changes in shared code (support site gets them only when it is next deployed from `main`)
 
 - **Admin session expiry:** compares ISO timestamps correctly (section 2).
@@ -169,6 +193,17 @@ The student security-report fixes, such as `__Host-` cookies and login lockout, 
 - **Manager-only rule:** moved into `src/lib/roles.ts`. The rule is the same, and both sites now use it.
 - **Answer box:** typing when no questions loaded no longer throws a page error.
 - **Optional batch settings:** `RESUME_PROCESS_BATCH` and `MAX_UPLOAD_FILES`. When they are unset, support keeps 20 resumes and 100 files.
+- **From the 2026-10-21 re-audit:**
+  - admin sessions bound to the user (M1);
+  - PDF signature check and safe viewer headers (M5);
+  - CSV formula guard (L2);
+  - constant-time password compare (L3);
+  - quote escaping (L4);
+  - cross-site guard (L5);
+  - 12-hour candidate sign-in (L6);
+  - row actions report errors.
+
+  The support grader's prompt was **not** changed, so support scores stay comparable.
 
 ## 6. Open items
 

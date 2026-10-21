@@ -77,13 +77,20 @@ npx wrangler d1 migrations apply talo-docs-db --remote --env docs
    3. Run **Analyze all submissions**, then **Export**.
    4. Delete the test candidate.
 
+   For the test run you have to open the test first (next section) and close it again afterwards.
+
 ## On the day
+
+**The test is closed until you open it.** At the top of **Overview** a card shows the test as **Closed**. When the candidates are seated, a manager selects **Open the test**. Until then, a candidate who selects Start Part 1 sees "The assessment has not opened yet. Please wait for the invigilator to open it." with a **Try again** button, and nothing is drawn or timed. Select **Close the test** after the last candidate has started. Candidates already in a part carry on; nobody new can start Part 1.
 
 This works the same as the support site. Some points specific to the two parts:
 
 - **Resume (same questions and answers)** reopens the part the candidate was cut off in. If they were between the parts, nothing needs reopening: they sign in again and select Start Part 2.
 - **Retake** clears both parts and draws new questions.
 - Refreshing the page while a part is running ends the assessment (the same rule as support). Refreshing between the parts is safe.
+- **Each part has a hard end time:** its minutes plus up to 10 minutes for connection drops (`DOCS_MAX_PAUSE_MINUTES`). After that the server closes the part and refuses further saves, even if the page is still open.
+- A candidate sign-in lasts 12 hours. If you **Revoke** a candidate, their page shows "Your session was ended by the hiring team" at its next sync.
+- Removing or demoting a panel member in **Access** takes effect on their very next click; they don't keep their old role until they sign out.
 
 ## Updating the writers site later
 
@@ -98,6 +105,9 @@ npx wrangler dev --env docs        # http://127.0.0.1:8787, local secrets in .de
 npx vitest run test/docs.test.ts   # the writers' tests (the full suite: npm test)
 npm run test:limits                # 100-candidate drive against the Workers Free limits
 node scripts/writers-parity-check.mjs   # browser check of the candidate protections (needs wrangler dev --env docs)
+ADMIN_EMAIL=... ADMIN_PASSWORD=... QA_DIR=./qa node scripts/writers-ui-audit.mjs   # clicks every admin and candidate control (63 checks)
 ```
+
+The UI audit needs a local stand-in for OpenAI so that parsing and grading run without a real key. Point `OPENAI_BASE_URL=http://127.0.0.1:8799` in `.dev.vars.docs` at any small server that answers `/v1/chat/completions` with JSON. Never put a real key or real student resumes in `QA_DIR`.
 
 Database design, Free-plan budget and the v1 parity check: `docs/WRITERS-DATA-DESIGN.md`.

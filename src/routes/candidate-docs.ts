@@ -1,6 +1,6 @@
 import type { Env, Candidate } from '../types';
 import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
-import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso } from '../lib/db';
+import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
 import { startPart, durationSeconds } from '../lib/timer';
 import { getDocsConfig, DocsPoolTooSmall, type DocsConfig } from '../lib/team';
@@ -27,6 +27,47 @@ type Attempt = Record<string, unknown> | null;
  * only loses up to the cap, as with the support test's 15 s cap at 10 s beats.
  */
 const HEARTBEAT_CAP_SECONDS = 45;
+
+/**
+ * Hard limit on top of each part's clock. The clock pauses while a candidate is
+ * disconnected (fairness), so on its own a candidate could stop syncing and keep the
+ * part open. Every part therefore also gets a wall-clock deadline when it starts:
+ * start + its minutes + this allowance for genuine connection drops. After the
+ * deadline nothing more is saved for that part. A longer outage needs an admin Resume.
+ */
+function maxPauseSeconds(env: Env): number {
+  const m = Number(env.DOCS_MAX_PAUSE_MINUTES);
+  return (Number.isFinite(m) && m >= 0 ? Math.min(60, m) : 10) * 60;
+}
+
+/** Most integrity events one candidate can log per part (caps database writes). */
+const MAX_EVENTS_PER_PART = 300;
+
+/** Writers-only columns, added on first use (works whether or not a migration ran). */
+export async function ensureDocsAttemptCols(env: Env): Promise<void> {
+  await ensureOnce('docs.attempt_deadlines', async () => {
+    const cols = await env.DB.prepare('PRAGMA table_info(attempts)').all<{ name: string }>();
+    const have = new Set((cols.results ?? []).map((c) => c.name));
+    if (!have.has('part1_deadline_at')) await env.DB.prepare('ALTER TABLE attempts ADD COLUMN part1_deadline_at TEXT').run();
+    if (!have.has('part2_deadline_at')) await env.DB.prepare('ALTER TABLE attempts ADD COLUMN part2_deadline_at TEXT').run();
+  });
+}
+
+/** Is the test open for candidates to START Part 1? (Admin switch; closed by default.) */
+export async function docsStartOpen(env: Env): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'docs_start_open'").first<{ value: string }>();
+    return row?.value === '1';
+  } catch { return false; }
+}
+
+/** What the candidate's own page may know about their status (never the hiring outcome). */
+function candidateStage(status: string): string {
+  if (status === 'part2_ready') return 'ready';
+  if (status === 'in_progress') return 'in_progress';
+  if (['submitted', 'grading', 'evaluated', 'shortlisted', 'rejected'].includes(status)) return 'submitted';
+  return 'not_ready';
+}
 
 async function requireCandidate(env: Env, request: Request): Promise<Candidate | null> {
   const id = await getCandidateIdFromRequest(env, request);
@@ -73,11 +114,10 @@ async function part2Questions(env: Env, candidateId: string, defaultWords: numbe
   return (rows.results ?? []).map((q) => ({ id: q.id, prompt: q.prompt, wordLimit: q.word_limit || defaultWords, answer: q.answer ?? '' }));
 }
 
-/** Is this part open for answers right now (started, not submitted, time left)? */
-function partOpen(at: Attempt, part: 'part1' | 'part2'): boolean {
-  if (!at || !at[`${part}_started_at`] || at[`${part}_submitted_at`]) return false;
-  const remaining = at[`${part}_remaining_seconds`];
-  return remaining == null || Number(remaining) > 0;
+/** Has this part's wall-clock deadline passed? */
+function pastDeadline(at: Attempt, part: 'part1' | 'part2'): boolean {
+  const d = at?.[`${part}_deadline_at`];
+  return !!d && Date.now() > Date.parse(String(d));
 }
 
 /**
@@ -87,7 +127,12 @@ function partOpen(at: Attempt, part: 'part1' | 'part2'): boolean {
  * Pastes and typing metrics are signals, not tab switches, so they don't count.
  */
 const NOT_SWITCHES = new Set(['paste', 'paste_blocked', 'copy_blocked', 'metrics']);
-async function logEvent(env: Env, candidateId: string, part: 1 | 2, body: Record<string, unknown>): Promise<void> {
+async function logEvent(env: Env, candidateId: string, part: 1 | 2, body: Record<string, unknown>, at: Attempt): Promise<void> {
+  // Only while the part is running, and at most MAX_EVENTS_PER_PART per part.
+  if (!at || !at[`part${part}_started_at`] || at[`part${part}_submitted_at`]) return;
+  const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = ? AND part = ?')
+    .bind(candidateId, part).first<{ n: number }>();
+  if ((count?.n ?? 0) >= MAX_EVENTS_PER_PART) return;
   const type = typeof body.type === 'string' && body.type ? body.type.slice(0, 40) : 'unknown';
   const n = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(v))) : null);
   const qid = typeof body.questionId === 'string' ? body.questionId.slice(0, 64) : null;
@@ -102,6 +147,7 @@ async function logEvent(env: Env, candidateId: string, part: 1 | 2, body: Record
 }
 
 async function closePart(env: Env, candidateId: string, part: 'part1' | 'part2'): Promise<void> {
+  if (part === 'part2') return finishAssessment(env, candidateId);
   // COALESCE keeps the first close time (a duplicate submit can't move it).
   await env.DB.prepare(`UPDATE attempts SET ${part}_submitted_at = COALESCE(${part}_submitted_at, datetime('now')) WHERE candidate_id = ?`)
     .bind(candidateId)
@@ -147,9 +193,13 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     if (started && !betweenParts) {
       const count = Number(at?.login_count ?? 0);
       try {
+        // At most one audit row per candidate per minute, so repeated attempts can't
+        // flood the activity log (or the daily write allowance).
         await env.DB.prepare(
-          "INSERT INTO admin_audit (id, action, candidate_id, detail) VALUES (?, 'duplicate_login_blocked', ?, ?)"
-        ).bind(newId('aud'), candidate.id, `Blocked a repeat login for ${candidate.email} (attempt #${count}) — the test was already started on this account.`).run();
+          `INSERT INTO admin_audit (id, action, candidate_id, detail)
+           SELECT ?, 'duplicate_login_blocked', ?, ?
+           WHERE NOT EXISTS (SELECT 1 FROM admin_audit WHERE action = 'duplicate_login_blocked' AND candidate_id = ? AND created_at > datetime('now', '-1 minute'))`
+        ).bind(newId('aud'), candidate.id, `Blocked a repeat login for ${candidate.email} (attempt #${count}) — the test was already started on this account.`, candidate.id).run();
       } catch { /* best effort */ }
       return json({ error: 'This assessment has already been started on this account and can only be taken once. If you believe this is a mistake, contact your coordinator.' }, { status: 403 });
     }
@@ -168,15 +218,18 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       },
       wordLimit: cfg.wordLimit,
       assessmentMinutes: cfg.part1.minutes + cfg.part2.minutes,
+      open: await docsStartOpen(env),
     });
   }
 
   const candidate = await requireCandidate(env, request);
   if (!candidate) return json({ error: 'Not logged in' }, { status: 401 });
 
+  await ensureDocsAttemptCols(env);
+
   if (path === '/api/candidate/me' && request.method === 'GET') {
     const attempt = await getAttempt(env, candidate.id);
-    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidate.status }, attempt });
+    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt });
   }
 
   // Loaded once per request, and only by the routes that need them.
@@ -184,11 +237,40 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   const config = async () => (cfgCache ??= await getDocsConfig(env));
   const at = (await getAttempt(env, candidate.id)) as Attempt;
 
-  // Clock sync for a running part, optionally saving the answer being typed in the
-  // same request. Returns the seconds left (0 = the part's time is up).
-  const beat = async (part: 'part1' | 'part2'): Promise<Response> => {
-    if (!at || !at[`${part}_started_at`] || at[`${part}_submitted_at`]) return json({ remainingSeconds: 0, closed: true });
-    const body = await request.json<{ questionId?: unknown; answerText?: unknown }>().catch(() => ({} as { questionId?: unknown; answerText?: unknown }));
+  /**
+   * Saves an answer only if, at the moment of writing, the part is started, not
+   * submitted and before its deadline. The condition is part of the INSERT itself,
+   * so a request that was already in flight when the part closed can't slip in.
+   */
+  const saveAnswer = (part: 'part1' | 'part2', questionId: string, text: string) =>
+    env.DB.prepare(
+      `INSERT INTO ${part}_answers (candidate_id, question_id, answer_text)
+       SELECT ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM attempts WHERE candidate_id = ? AND ${part}_started_at IS NOT NULL AND ${part}_submitted_at IS NULL
+           AND (${part}_deadline_at IS NULL OR ${part}_deadline_at > ?))
+       ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
+    ).bind(candidate.id, questionId, text, candidate.id, nowIso());
+
+  /** The question's word limit if it belongs to this candidate's part, else null. */
+  const ownedQuestion = (part: 'part1' | 'part2', questionId: string) =>
+    part === 'part1'
+      ? env.DB.prepare('SELECT qb.word_limit FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id WHERE pa.candidate_id = ? AND pa.question_id = ?')
+          .bind(candidate.id, questionId).first<{ word_limit: number | null }>()
+      : env.DB.prepare('SELECT word_limit FROM part2_questions WHERE candidate_id = ? AND id = ?')
+          .bind(candidate.id, questionId).first<{ word_limit: number | null }>();
+
+  /**
+   * Clock sync, optionally with the answer being typed. Every save also advances the
+   * clock (a save is a sign of life just like a sync), so skipping syncs while still
+   * saving can't freeze the timer. Gaps longer than the cap count as a disconnect,
+   * up to the part's wall-clock deadline.
+   */
+  const syncAndSave = async (part: 'part1' | 'part2', body: { questionId?: unknown; answerText?: unknown }): Promise<Response> => {
+    if (!at || !at[`${part}_started_at`] || at[`${part}_submitted_at`]) return json({ remainingSeconds: 0, closed: true, saved: false });
+    if (pastDeadline(at, part)) {
+      await closePart(env, candidate.id, part);
+      return json({ remainingSeconds: 0, closed: true, saved: false });
+    }
     const remaining = Number(at[`${part}_remaining_seconds`] ?? 0);
     const last = at[`${part}_last_heartbeat_at`] ? Date.parse(String(at[`${part}_last_heartbeat_at`])) : Date.now();
     const elapsed = Math.min(Math.max(0, (Date.now() - last) / 1000), HEARTBEAT_CAP_SECONDS);
@@ -197,70 +279,71 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       env.DB.prepare(`UPDATE attempts SET ${part}_remaining_seconds = ?, ${part}_last_heartbeat_at = ? WHERE candidate_id = ? AND ${part}_submitted_at IS NULL`)
         .bind(next, nowIso(), candidate.id),
     ];
-    let saved = false;
+    let wantSave = false;
     if (typeof body.questionId === 'string' && body.questionId && typeof body.answerText === 'string' && remaining > 0) {
-      const owned = part === 'part1'
-        ? await env.DB.prepare('SELECT qb.word_limit FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id WHERE pa.candidate_id = ? AND pa.question_id = ?')
-            .bind(candidate.id, body.questionId).first<{ word_limit: number | null }>()
-        : await env.DB.prepare('SELECT word_limit FROM part2_questions WHERE candidate_id = ? AND id = ?')
-            .bind(candidate.id, body.questionId).first<{ word_limit: number | null }>();
+      const owned = await ownedQuestion(part, body.questionId);
       if (owned) {
-        const text = body.answerText.slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
-        stmts.push(env.DB.prepare(
-          `INSERT INTO ${part}_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
-           ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
-        ).bind(candidate.id, body.questionId, text));
-        saved = true;
+        stmts.unshift(saveAnswer(part, body.questionId, body.answerText.slice(0, answerCap(owned.word_limit || (await config()).wordLimit))));
+        wantSave = true;
       }
     }
-    await env.DB.batch(stmts);
-    if (next <= 0) {
-      if (part === 'part1') await closePart(env, candidate.id, 'part1'); // Part 1 closes; Part 2 is next
-      else await finishAssessment(env, candidate.id);
-    }
-    return json({ remainingSeconds: next, saved });
+    const results = await env.DB.batch(stmts);
+    const saved = wantSave && Number(results[0]?.meta?.changes ?? 0) > 0;
+    if (next <= 0) await closePart(env, candidate.id, part);
+    return json({ remainingSeconds: next, saved, closed: next <= 0 });
+  };
+
+  /** Sets the part's wall-clock deadline when it first starts (idempotent). */
+  const setDeadline = async (part: 'part1' | 'part2') => {
+    const seconds = (await durationSeconds(env, part)) + maxPauseSeconds(env);
+    await env.DB.prepare(`UPDATE attempts SET ${part}_deadline_at = ? WHERE candidate_id = ? AND ${part}_deadline_at IS NULL`)
+      .bind(new Date(Date.now() + seconds * 1000).toISOString(), candidate.id).run();
   };
 
   // ---------------- Part 1: closed book ----------------
+  // Prepare checks the candidate can start (bank big enough). It never returns the
+  // questions: they are sent only once the part's clock is running.
   if (path === '/api/candidate/part1/prepare' && request.method === 'POST') {
     if (at?.part1_submitted_at) return json({ error: 'Part 1 is closed.', closed: true }, { status: 409 });
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
-    return json({ questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
+    return json({ questions: [], ready: true });
   }
 
   if (path === '/api/candidate/part1/start' && request.method === 'POST') {
     if (at?.part1_submitted_at) return json({ error: 'Part 1 is closed.', closed: true }, { status: 409 });
+    if (!at?.part1_started_at && !(await docsStartOpen(env))) {
+      return json({ error: 'The assessment has not opened yet. Please wait for the invigilator to open it.', notOpen: true }, { status: 409 });
+    }
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
     await startPart(env, candidate.id, 'part1');
+    await setDeadline('part1');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
     return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part1/questions' && request.method === 'GET') {
+    if (!at?.part1_started_at) return json({ error: 'Part 1 has not started.' }, { status: 409 });
     return json({ questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
-  if (path === '/api/candidate/part1/answer' && request.method === 'POST') {
-    const { questionId, answerText } = await request.json<{ questionId: string; answerText: string }>().catch(() => ({} as any));
-    if (typeof questionId !== 'string' || !questionId) return json({ error: 'questionId required' }, { status: 400 });
-    const owned = await env.DB.prepare(
-      'SELECT qb.word_limit FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id WHERE pa.candidate_id = ? AND pa.question_id = ?'
-    ).bind(candidate.id, questionId).first<{ word_limit: number | null }>();
-    if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
-    if (!partOpen(at, 'part1')) return json({ error: 'Part 1 is closed. Your saved answers were kept.', closed: true }, { status: 409 });
-    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
-    await env.DB.prepare(
-      `INSERT INTO part1_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
-       ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
-    ).bind(candidate.id, questionId, text).run();
-    return json({ ok: true });
+  if ((path === '/api/candidate/part1/answer' || path === '/api/candidate/part2/answer') && request.method === 'POST') {
+    const part = path.includes('/part1/') ? 'part1' : 'part2';
+    const body = await request.json<{ questionId?: unknown; answerText?: unknown }>().catch(() => ({} as { questionId?: unknown; answerText?: unknown }));
+    if (typeof body.questionId !== 'string' || !body.questionId) return json({ error: 'questionId required' }, { status: 400 });
+    if (!(await ownedQuestion(part, body.questionId))) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
+    const res = await (await syncAndSave(part, { questionId: body.questionId, answerText: String(body.answerText ?? '') })).json<{ saved: boolean; remainingSeconds: number }>();
+    if (!res.saved) return json({ error: `${part === 'part1' ? 'Part 1' : 'Part 2'} is closed. Your saved answers were kept.`, closed: true }, { status: 409 });
+    return json({ ok: true, remainingSeconds: res.remainingSeconds });
   }
 
-  if (path === '/api/candidate/part1/heartbeat' && request.method === 'POST') return beat('part1');
+  if ((path === '/api/candidate/part1/heartbeat' || path === '/api/candidate/part2/heartbeat') && request.method === 'POST') {
+    const body = await request.json<{ questionId?: unknown; answerText?: unknown }>().catch(() => ({} as { questionId?: unknown; answerText?: unknown }));
+    return syncAndSave(path.includes('/part1/') ? 'part1' : 'part2', body);
+  }
 
   if (path === '/api/candidate/part1/tab-switch' && request.method === 'POST') {
     const body = await request.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
-    await logEvent(env, candidate.id, 1, body);
+    await logEvent(env, candidate.id, 1, body, at);
     return json({ ok: true });
   }
 
@@ -280,42 +363,26 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   if (path === '/api/candidate/part2/prepare' && request.method === 'POST') {
     const blocked = part2Gate(); if (blocked) return blocked;
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
-    return json({ questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
+    return json({ questions: [], ready: true });
   }
 
   if (path === '/api/candidate/part2/start' && request.method === 'POST') {
     const blocked = part2Gate(); if (blocked) return blocked;
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
     await startPart(env, candidate.id, 'part2');
+    await setDeadline('part2');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
     return json({ ok: true, durationSeconds: await durationSeconds(env, 'part2'), questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part2/questions' && request.method === 'GET') {
-    if (!at?.part1_submitted_at) return json({ error: 'Finish Part 1 first.' }, { status: 409 });
+    if (!at?.part2_started_at) return json({ error: 'Part 2 has not started.' }, { status: 409 });
     return json({ questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
-  if (path === '/api/candidate/part2/answer' && request.method === 'POST') {
-    const { questionId, answerText } = await request.json<{ questionId: string; answerText: string }>().catch(() => ({} as any));
-    if (typeof questionId !== 'string' || !questionId) return json({ error: 'questionId required' }, { status: 400 });
-    const owned = await env.DB.prepare('SELECT word_limit FROM part2_questions WHERE candidate_id = ? AND id = ?')
-      .bind(candidate.id, questionId).first<{ word_limit: number | null }>();
-    if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
-    if (!partOpen(at, 'part2')) return json({ error: 'Part 2 is closed. Your saved answers were kept.', closed: true }, { status: 409 });
-    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
-    await env.DB.prepare(
-      `INSERT INTO part2_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
-       ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
-    ).bind(candidate.id, questionId, text).run();
-    return json({ ok: true });
-  }
-
-  if (path === '/api/candidate/part2/heartbeat' && request.method === 'POST') return beat('part2');
-
   if (path === '/api/candidate/part2/tab-switch' && request.method === 'POST') {
     const body = await request.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
-    await logEvent(env, candidate.id, 2, body); // logged only — Part 2 never blocks
+    await logEvent(env, candidate.id, 2, body, at); // logged only — Part 2 never blocks
     return json({ ok: true });
   }
 

@@ -49,7 +49,8 @@ async function api(path, opts = {}) {
   }
   return res.json();
 }
-function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+// Escapes text for HTML content AND attribute values (quotes included).
+function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
 // Candidate-accurate renderer — IDENTICAL logic to the exam portal's renderRich
 // (public/app.js), so the admin "shown to candidate" preview matches exactly what
@@ -219,6 +220,7 @@ async function loadConfig({ preserveEdits = false } = {}) {
     VIEWS.questions.sub = 'Writing questions for Part 1 and Part 2';
     const qp = $('q-prompt'); if (qp) qp.placeholder = 'e.g. Rewrite this error message so a first-time user understands what went wrong and what to do next: …';
     renderDocsLength(preserveEdits);
+    renderDocsOpen();
     const addBtn = $('q-add-btn'); if (addBtn && !addBtn.disabled) addBtn.textContent = 'Add question';
     const note = $('analysis-note');
     if (note && !analyzing && note.dataset.docsDefault !== '1') { note.dataset.docsDefault = '1'; note.textContent = 'AI reads each submitted answer as a whole and gives marks with a short reason. Export the results to CSV to review them.'; }
@@ -351,6 +353,30 @@ if ($('duration-save-btn')) $('duration-save-btn').addEventListener('click', asy
 });
 
 // ---- Writers site: questions + minutes for each part (manager only) ----
+function renderDocsOpen() {
+  if (!DOCS) return;
+  const open = !!DOCS.startOpen;
+  const pill = $('docs-open-pill'), btn = $('docs-open-btn');
+  if (pill) { pill.textContent = open ? 'Open' : 'Closed'; pill.className = 'pill ' + (open ? 'ok' : 'warn'); }
+  if (btn) {
+    btn.textContent = open ? 'Close the test' : 'Open the test';
+    btn.className = open ? 'secondary' : 'primary';
+    btn.disabled = !IS_MANAGER;
+    btn.title = IS_MANAGER ? '' : 'Only a manager can open or close the test';
+  }
+}
+if ($('docs-open-btn')) $('docs-open-btn').addEventListener('click', async () => {
+  if (!DOCS) return;
+  const next = !DOCS.startOpen;
+  if (!confirm(next ? 'Open the test? Candidates who have signed in can then start Part 1.' : 'Close the test? Candidates already in the test carry on; nobody new can start Part 1.')) return;
+  const btn = $('docs-open-btn'); btn.disabled = true;
+  try {
+    const r = await api('/api/admin/start-open', { method: 'POST', body: JSON.stringify({ open: next }) });
+    DOCS.startOpen = r.startOpen;
+  } catch (e) { alert('Could not change the test status: ' + e.message); }
+  finally { renderDocsOpen(); }
+});
+
 function renderDocsLength(preserveEdits) {
   if (!DOCS) return;
   const fields = [['docs-p1-q', DOCS.part1.questions], ['docs-p1-min', DOCS.part1.minutes], ['docs-p2-q', DOCS.part2.questions], ['docs-p2-min', DOCS.part2.minutes]];
@@ -987,29 +1013,48 @@ function wireCandidateRows(tb) {
     try { await api(`/api/admin/candidates/${b.dataset.grade}/grade`, { method: 'POST' }); await refreshCandidates(); showDetail(b.dataset.grade); }
     catch (e) { alert('Grading failed: ' + e.message); await refreshCandidates(); }
   }));
-  tb.querySelectorAll('[data-force]').forEach((b) => b.addEventListener('click', async () => {
+  // Every row action reports failures (e.g. "needs manager access") instead of failing silently.
+  const act = async (label, fn) => {
+    try { await fn(); } catch (e) { alert(`${label} failed: ${e.message}`); }
+    finally { await refreshCandidates().catch(() => {}); }
+  };
+  tb.querySelectorAll('[data-force]').forEach((b) => b.addEventListener('click', () => {
     const c = allCandidates.find((x) => x.id === b.dataset.force);
     if (!confirm(`Force-submit ${(c && (c.name || c.email)) || 'this candidate'}? Their timer stops and saved answers are submitted for grading.`)) return;
-    await api(`/api/admin/candidates/${b.dataset.force}/force-submit`, { method: 'POST' }); await refreshCandidates();
+    act('Force submit', () => api(`/api/admin/candidates/${b.dataset.force}/force-submit`, { method: 'POST' }));
   }));
-  tb.querySelectorAll('[data-fix]').forEach((b) => b.addEventListener('click', async () => {
+  tb.querySelectorAll('[data-fix]').forEach((b) => b.addEventListener('click', () => {
     const email = prompt("Enter this candidate's email (from their resume). They'll be able to log in once set:");
     if (!email) return;
-    try { await api(`/api/admin/candidates/${b.dataset.fix}/manual`, { method: 'POST', body: JSON.stringify({ email: email.trim() }) }); await refreshCandidates(); }
-    catch (e) { alert(e.message); }
+    act('Fix email', () => api(`/api/admin/candidates/${b.dataset.fix}/manual`, { method: 'POST', body: JSON.stringify({ email: email.trim() }) }));
   }));
-  tb.querySelectorAll('[data-retake]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Reset this candidate to retake? Their answers will be cleared and questions reshuffled.')) return; await api(`/api/admin/candidates/${b.dataset.retake}/retake`, { method: 'POST' }); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', async () => { if (!confirm(IS_DOCS ? 'Re-open the part this candidate was cut off in? They keep the SAME questions and every saved answer, with a fresh clock for that part.' : 'Re-open this candidate\'s test? They keep the SAME questions, and every answer they already typed is restored. Use this when a connection drop submitted them early.')) return; const r = await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); if (IS_DOCS && r && r.message) alert(r.message); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-toggle-access]').forEach((b) => b.addEventListener('click', async () => { const c = allCandidates.find((x) => x.id === b.dataset.toggleAccess); await api(`/api/admin/candidates/${b.dataset.toggleAccess}/${c.accessRevoked ? 'unrevoke' : 'revoke'}`, { method: 'POST' }); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-shortlist]').forEach((b) => b.addEventListener('click', async () => { b.innerHTML = '<span class="spinner"></span> Shortlisting…'; await api(`/api/admin/candidates/${b.dataset.shortlist}/shortlist`, { method: 'POST' }); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Reject this candidate?')) return; await api(`/api/admin/candidates/${b.dataset.reject}/reject`, { method: 'POST' }); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', async () => {
+  tb.querySelectorAll('[data-retake]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm('Reset this candidate to retake? Their answers will be cleared and questions reshuffled.')) return;
+    act('Retake', () => api(`/api/admin/candidates/${b.dataset.retake}/retake`, { method: 'POST' }));
+  }));
+  tb.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm(IS_DOCS ? 'Re-open the part this candidate was cut off in? They keep the SAME questions and every saved answer, with a fresh clock for that part.' : 'Re-open this candidate\'s test? They keep the SAME questions, and every answer they already typed is restored. Use this when a connection drop submitted them early.')) return;
+    act('Resume', async () => { const r = await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); if (IS_DOCS && r && r.message) alert(r.message); });
+  }));
+  tb.querySelectorAll('[data-toggle-access]').forEach((b) => b.addEventListener('click', () => {
+    const c = allCandidates.find((x) => x.id === b.dataset.toggleAccess);
+    if (!c) return;
+    if (!c.accessRevoked && !confirm(`Revoke access for ${c.name || c.email}? Their test is submitted now with the answers saved so far.`)) return;
+    act(c.accessRevoked ? 'Restore access' : 'Revoke access', () => api(`/api/admin/candidates/${b.dataset.toggleAccess}/${c.accessRevoked ? 'unrevoke' : 'revoke'}`, { method: 'POST' }));
+  }));
+  tb.querySelectorAll('[data-shortlist]').forEach((b) => b.addEventListener('click', () => {
+    b.innerHTML = '<span class="spinner"></span> Shortlisting…';
+    act('Shortlist', () => api(`/api/admin/candidates/${b.dataset.shortlist}/shortlist`, { method: 'POST' }));
+  }));
+  tb.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', () => {
+    if (!confirm('Reject this candidate?')) return;
+    act('Reject', () => api(`/api/admin/candidates/${b.dataset.reject}/reject`, { method: 'POST' }));
+  }));
+  tb.querySelectorAll('[data-delete]').forEach((b) => b.addEventListener('click', () => {
     const c = allCandidates.find((x) => x.id === b.dataset.delete);
     const who = (c && (c.name || c.email)) || 'this entry';
     if (!confirm(`Delete ${who}? This permanently removes the candidate, their answers, scores and resume. This cannot be undone.`)) return;
-    await api(`/api/admin/candidates/${b.dataset.delete}`, { method: 'DELETE' });
-    $('detail-section').classList.add('hidden');
-    await refreshCandidates();
+    act('Delete', async () => { await api(`/api/admin/candidates/${b.dataset.delete}`, { method: 'DELETE' }); $('detail-section').classList.add('hidden'); });
   }));
 }
 

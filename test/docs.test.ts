@@ -4,6 +4,7 @@ import worker from '../src/index';
 import { migrate, seedCandidate, openAiReply, applySql } from './helpers';
 import m16 from '../migrations-docs/0016_writers_two_part.sql?raw';
 import m17 from '../migrations-docs/0017_writers_indexes.sql?raw';
+import { MAILTO_ONLY_PDF_B64 as PDF_B64 } from './fixtures/resumes';
 
 /**
  * Writers / documentation site (TEAM = "docs"): the same Worker, run with the
@@ -31,10 +32,12 @@ async function dreq(path: string, init: RequestInit = {}): Promise<Response> {
 const cookieOf = (res: Response) => (res.headers.get('Set-Cookie') || '').split(';')[0];
 const jsonPost = (cookie: string, body: unknown = {}) => ({ method: 'POST', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-async function migrateDocs() {
+async function migrateDocs(open = true) {
   await migrate();
   await applySql(m16);
   await applySql(m17);
+  // Most tests run with the test opened by the admin (it is closed by default).
+  if (open) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', '1')").run();
 }
 
 const P1_PROMPTS = Array.from({ length: 6 }, (_, i) => `Part one writing task ${i + 1}: rewrite this error message.`);
@@ -85,18 +88,22 @@ describe('writers site — two-part flow', () => {
 
     // Part 2 can't open before Part 1 is done; Part 1 can't be answered before it starts.
     expect((await dreq('/api/candidate/part2/prepare', jsonPost(cookie))).status).toBe(409);
-    const prep = await dreq('/api/candidate/part1/prepare', jsonPost(cookie));
-    const prepText = await prep.text();
-    assertNoLeak(prepText);
-    const p1 = JSON.parse(prepText).questions;
-    expect(p1).toHaveLength(4);
-    for (const q of p1) { expect(P1_PROMPTS).toContain(q.prompt); expect(q.wordLimit).toBe(300); }
-    expect((await dreq('/api/candidate/part1/answer', jsonPost(cookie, { questionId: p1[0].id, answerText: 'early' }))).status).toBe(409);
+    // Prepare checks the bank but reveals no questions before the clock starts.
+    const prep = await (await dreq('/api/candidate/part1/prepare', jsonPost(cookie))).json<any>();
+    expect(prep).toEqual({ questions: [], ready: true });
+    expect((await dreq('/api/candidate/part1/questions', { headers: { Cookie: cookie } })).status).toBe(409);
+    const assigned = (await env.DB.prepare("SELECT question_id FROM part1_assignments WHERE candidate_id = 'w1'").all<any>()).results!.map((r: any) => r.question_id);
+    expect((await dreq('/api/candidate/part1/answer', jsonPost(cookie, { questionId: assigned[0], answerText: 'early' }))).status).toBe(409);
 
     const start = await dreq('/api/candidate/part1/start', jsonPost(cookie));
-    const s1 = await start.json<any>();
+    const startText = await start.text();
+    assertNoLeak(startText);
+    const s1 = JSON.parse(startText);
     expect(s1.durationSeconds).toBe(1800);
-    expect(s1.questions.map((q: any) => q.id)).toEqual(p1.map((q: any) => q.id)); // same set as prepared
+    const p1 = s1.questions;
+    expect(p1).toHaveLength(4);
+    for (const q of p1) { expect(P1_PROMPTS).toContain(q.prompt); expect(q.wordLimit).toBe(300); }
+    expect(p1.map((q: any) => q.id).sort()).toEqual([...assigned].sort()); // same set as prepared
     expect((await dreq('/api/candidate/part1/answer', jsonPost(cookie, { questionId: p1[0].id, answerText: 'My Part 1 answer.' }))).status).toBe(200);
 
     // Submitting Part 1 does not end the assessment.
@@ -147,7 +154,7 @@ describe('writers site — two-part flow', () => {
   it('tells the candidate to fetch the invigilator when a part\'s bank is too small', async () => {
     await env.DB.prepare("UPDATE question_bank SET active = 0 WHERE id IN ('d1-0','d1-1','d1-2')").run();
     const { cookie } = await candidateLogin('w1@x.com');
-    const res = await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    const res = await dreq('/api/candidate/part1/prepare', jsonPost(cookie));
     expect(res.status).toBe(409);
     expect((await res.json<any>()).error).toMatch(/not ready/i);
   });
@@ -417,5 +424,134 @@ describe('writers site — same admin features and protections as the support si
       const t = await (await dreq(p, { headers: { Cookie: cookie } })).text();
       for (const k of ['ai_score', 'ai_reasoning', 'max_marks', 'secret', '"marks"']) expect(t.includes(k), `${p} leaked ${k}`).toBe(false);
     }
+  });
+});
+
+describe('writers site — security fixes (audit 2026-10-21)', () => {
+  beforeEach(async () => {
+    await migrateDocs(false); // the test starts CLOSED, as on a fresh site
+    await seedDocsBank();
+    await seedCandidate('s1', 's1@x.com', 'part2_ready');
+  });
+  const open = async () => env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', '1') ON CONFLICT(key) DO UPDATE SET value = '1'").run();
+
+  it('nobody can start Part 1 until a manager opens the test', async () => {
+    const { cookie } = await candidateLogin('s1@x.com');
+    const res = await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    expect(res.status).toBe(409);
+    expect((await res.json<any>()).notOpen).toBe(true);
+    expect((await (await dreq('/api/candidate/config')).json<any>()).open).toBe(false);
+    const panel = await adminLogin('panel@test.local', 'test-panel-pass');
+    expect((await dreq('/api/admin/start-open', jsonPost(panel, { open: true }))).status).toBe(403);
+    const admin = await adminLogin();
+    expect((await dreq('/api/admin/start-open', jsonPost(admin, { open: true }))).status).toBe(200);
+    expect((await dreq('/api/candidate/part1/start', jsonPost(cookie))).status).toBe(200);
+  });
+
+  it('a part closes at its wall-clock deadline even if the clock was never synced', async () => {
+    await open();
+    const { cookie } = await candidateLogin('s1@x.com');
+    const s1 = await (await dreq('/api/candidate/part1/start', jsonPost(cookie))).json<any>();
+    const at = await env.DB.prepare("SELECT part1_deadline_at FROM attempts WHERE candidate_id = 's1'").first<any>();
+    const minutes = (Date.parse(at.part1_deadline_at) - Date.now()) / 60000;
+    expect(minutes).toBeGreaterThan(39); expect(minutes).toBeLessThan(41); // 30 min + 10 min allowance
+    await env.DB.prepare("UPDATE attempts SET part1_deadline_at = ? WHERE candidate_id = 's1'").bind(new Date(Date.now() - 1000).toISOString()).run();
+    expect((await dreq('/api/candidate/part1/answer', jsonPost(cookie, { questionId: s1.questions[0].id, answerText: 'late' }))).status).toBe(409);
+    const hb = await (await dreq('/api/candidate/part1/heartbeat', jsonPost(cookie))).json<any>();
+    expect(hb.closed).toBe(true);
+    const row = await env.DB.prepare("SELECT part1_submitted_at FROM attempts WHERE candidate_id = 's1'").first<any>();
+    expect(row.part1_submitted_at).not.toBeNull();
+  });
+
+  it('saving answers advances the clock, so skipping clock syncs gains nothing', async () => {
+    await open();
+    const { cookie } = await candidateLogin('s1@x.com');
+    const s1 = await (await dreq('/api/candidate/part1/start', jsonPost(cookie))).json<any>();
+    await env.DB.prepare("UPDATE attempts SET part1_last_heartbeat_at = ? WHERE candidate_id = 's1'").bind(new Date(Date.now() - 40_000).toISOString()).run();
+    const r = await (await dreq('/api/candidate/part1/answer', jsonPost(cookie, { questionId: s1.questions[0].id, answerText: 'x' }))).json<any>();
+    expect(r.remainingSeconds).toBeLessThanOrEqual(1800 - 39);
+  });
+
+  it('integrity events are accepted only while a part runs, and capped per part', async () => {
+    await open();
+    const { cookie } = await candidateLogin('s1@x.com');
+    await dreq('/api/candidate/part1/tab-switch', jsonPost(cookie, { type: 'tab_hidden' })); // not started yet
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = 's1'").first<any>()).n).toBe(0);
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    const ins = env.DB.prepare("INSERT INTO attempt_events (candidate_id, part, type) VALUES ('s1', 1, 'tab_hidden')");
+    await env.DB.batch(Array.from({ length: 299 }, () => ins));
+    for (let i = 0; i < 3; i++) await dreq('/api/candidate/part1/tab-switch', jsonPost(cookie, { type: 'tab_hidden' }));
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = 's1'").first<any>()).n).toBe(300);
+  });
+
+  it('repeated blocked sign-ins write one audit row per minute, not one each', async () => {
+    await open();
+    const { cookie } = await candidateLogin('s1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    for (let i = 0; i < 4; i++) expect((await candidateLogin('s1@x.com')).res.status).toBe(403);
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM admin_audit WHERE action = 'duplicate_login_blocked'").first<any>()).n).toBe(1);
+  });
+
+  it("the candidate's page never learns the hiring outcome", async () => {
+    const { cookie } = await candidateLogin('s1@x.com');
+    await env.DB.prepare("UPDATE candidates SET status = 'shortlisted' WHERE id = 's1'").run();
+    const me = await (await dreq('/api/candidate/me', { headers: { Cookie: cookie } })).json<any>();
+    expect(me.candidate.status).toBe('submitted');
+  });
+
+  it('candidate sessions expire after 12 hours', async () => {
+    const { cookie } = await candidateLogin('s1@x.com');
+    const real = Date.now;
+    try {
+      Date.now = () => real() + 13 * 60 * 60 * 1000;
+      expect((await dreq('/api/candidate/me', { headers: { Cookie: cookie } })).status).toBe(401);
+    } finally { Date.now = real; }
+    expect((await dreq('/api/candidate/me', { headers: { Cookie: cookie } })).status).toBe(200);
+  });
+
+  it('deactivating or demoting a panel account takes effect immediately', async () => {
+    const admin = await adminLogin();
+    await dreq('/api/admin/members', jsonPost(admin, { name: 'Lead', email: 'lead@x.test', password: 'pass-123456', role: 'manager' }));
+    const lead = await adminLogin('lead@x.test', 'pass-123456');
+    expect((await dreq('/api/admin/start-open', jsonPost(lead, { open: false }))).status).toBe(200);
+    const id = (await env.DB.prepare("SELECT id FROM admin_users WHERE email = 'lead@x.test'").first<any>()).id;
+    await dreq(`/api/admin/members/${id}`, jsonPost(admin, { role: 'member' }));
+    expect((await dreq('/api/admin/start-open', jsonPost(lead, { open: false }))).status).toBe(403); // demoted at once
+    await dreq(`/api/admin/members/${id}`, jsonPost(admin, { active: false }));
+    expect((await dreq('/api/admin/config', { headers: { Cookie: lead } })).status).toBe(401); // signed out at once
+  });
+
+  it('refuses cross-site writes', async () => {
+    const admin = await adminLogin();
+    const evil = await dreq('/api/admin/start-open', { method: 'POST', headers: { Cookie: admin, 'Content-Type': 'application/json', Origin: 'https://evil.example' }, body: JSON.stringify({ open: true }) });
+    expect(evil.status).toBe(403);
+    const same = await dreq('/api/admin/start-open', { method: 'POST', headers: { Cookie: admin, 'Content-Type': 'application/json', Origin: 'https://docs.test' }, body: JSON.stringify({ open: true }) });
+    expect(same.status).toBe(200);
+  });
+
+  it('accepts only real PDFs and serves resumes sandboxed', async () => {
+    const admin = await adminLogin();
+    const form = new FormData();
+    form.append('files', new File(['<html><script>alert(1)</script></html>'], 'fake.pdf', { type: 'application/pdf' }));
+    const up = await (await dreq('/api/admin/resumes/upload', { method: 'POST', headers: { Cookie: admin }, body: form })).json<any>();
+    expect(up.skipped.map((s: any) => s.filename)).toEqual(['fake.pdf']);
+    expect(up.uploaded).toHaveLength(0);
+    // Viewer headers (file stored directly, as the upload would).
+    await env.RESUMES.put('resumes/s1.pdf', Uint8Array.from(atob(PDF_B64), (c) => c.charCodeAt(0)));
+    await env.DB.prepare("UPDATE candidates SET resume_filename = 'real \"cv\".pdf' WHERE id = 's1'").run();
+    const view = await dreq('/api/admin/candidates/s1/resume', { headers: { Cookie: admin } });
+    const body = await view.arrayBuffer();
+    expect(new TextDecoder().decode(body.slice(0, 5))).toBe('%PDF-');
+    expect(view.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    expect(view.headers.get('Content-Security-Policy')).toMatch(/sandbox/);
+    expect(view.headers.get('Content-Disposition')).toBe('inline; filename="real _cv_.pdf"');
+  });
+
+  it("won't grade a candidate who hasn't finished both parts", async () => {
+    await open();
+    const { cookie } = await candidateLogin('s1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    const admin = await adminLogin();
+    expect((await dreq('/api/admin/candidates/s1/grade', jsonPost(admin))).status).toBe(409);
   });
 });

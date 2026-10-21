@@ -33,7 +33,7 @@ async function sign(secret: string, payload: Record<string, unknown>): Promise<s
 }
 
 /** Constant-time string compare — avoids leaking the signature via compare timing. */
-function timingSafeEqual(a: string, b: string): boolean {
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
@@ -86,15 +86,21 @@ export async function clearAdminSession(env: Env, request: Request): Promise<str
   return clearCookieHeader(ADMIN_COOKIE);
 }
 
+// Candidate sessions last 12 hours: longer than the longest possible test (two parts
+// of up to 4 hours each) and the signed token itself expires then too, so a copied
+// cookie can't be replayed later.
+const CANDIDATE_SESSION_SECONDS = 60 * 60 * 12;
 export async function createCandidateSession(env: Env, candidateId: string): Promise<string> {
   const token = await sign(env.SESSION_SECRET, { cid: candidateId, iat: Date.now() });
-  return setCookieHeader(CANDIDATE_COOKIE, token, 60 * 60 * 6); // 6h covers both parts + buffer
+  return setCookieHeader(CANDIDATE_COOKIE, token, CANDIDATE_SESSION_SECONDS);
 }
 
 export async function getCandidateIdFromRequest(env: Env, request: Request): Promise<string | null> {
   const token = readCookie(request, CANDIDATE_COOKIE);
-  const payload = await verify<{ cid: string }>(env.SESSION_SECRET, token);
-  return payload?.cid ?? null;
+  const payload = await verify<{ cid: string; iat?: number }>(env.SESSION_SECRET, token);
+  if (!payload?.cid) return null;
+  if (typeof payload.iat !== 'number' || Date.now() - payload.iat > CANDIDATE_SESSION_SECONDS * 1000) return null;
+  return payload.cid;
 }
 
 export type AdminRole = 'manager' | 'member';
@@ -124,15 +130,37 @@ export async function verifyPassword(password: string, saltHex: string, hashHex:
   return diff === 0;
 }
 
-export async function createAdminSession(env: Env, role: AdminRole = 'manager'): Promise<{ cookie: string; token: string; role: AdminRole }> {
+/** admin_sessions.user_id links a session to its named account (NULL for the bootstrap login). */
+let sessionUserColReady = false;
+async function ensureSessionUserCol(env: Env): Promise<void> {
+  if (sessionUserColReady) return;
+  const cols = await env.DB.prepare('PRAGMA table_info(admin_sessions)').all<{ name: string }>();
+  if (!(cols.results ?? []).some((c) => c.name === 'user_id')) {
+    await env.DB.prepare('ALTER TABLE admin_sessions ADD COLUMN user_id TEXT').run();
+  }
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id)').run();
+  sessionUserColReady = true;
+}
+/** Tests reset the database between cases. */
+export function resetAuthSchemaCache(): void { sessionUserColReady = false; }
+
+export async function createAdminSession(env: Env, role: AdminRole = 'manager', userId: string | null = null): Promise<{ cookie: string; token: string; role: AdminRole }> {
   // Role is carried inside the HMAC-signed token, so it can't be tampered with
-  // client-side and needs no extra DB column.
+  // client-side. For a named account the session also records the account, so
+  // deactivating, demoting or deleting the account takes effect at once.
+  await ensureSessionUserCol(env);
   const token = await sign(env.SESSION_SECRET, { admin: true, role, iat: Date.now() });
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
-  await env.DB.prepare('INSERT INTO admin_sessions (token, expires_at) VALUES (?, ?)')
-    .bind(token, expiresAt)
+  await env.DB.prepare('INSERT INTO admin_sessions (token, expires_at, user_id) VALUES (?, ?, ?)')
+    .bind(token, expiresAt, userId)
     .run();
   return { cookie: setCookieHeader(ADMIN_COOKIE, token, 60 * 60 * 12), token, role };
+}
+
+/** End every session of one named account (after its role, password or status changes). */
+export async function revokeUserSessions(env: Env, userId: string): Promise<void> {
+  await ensureSessionUserCol(env);
+  await env.DB.prepare('DELETE FROM admin_sessions WHERE user_id = ?').bind(userId).run();
 }
 
 /** Returns the admin's role if the request carries a valid, unexpired admin session, else null. */
@@ -143,11 +171,21 @@ export async function getAdminRole(env: Env, request: Request): Promise<AdminRol
   // expires_at is stored as an ISO timestamp ("2026-10-21T20:00:00.000Z"), so compare
   // it with an ISO "now". (datetime('now') returns "2026-10-21 08:00:00", and the space
   // sorts before "T", which let a session outlive its 12 hours until the date changed.)
-  const row = await env.DB.prepare('SELECT 1 FROM admin_sessions WHERE token = ? AND expires_at > ?')
+  await ensureSessionUserCol(env);
+  const row = await env.DB.prepare(
+    `SELECT s.user_id AS user_id, u.role AS user_role, u.active AS user_active
+     FROM admin_sessions s LEFT JOIN admin_users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.expires_at > ?`
+  )
     .bind(token, new Date().toISOString())
-    .first();
+    .first<{ user_id: string | null; user_role: string | null; user_active: number | null }>();
   if (!row) return null;
-  return payload.role === 'member' ? 'member' : 'manager'; // default legacy tokens to manager
+  if (row.user_id) {
+    // Named account: its CURRENT role and status decide, not the role at sign-in.
+    if (!row.user_active) return null;
+    return row.user_role === 'manager' ? 'manager' : 'member';
+  }
+  return payload.role === 'member' ? 'member' : 'manager'; // bootstrap login (or a legacy token)
 }
 
 export async function isAdminRequest(env: Env, request: Request): Promise<boolean> {

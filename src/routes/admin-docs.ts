@@ -4,6 +4,7 @@ import { json } from '../lib/auth';
 import { newId, nowIso } from '../lib/db';
 import { gradeWritingAnswer } from '../lib/openai';
 import { getDocsConfig, docsPoolCounts, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
+import { ensureDocsAttemptCols, docsStartOpen } from './candidate-docs';
 
 /**
  * ADMIN API overrides for the writers site (TEAM = "docs").
@@ -73,11 +74,33 @@ export async function docsAdminConfig(env: Env) {
       wordLimit: cfg.wordLimit,
       pool,
       limits: DOCS_LIMITS,
+      startOpen: await docsStartOpen(env),
     },
   };
 }
 
 export async function handleDocsAdminRoute(request: Request, env: Env, path: string, role: AdminRole): Promise<Response | null> {
+  await ensureDocsAttemptCols(env);
+
+  // ---- Open / close the test: candidates can start Part 1 only while it is open ----
+  if (path === '/api/admin/start-open' && request.method === 'POST') {
+    const denied = managerOnly(role); if (denied) return denied;
+    const b = await request.json<{ open?: unknown }>().catch(() => ({} as { open?: unknown }));
+    if (typeof b.open !== 'boolean') return json({ error: 'Send open: true or false.' }, { status: 400 });
+    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .bind(b.open ? '1' : '0').run();
+    await audit(env, b.open ? 'test_opened' : 'test_closed', null, b.open ? 'Candidates can start Part 1' : 'Starting Part 1 is closed');
+    return json({ ok: true, startOpen: b.open });
+  }
+
+  // ---- Grade one candidate: only once both parts are finished ----
+  const gradeOne = path.match(/^\/api\/admin\/candidates\/([^/]+)\/grade$/);
+  if (gradeOne && request.method === 'POST') {
+    const at = await env.DB.prepare('SELECT part2_submitted_at FROM attempts WHERE candidate_id = ?').bind(gradeOne[1]).first<{ part2_submitted_at: string | null }>();
+    if (!at?.part2_submitted_at) return json({ error: "This candidate hasn't finished both parts yet, so there is nothing final to grade." }, { status: 409 });
+    return null; // shared handler grades it
+  }
+
   // ---- Assessment length: questions + minutes for each part (manager) ----
   if (path === '/api/admin/assessment-length' && request.method === 'POST') {
     const denied = managerOnly(role); if (denied) return denied;
@@ -196,7 +219,8 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     await env.DB.batch([
       env.DB.prepare(
         `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0,
-         part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL
+         part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL,
+         part1_deadline_at=NULL, part2_deadline_at=NULL
          WHERE candidate_id = ?`
       ).bind(id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
@@ -222,7 +246,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed.
       reopened = 'part2';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL WHERE candidate_id = ?').bind(id),
+        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL WHERE candidate_id = ?').bind(id),
         env.DB.prepare("UPDATE candidates SET status = 'in_progress', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
       ]);
     } else if (at.part1_submitted_at && !at.part2_submitted_at) {
@@ -233,7 +257,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       // Cut off during Part 1 (or the test was closed while in Part 1): reopen Part 1.
       reopened = 'part1';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part2_submitted_at = NULL WHERE candidate_id = ?').bind(id),
+        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL WHERE candidate_id = ?').bind(id),
         env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
       ]);
     }

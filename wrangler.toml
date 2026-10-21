@@ -132,6 +132,10 @@ DOCS_PART2_QUESTIONS = "2"
 DOCS_PART1_MARKS = "5"
 DOCS_PART2_MARKS = "10"
 DOCS_WORD_LIMIT = "1000"
+# Each part also has a wall-clock deadline: its minutes plus this many extra minutes
+# for genuine connection drops. After that nothing more is saved for the part (an
+# admin Resume gives a fresh clock). Stops a candidate holding a part open.
+DOCS_MAX_PAUSE_MINUTES = "10"
 DATA_RETENTION_DAYS = "15"
 COLLEGES = "College Name 1"
 STALE_GRACE_MINUTES = "30"

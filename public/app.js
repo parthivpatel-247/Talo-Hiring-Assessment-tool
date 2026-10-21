@@ -64,7 +64,9 @@ async function api(path, opts = {}) {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed (${res.status})`);
+    const err = new Error(body.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -80,10 +82,11 @@ function updateTimer(seconds) {
   el.textContent = formatTime(seconds);
   el.classList.toggle('low', seconds <= 60);
 }
+// Escapes text for HTML content AND attribute values (quotes included).
 function escapeHtml(str) {
   const d = document.createElement('div');
   d.textContent = str ?? '';
-  return d.innerHTML;
+  return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function countWords(t) {
   const w = (t || '').trim();
@@ -516,7 +519,10 @@ function makePart(part) {
         state.remaining = remainingSeconds;
         updateTimer(remainingSeconds);
         if (remainingSeconds <= 0) { stop(); onExpire(); }
-      } catch {
+      } catch (err) {
+        // Writers' site: a 401 means the session was ended (access revoked by the
+        // invigilator), not a network problem — say so instead of "connection lost".
+        if (IS_DOCS && err && err.status === 401) { stop(); sessionEnded(); return; }
         // Connection lost: after 2 misses, pause the timer and show the overlay.
         state.hbFails = (state.hbFails || 0) + 1;
         if (state.hbFails >= HEARTBEAT_FAILS_BEFORE_OFFLINE && typeof goOffline === 'function') goOffline();
@@ -561,7 +567,8 @@ function startRecoveryProbe() {
   clearInterval(recoveryProbe);
   recoveryProbe = setInterval(async () => {
     if (!offline) { clearInterval(recoveryProbe); recoveryProbe = null; return; }
-    try { await api('/api/candidate/me'); clearInterval(recoveryProbe); recoveryProbe = null; goOnline(); } catch { /* still offline */ }
+    try { await api('/api/candidate/me'); clearInterval(recoveryProbe); recoveryProbe = null; goOnline(); }
+    catch (err) { if (err && err.status === 401) { clearInterval(recoveryProbe); recoveryProbe = null; sessionEnded(); } /* else still offline */ }
   }, 10000);
 }
 function goOnline() {
@@ -609,7 +616,19 @@ async function beginPart(part, resuming) {
       currentPart = { ctrl: P1, onExpire: finishPart1 };
       P1.startHeartbeat(() => finishPart1());
     } catch (err) {
-      $('part1-qpanel').innerHTML = `<div class="notice warn">Could not start Part 1: ${err.message}. Please contact the coordinator.</div>`;
+      if (IS_DOCS) {
+        // Writers' site: go back to the start screen with the reason (for example
+        // "the assessment has not opened yet"), out of full screen, so they can retry.
+        hide('part1-work'); show('part1-fullscreen-gate');
+        document.body.classList.remove('assessment');
+        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+        let note = document.getElementById('part1-start-error');
+        if (!note) { note = document.createElement('div'); note.id = 'part1-start-error'; note.className = 'notice warn'; $('part1-fullscreen-gate').prepend(note); }
+        note.textContent = err.message;
+        $('part1-fullscreen-btn').textContent = 'Try again';
+        return;
+      }
+      $('part1-qpanel').innerHTML = `<div class="notice warn">Could not start Part 1: ${escapeHtml(err.message)}. Please contact the coordinator.</div>`;
       $('part1-work').classList.remove('hidden');
     }
   }
@@ -640,7 +659,13 @@ async function finishPart1() {
   hide('part1-section');
   $('timer').classList.add('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-  if (IS_DOCS) { showBetween(P1.state.remaining != null && P1.state.remaining <= 0); return; }
+  if (IS_DOCS) {
+    // If the invigilator already ended the whole test (force submit), go to the end screen.
+    const me = await api('/api/candidate/me').catch(() => null);
+    if (me && me.attempt && me.attempt.part2_submitted_at) { show('done-section'); return; }
+    showBetween(P1.state.remaining != null && P1.state.remaining <= 0);
+    return;
+  }
   show('done-section');
 }
 
@@ -880,6 +905,20 @@ async function routeDocs(attempt, name) {
   $('overview-name').textContent = name ? `, ${name.split(' ')[0]}` : '';
   show('overview-section');
   P1.prefetch();
+}
+
+// Writers' site: the session was ended by the hiring team (access revoked).
+function sessionEnded() {
+  currentPart = null; offline = false; removeOfflineOverlay();
+  lockdownArmed = false; clearInterval(fsWatch); clearAwayTimer();
+  [P1, P2].forEach((c) => { if (c) { c.state.submitted = true; c.stop(); } });
+  document.body.classList.remove('assessment');
+  ['overview-section', 'part1-section', 'between-section', 'part2-section'].forEach(hide);
+  $('timer').classList.add('hidden');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  const p = document.querySelector('#done-section p');
+  if (p) p.textContent = 'Your session was ended by the hiring team. Your saved answers have been kept. If you think this is a mistake, speak to the invigilator.';
+  show('done-section');
 }
 
 function showBetween(timeUp) {

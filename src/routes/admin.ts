@@ -1,5 +1,5 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
-import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, type AdminRole } from '../lib/auth';
+import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, timingSafeEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
 import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
@@ -220,20 +220,22 @@ export async function handleAdminRoute(
     if (!loginEmail || !pass) return json({ error: 'Email and password are both required.' }, { status: 400 });
 
     let loginRole: AdminRole | null = null;
+    let loginUserId: string | null = null;
     await ensureAuthSchema(env);
     // 1) Named account created in the Access section (keyed by email).
     const row = await env.DB.prepare('SELECT * FROM admin_users WHERE (email = ? OR username = ?) AND active = 1').bind(loginEmail, loginEmail).first<any>();
     if (row && (await verifyPassword(pass, row.pass_salt, row.pass_hash))) {
       loginRole = row.role === 'manager' ? 'manager' : 'member';
+      loginUserId = row.id;
     } else {
       // 2) Bootstrap logins from config — the email must match too (not just the password).
       const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
       const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
-      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && pass === env.ADMIN_PASSWORD) loginRole = 'manager';
-      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && pass === env.PANEL_PASSWORD) loginRole = 'member';
+      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && timingSafeEqual(pass, env.ADMIN_PASSWORD)) loginRole = 'manager';
+      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && timingSafeEqual(pass, env.PANEL_PASSWORD)) loginRole = 'member';
     }
     if (!loginRole) return json({ error: 'Wrong email or password' }, { status: 401 });
-    const { cookie } = await createAdminSession(env, loginRole);
+    const { cookie } = await createAdminSession(env, loginRole, loginUserId);
     return withCookie(json({ ok: true, role: loginRole }), cookie);
   }
 
@@ -400,6 +402,7 @@ export async function handleAdminRoute(
     const id = memberMatch[1];
     if (request.method === 'DELETE') {
       await env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(id).run();
+      await revokeUserSessions(env, id); // signed-in sessions of a deleted account end now
       await audit(env, 'member_delete', null, id);
       return json({ ok: true });
     }
@@ -416,6 +419,9 @@ export async function handleAdminRoute(
     if (!sets.length) return json({ error: 'Nothing to update.' }, { status: 400 });
     binds.push(id);
     await env.DB.prepare(`UPDATE admin_users SET ${sets.join(', ')} WHERE id = ?`).bind(...binds).run();
+    // A new password or deactivation signs the account out everywhere. (Role changes
+    // apply on the next request anyway, because the session reads the current role.)
+    if (b.password || b.active === false) await revokeUserSessions(env, id);
     await audit(env, 'member_update', null, id);
     return json({ ok: true });
   }
@@ -442,11 +448,17 @@ export async function handleAdminRoute(
     const skipped: { filename: string; reason: string }[] = [];
     // Separate the PDFs from the rejects up front so a single bad file never drops
     // the rest of the batch.
-    const pdfs = files.filter((f) => {
-      const ok = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
-      if (!ok) skipped.push({ filename: f.name || '(unnamed)', reason: 'not a PDF' });
-      return ok;
-    });
+    // A real PDF: the right name or type AND the "%PDF-" signature in its first bytes,
+    // and at most 10 MB.
+    const pdfs: File[] = [];
+    for (const f of files) {
+      const named = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+      const head = named ? new Uint8Array(await f.slice(0, 5).arrayBuffer()) : new Uint8Array();
+      const magic = head.length === 5 && String.fromCharCode(...head) === '%PDF-';
+      if (!named || !magic) skipped.push({ filename: f.name || '(unnamed)', reason: 'not a PDF' });
+      else if (f.size > 10 * 1024 * 1024) skipped.push({ filename: f.name, reason: 'larger than 10 MB' });
+      else pdfs.push(f);
+    }
 
     // Upload the files to R2 CONCURRENTLY (bounded) instead of one-after-another —
     // the per-file round-trip is the cost, so overlapping them cuts a 100-file
@@ -556,8 +568,17 @@ export async function handleAdminRoute(
     if (!c) return json({ error: 'Not found' }, { status: 404 });
     const obj = await env.RESUMES.get(c.resume_r2_key);
     if (!obj) return json({ error: 'Resume file missing' }, { status: 404 });
+    // Served as a sandboxed PDF: no content sniffing, no scripts, never cached, and the
+    // (uploader-controlled) file name is sanitised for the header.
+    const safeName = (c.resume_filename || 'resume.pdf').replace(/[^\w.\- ]+/g, '_').slice(0, 120) || 'resume.pdf';
     return new Response(obj.body, {
-      headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${c.resume_filename || 'resume.pdf'}"` },
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${safeName}"`,
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "sandbox; default-src 'none'; object-src 'self'; plugin-types application/pdf",
+        'Cache-Control': 'no-store',
+      },
     });
   }
 
@@ -935,7 +956,9 @@ export async function handleAdminRoute(
     if (statusFilter !== 'all') candRows = candRows.filter((c) => c.status === statusFilter);
 
     const esc = (v: unknown) => {
-      const s = v == null ? '' : String(v);
+      let s = v == null ? '' : String(v);
+      // Neutralise spreadsheet formulas in candidate text (an answer starting with "=").
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
       return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const emailOut = (e: string) => (e.startsWith('pending+') ? '' : e);

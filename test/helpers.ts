@@ -16,11 +16,13 @@ import m13 from '../migrations/0013_question_soft_delete.sql?raw';
 import m14 from '../migrations/0014_question_checkpoints.sql?raw';
 import m15 from '../migrations/0015_perf.sql?raw';
 import { resetEnsureCache } from '../src/lib/db';
+import { resetAuthSchemaCache } from '../src/lib/auth';
 
 /** Apply the real migration files, in order, to the test D1. */
 export async function migrate() {
   // Storage is reset between tests, so the once-per-instance schema cache must be too.
   resetEnsureCache();
+  resetAuthSchemaCache();
   for (const sql of [m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15]) {
     // Strip both full-line and inline "-- ..." comments before splitting on ';'
     // (some inline comments contain semicolons, which would break naive splitting).

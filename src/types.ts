@@ -5,6 +5,7 @@ export interface Env {
 
   OPENAI_API_KEY: string;
   OPENAI_MODEL?: string;
+  OPENAI_BASE_URL?: string; // local testing only (a stand-in for api.openai.com)
   ADMIN_EMAIL?: string; // email the manager signs in with (paired with ADMIN_PASSWORD)
   ADMIN_PASSWORD: string; // manager (full access)
   PANEL_EMAIL?: string; // email the panel bootstrap signs in with (paired with PANEL_PASSWORD)
@@ -50,6 +51,8 @@ export interface Env {
   DOCS_PART1_MARKS?: string;
   DOCS_PART2_MARKS?: string;
   DOCS_WORD_LIMIT?: string;
+  // Writers site: extra minutes a part may run past its clock for connection drops (default 10).
+  DOCS_MAX_PAUSE_MINUTES?: string;
   // Per-request batch sizes (unset = the support defaults: 20 resumes parsed and up
   // to 100 files uploaded per request). The writers site keeps each request small so
   // it stays inside the Workers Free per-request limits (CPU, D1 queries).

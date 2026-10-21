@@ -12,6 +12,14 @@ export default {
     const path = url.pathname;
 
     try {
+      // Cross-site request guard: a browser always sends Origin on POST/PUT/DELETE.
+      // If it names another site, refuse — so no other page can make a signed-in
+      // admin's or candidate's browser change data here. (Tools that send no Origin,
+      // like curl, are unaffected; they need the session cookie anyway.)
+      if (path.startsWith('/api/') && request.method !== 'GET' && request.method !== 'HEAD') {
+        const origin = request.headers.get('Origin');
+        if (origin && origin !== url.origin) return json({ error: 'Cross-site request refused' }, { status: 403 });
+      }
       if (path.startsWith('/api/admin/')) {
         return await handleAdminRoute(request, env, ctx, path);
       }
