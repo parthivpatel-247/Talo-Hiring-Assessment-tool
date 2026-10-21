@@ -130,3 +130,22 @@ export async function seedPart2(candidateId: string) {
 export function openAiReply(obj: unknown) {
   return { choices: [{ message: { content: JSON.stringify(obj) } }] };
 }
+
+/** Apply a SQL migration file statement by statement (keeps CREATE TRIGGER … END blocks whole). */
+export async function applySql(sql: string) {
+  const clean = sql.split('\n').map((l) => l.replace(/--.*$/, '')).join('\n');
+  const parts = clean.split(';');
+  const stmts: string[] = [];
+  let buf = '';
+  for (const p of parts) {
+    buf += (buf ? ';' : '') + p;
+    const t = buf.trim();
+    if (!t) { buf = ''; continue; }
+    if (/^CREATE\s+TRIGGER/i.test(t) && !/\bEND\s*$/i.test(t)) continue; // still inside BEGIN … END
+    stmts.push(t); buf = '';
+  }
+  for (const stmt of stmts) {
+    if (/^PRAGMA\s/i.test(stmt)) continue;
+    await env.DB.prepare(stmt).run();
+  }
+}

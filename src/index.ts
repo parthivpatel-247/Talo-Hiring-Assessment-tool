@@ -3,6 +3,8 @@ import { handleAdminRoute } from './routes/admin';
 import { handleCandidateRoute } from './routes/candidate';
 import { json } from './lib/auth';
 import { ensurePart3Schema } from './lib/part3bank';
+import { isDocs } from './lib/team';
+import { purgeExpiredDocs } from './routes/admin-docs';
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -35,7 +37,8 @@ export default {
   // once it's past DATA_RETENTION_DAYS old. Runs on the cron schedule in
   // wrangler.toml.
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(purgeExpiredCandidates(env));
+    // The writers site purges set-based (fixed query count) — see purgeExpiredDocs.
+    ctx.waitUntil(isDocs(env) ? purgeExpiredDocs(env) : purgeExpiredCandidates(env));
   },
 };
 

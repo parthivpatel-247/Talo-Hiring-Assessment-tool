@@ -136,6 +136,18 @@ DATA_RETENTION_DAYS = "15"
 COLLEGES = "College Name 1"
 STALE_GRACE_MINUTES = "30"
 ANALYSIS_BATCH_SIZE = "4"
+# Small per-request batches so every request stays inside the Workers Free limits
+# (50 D1 queries and 50 outbound requests per request, 10 ms CPU). The admin page
+# loops through the batches automatically, so this only changes request size.
+#   Grading: 1 candidate per request (6 OpenAI calls, at most 30 with retries).
+GRADING_BATCH_SIZE = "1"
+GRADING_CONCURRENCY = "1"
+#   Resume parsing: 2 PDFs per request (PDF reading is the CPU-heavy step).
+RESUME_PROCESS_BATCH = "2"
+RESUME_PARSE_CONCURRENCY = "2"
+#   Resume upload: 10 files per request (the page sends larger sets in chunks).
+MAX_UPLOAD_FILES = "10"
+RESUME_UPLOAD_CONCURRENCY = "5"
 # Support-test settings the shared code still reads; not used by the writers' test.
 PART3_DURATION_MINUTES = "15"
 PART3_BUGGY_PER_STUDENT = "0"

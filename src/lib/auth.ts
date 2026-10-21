@@ -140,10 +140,11 @@ export async function getAdminRole(env: Env, request: Request): Promise<AdminRol
   const token = readCookie(request, ADMIN_COOKIE);
   const payload = await verify<{ admin: boolean; role?: AdminRole }>(env.SESSION_SECRET, token);
   if (!payload?.admin || !token) return null;
-  const row = await env.DB.prepare(
-    'SELECT 1 FROM admin_sessions WHERE token = ? AND expires_at > datetime("now")'
-  )
-    .bind(token)
+  // expires_at is stored as an ISO timestamp ("2026-10-21T20:00:00.000Z"), so compare
+  // it with an ISO "now". (datetime('now') returns "2026-10-21 08:00:00", and the space
+  // sorts before "T", which let a session outlive its 12 hours until the date changed.)
+  const row = await env.DB.prepare('SELECT 1 FROM admin_sessions WHERE token = ? AND expires_at > ?')
+    .bind(token, new Date().toISOString())
     .first();
   if (!row) return null;
   return payload.role === 'member' ? 'member' : 'manager'; // default legacy tokens to manager

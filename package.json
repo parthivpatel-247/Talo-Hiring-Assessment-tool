@@ -14,7 +14,8 @@
     "db:migrate:remote": "wrangler d1 execute campus-hiring-assessment-db --remote --file=./migrations/0001_init.sql",
     "dev:docs": "wrangler dev --env docs",
     "deploy:docs": "wrangler deploy --env docs",
-    "migrate:docs": "wrangler d1 migrations apply talo-docs-db --remote --env docs"
+    "migrate:docs": "wrangler d1 migrations apply talo-docs-db --remote --env docs",
+    "test:limits": "vitest run -c vitest.limits.config.ts"
   },
   "dependencies": {
     "unpdf": "^0.12.1"

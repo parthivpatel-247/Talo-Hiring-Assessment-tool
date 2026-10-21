@@ -50,6 +50,11 @@ export interface Env {
   DOCS_PART1_MARKS?: string;
   DOCS_PART2_MARKS?: string;
   DOCS_WORD_LIMIT?: string;
+  // Per-request batch sizes (unset = the support defaults: 20 resumes parsed and up
+  // to 100 files uploaded per request). The writers site keeps each request small so
+  // it stays inside the Workers Free per-request limits (CPU, D1 queries).
+  RESUME_PROCESS_BATCH?: string;
+  MAX_UPLOAD_FILES?: string;
 }
 
 export interface Candidate {

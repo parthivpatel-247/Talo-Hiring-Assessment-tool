@@ -151,7 +151,9 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const denied = managerOnly(role); if (denied) return denied;
     const body = await request.json<any>().catch(() => ({}));
     const list: any[] = Array.isArray(body?.questions) ? body.questions : [];
-    if (list.length > 500) return json({ error: 'Import at most 500 questions at a time.' }, { status: 400 });
+    // Kept small so one request stays well inside the Workers Free limit of 50 D1
+    // queries per request; the page sends a longer file in chunks.
+    if (list.length > 30) return json({ error: 'Import at most 30 questions per request.' }, { status: 400 });
     const cfg = await getDocsConfig(env);
     const norm = (p: string) => p.trim().toLowerCase().replace(/\s+/g, ' ');
     const existing = new Set(((await env.DB.prepare('SELECT prompt FROM question_bank WHERE deleted_at IS NULL').all<{ prompt: string }>()).results ?? []).map((r) => norm(r.prompt)));
@@ -170,9 +172,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     }
     if (rows.length) {
       const stmt = env.DB.prepare(`INSERT INTO question_bank (id, category, prompt, marks, word_limit, difficulty, status, active) VALUES (?, ?, ?, ?, ?, 'medium', 'active', 1)`);
-      for (let i = 0; i < rows.length; i += 50) {
-        await env.DB.batch(rows.slice(i, i + 50).map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl)));
-      }
+      await env.DB.batch(rows.map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl)));
       await audit(env, 'import_questions', null, `${rows.length} imported, ${duplicates} duplicates, ${skipped} skipped`);
     }
     return json({ ok: true, imported: rows.length, duplicates, skipped });
@@ -203,6 +203,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_questions WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('DELETE FROM attempt_events WHERE candidate_id = ?').bind(id),
       env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
     ]);
     await audit(env, 'retake', id);
@@ -257,6 +258,42 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
   }
   if (path.startsWith('/api/admin/part3/')) return json({ error: 'Not found' }, { status: 404 });
 
+  // ---- Candidate detail: both parts' answers plus the integrity events ----
+  const detailMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)$/);
+  if (detailMatch && request.method === 'GET') {
+    const id = detailMatch[1];
+    const candidate = await env.DB.prepare('SELECT * FROM candidates WHERE id = ?').bind(id).first<Candidate>();
+    if (!candidate) return json({ error: 'Not found' }, { status: 404 });
+    const [attempt, p1, p2, ev] = await Promise.all([
+      env.DB.prepare('SELECT * FROM attempts WHERE candidate_id = ?').bind(id).first(),
+      env.DB.prepare(
+        `SELECT qb.prompt, qb.category, qb.word_limit, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks
+         FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
+         LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
+         WHERE pa.candidate_id = ? ORDER BY pa.position`
+      ).bind(id).all(),
+      env.DB.prepare(
+        `SELECT pq.prompt, pq.word_limit, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.ai_content_pct
+         FROM part2_questions pq LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
+         WHERE pq.candidate_id = ? ORDER BY pq.position`
+      ).bind(id).all(),
+      env.DB.prepare('SELECT part, type, COUNT(*) AS n, MAX(chars) AS max_chars FROM attempt_events WHERE candidate_id = ? GROUP BY part, type')
+        .bind(id).all<{ part: number; type: string; n: number; max_chars: number | null }>(),
+    ]);
+    const events = ev.results ?? [];
+    const paste = events.find((e) => e.part === 2 && e.type === 'paste');
+    const parseJson = (v: unknown) => { try { return v ? JSON.parse(String(v)) : []; } catch { return []; } };
+    return json({
+      candidate: { ...candidate, skills: parseJson(candidate.skills), projects: parseJson(candidate.projects) },
+      attempt,
+      part1Answers: p1.results ?? [],
+      part2Answers: p2.results ?? [],
+      part3Answers: [],
+      interviewQuestions: [],
+      integrity: { events, pastes: paste?.n ?? 0, maxPaste: paste?.max_chars ?? 0 },
+    });
+  }
+
   return null;
 }
 
@@ -266,25 +303,23 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
 
 type Signals = { maxPaste: number; pasteEvents: number; typed: number; pasted: number; activeMs: number };
 
-function pasteSignals(rawLog: string | null): Record<string, Signals> {
+/** Per-question paste and typing signals for one candidate's Part 2, from attempt_events. */
+async function pasteSignals(env: Env, candidateId: string): Promise<Record<string, Signals>> {
+  const rows = (await env.DB.prepare(
+    `SELECT question_id,
+            SUM(CASE WHEN type = 'paste' THEN 1 ELSE 0 END)                      AS paste_events,
+            MAX(CASE WHEN type = 'paste' THEN chars END)                         AS max_paste,
+            MAX(CASE WHEN type = 'metrics' THEN typed END)                       AS typed,
+            MAX(CASE WHEN type = 'metrics' THEN pasted END)                      AS pasted,
+            MAX(CASE WHEN type = 'metrics' THEN ms END)                          AS ms
+     FROM attempt_events
+     WHERE candidate_id = ? AND part = 2 AND type IN ('paste', 'metrics') AND question_id IS NOT NULL
+     GROUP BY question_id`
+  ).bind(candidateId).all<{ question_id: string; paste_events: number; max_paste: number | null; typed: number | null; pasted: number | null; ms: number | null }>()).results ?? [];
   const out: Record<string, Signals> = {};
-  const sig = (qid: string) => (out[qid] || (out[qid] = { maxPaste: 0, pasteEvents: 0, typed: 0, pasted: 0, activeMs: 0 }));
-  try {
-    const log = rawLog ? JSON.parse(rawLog) : [];
-    for (const e of Array.isArray(log) ? log : []) {
-      if (!e || !e.questionId) continue;
-      if (e.type === 'paste') {
-        const s = sig(e.questionId);
-        if (typeof e.chars === 'number') { s.maxPaste = Math.max(s.maxPaste, e.chars); }
-        s.pasteEvents += 1;
-      } else if (e.type === 'metrics') {
-        const s = sig(e.questionId);
-        if (typeof e.typed === 'number') s.typed = Math.max(s.typed, e.typed);
-        if (typeof e.pasted === 'number') s.pasted = Math.max(s.pasted, e.pasted);
-        if (typeof e.ms === 'number') s.activeMs = Math.max(s.activeMs, e.ms);
-      }
-    }
-  } catch { /* best effort */ }
+  for (const r of rows) {
+    out[r.question_id] = { maxPaste: r.max_paste ?? 0, pasteEvents: r.paste_events ?? 0, typed: r.typed ?? 0, pasted: r.pasted ?? 0, activeMs: r.ms ?? 0 };
+  }
   return out;
 }
 
@@ -308,8 +343,7 @@ export async function gradeDocsCandidate(env: Env, candidateId: string): Promise
     ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso()).run();
   }));
 
-  const at = await env.DB.prepare('SELECT part2_tab_switch_log FROM attempts WHERE candidate_id = ?').bind(candidateId).first<{ part2_tab_switch_log: string | null }>();
-  const signals = pasteSignals(at?.part2_tab_switch_log ?? null);
+  const signals = await pasteSignals(env, candidateId);
   const p2 = await env.DB.prepare(
     `SELECT pq.id AS question_id, pq.prompt, pq.marks, pq.word_limit, a.answer_text
      FROM part2_questions pq
@@ -345,6 +379,9 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
     `SELECT candidate_id, part1_started_at, part1_submitted_at, part2_started_at, part2_submitted_at FROM attempts
      WHERE part2_submitted_at IS NULL AND part1_started_at IS NOT NULL`
   ).all<Record<string, string | null>>();
+  // Each close is 3 queries; at most 10 per request keeps this call inside the
+  // Workers Free limit of 50 D1 queries per request. The rest close on the next refresh.
+  const MAX_CLOSE_PER_CALL = 10;
   const now = Date.now();
   const age = (t: string | null) => (t ? (now - new Date(t.includes('T') ? t : t.replace(' ', 'T') + 'Z').getTime()) / 1000 : 0);
   let closed = 0;
@@ -353,6 +390,7 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
     const p2Stale = !!a.part2_started_at && age(a.part2_started_at) > p2Cut;
     const betweenStale = !!a.part1_submitted_at && !a.part2_started_at && age(a.part1_submitted_at) > p2Cut;
     if (!p1Stale && !p2Stale && !betweenStale) continue;
+    if (closed >= MAX_CLOSE_PER_CALL) break;
     const cid = a.candidate_id as string;
     await env.DB.batch([
       env.DB.prepare("UPDATE attempts SET part1_submitted_at = COALESCE(part1_submitted_at, datetime('now')), part2_submitted_at = COALESCE(part2_submitted_at, datetime('now')) WHERE candidate_id = ?").bind(cid),
@@ -412,11 +450,11 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
     max: rows.reduce((s, r) => s + Number(r.max_marks ?? r.marks ?? 0), 0),
     graded: rows.some((r) => r.ai_score != null),
   });
-  const pasteStats = (raw: string | null) => {
-    let pastes = 0, chars = 0;
-    try { for (const e of JSON.parse(raw || '[]')) if (e && e.type === 'paste') { pastes++; chars += Number(e.chars) || 0; } } catch { /* ignore */ }
-    return { pastes, chars };
-  };
+  const pasteRows = (await env.DB.prepare(
+    "SELECT candidate_id AS cid, COUNT(*) AS pastes, COALESCE(SUM(chars), 0) AS chars FROM attempt_events WHERE part = 2 AND type = 'paste' GROUP BY candidate_id"
+  ).all<{ cid: string; pastes: number; chars: number }>()).results ?? [];
+  const pasteBy = new Map(pasteRows.map((r) => [r.cid, r]));
+  const pasteStats = (cid: string) => pasteBy.get(cid) ?? { pastes: 0, chars: 0 };
 
   const lines: string[] = [];
   if (fmt === 'summary') {
@@ -424,7 +462,7 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
     for (const c of cands) {
       const s1 = sum(g1.get(c.id)), s2 = sum(g2.get(c.id));
       const at = attempts.get(c.id) || {};
-      const ps = pasteStats(at.part2_tab_switch_log);
+      const ps = pasteStats(c.id);
       lines.push([
         csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), at.login_count ?? '',
         s1.awarded, s1.max, s2.awarded, s2.max, s1.awarded + s2.awarded, s1.max + s2.max, s1.graded || s2.graded ? 'yes' : 'no',
@@ -449,6 +487,39 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
   }
   const fname = `talo-writers-${fmt}-${new Date().toISOString().slice(0, 10)}.csv`;
   return new Response('﻿' + lines.join('\r\n'), {
-    headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${fname}"` },
+    headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${fname}"`, 'Cache-Control': 'no-store' },
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * Daily retention purge (cron)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Deletes every candidate older than DATA_RETENTION_DAYS, with all their answers,
+ * questions and resume files. It works set-based: one DELETE per table for the
+ * whole expired group, plus one R2 call per 1,000 resume files. The query count
+ * stays fixed however many candidates expire, which keeps it under the Workers
+ * Free limit of 50 D1 queries per invocation. Expired admin sessions go too.
+ */
+export async function purgeExpiredDocs(env: Env): Promise<void> {
+  const days = Math.max(1, Math.round(Number(env.DATA_RETENTION_DAYS) || 15));
+  const age = `-${days} days`;
+  const expired = (await env.DB.prepare("SELECT resume_r2_key FROM candidates WHERE created_at < datetime('now', ?)")
+    .bind(age).all<{ resume_r2_key: string | null }>()).results ?? [];
+  const keys = expired.map((r) => r.resume_r2_key).filter((k): k is string => !!k);
+  for (let i = 0; i < keys.length; i += 1000) {
+    await env.RESUMES.delete(keys.slice(i, i + 1000)).catch(() => {});
+  }
+  const sub = "SELECT id FROM candidates WHERE created_at < datetime('now', ?)";
+  const tables = ['attempt_events', 'interview_questions', 'part3_answers', 'part2_answers', 'part1_answers', 'part3_assignments', 'part2_questions', 'part1_assignments', 'part1_seen', 'attempts'];
+  await env.DB.batch([
+    ...tables.map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE candidate_id IN (${sub})`).bind(age)),
+    env.DB.prepare("DELETE FROM candidates WHERE created_at < datetime('now', ?)").bind(age),
+    env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"),
+    // The activity log keeps snapshots of deleted candidates; it follows the same
+    // retention period, as the privacy notice promises.
+    env.DB.prepare("DELETE FROM admin_audit WHERE created_at < datetime('now', ?)").bind(age),
+  ]);
+  if (keys.length || expired.length) await audit(env, 'retention_purge', null, `${expired.length} candidate(s) older than ${days} days deleted`);
 }

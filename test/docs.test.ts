@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { env, fetchMock, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import worker from '../src/index';
-import { migrate, seedCandidate, openAiReply } from './helpers';
+import { migrate, seedCandidate, openAiReply, applySql } from './helpers';
 import m16 from '../migrations-docs/0016_writers_two_part.sql?raw';
+import m17 from '../migrations-docs/0017_writers_indexes.sql?raw';
 
 /**
  * Writers / documentation site (TEAM = "docs"): the same Worker, run with the
@@ -32,11 +33,8 @@ const jsonPost = (cookie: string, body: unknown = {}) => ({ method: 'POST', head
 
 async function migrateDocs() {
   await migrate();
-  const clean = m16.split('\n').map((l: string) => l.replace(/--.*$/, '')).join('\n');
-  for (const stmt of clean.split(';').map((s: string) => s.trim()).filter(Boolean)) {
-    if (/^PRAGMA\s/i.test(stmt)) continue;
-    await env.DB.prepare(stmt).run();
-  }
+  await applySql(m16);
+  await applySql(m17);
 }
 
 const P1_PROMPTS = Array.from({ length: 6 }, (_, i) => `Part one writing task ${i + 1}: rewrite this error message.`);
@@ -127,8 +125,8 @@ describe('writers site — two-part flow', () => {
     // Open book: pasting is logged, never blocked.
     expect((await dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'paste', chars: 420, questionId: s2.questions[0].id }))).status).toBe(200);
     expect((await dreq('/api/candidate/part2/answer', jsonPost(cookie, { questionId: s2.questions[0].id, answerText: 'Guide text.' }))).status).toBe(200);
-    const at = await env.DB.prepare("SELECT part2_tab_switch_log FROM attempts WHERE candidate_id = 'w1'").first<any>();
-    expect(JSON.parse(at.part2_tab_switch_log)[0]).toMatchObject({ type: 'paste', chars: 420 });
+    const ev = await env.DB.prepare("SELECT part, type, chars, question_id FROM attempt_events WHERE candidate_id = 'w1'").first<any>();
+    expect(ev).toMatchObject({ part: 2, type: 'paste', chars: 420, question_id: s2.questions[0].id });
 
     expect((await dreq('/api/candidate/part2/submit', jsonPost(cookie))).status).toBe(200);
     const c2 = await env.DB.prepare("SELECT status FROM candidates WHERE id = 'w1'").first<any>();
@@ -268,5 +266,156 @@ describe('writers site — admin', () => {
     const admin = await adminLogin();
     expect((await dreq('/api/admin/candidates/w4/interview', jsonPost(admin))).status).toBe(404);
     expect((await dreq('/api/admin/candidates/w4/shortlist', jsonPost(admin))).status).toBe(200);
+  });
+});
+
+describe('writers site — database design rules', () => {
+  beforeEach(async () => {
+    await migrateDocs();
+    await seedDocsBank();
+    await seedCandidate('w9', 'w9@x.com', 'part2_ready');
+  });
+
+  it('keeps every integrity event when several arrive at once', async () => {
+    const { cookie } = await candidateLogin('w9@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    await dreq('/api/candidate/part1/submit', jsonPost(cookie));
+    const s2 = await (await dreq('/api/candidate/part2/start', jsonPost(cookie))).json<any>();
+    await Promise.all([
+      ...s2.questions.map((q: any) => dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'metrics', questionId: q.id, typed: 500, pasted: 100, pastes: 1, ms: 60000 }))),
+      ...Array.from({ length: 6 }, () => dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'tab_hidden' }))),
+    ]);
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = 'w9'").first<any>();
+    expect(n.n).toBe(s2.questions.length + 6);
+    const at = await env.DB.prepare("SELECT part2_tab_switch_count AS c FROM attempts WHERE candidate_id = 'w9'").first<any>();
+    expect(at.c).toBe(6); // metrics are signals, not tab switches
+  });
+
+  it('saves the typed answer with the clock sync, and never after the part closes', async () => {
+    const { cookie } = await candidateLogin('w9@x.com');
+    const s1 = await (await dreq('/api/candidate/part1/start', jsonPost(cookie))).json<any>();
+    const hb = await (await dreq('/api/candidate/part1/heartbeat', jsonPost(cookie, { questionId: s1.questions[0].id, answerText: 'Saved by the clock sync.' }))).json<any>();
+    expect(hb.saved).toBe(true);
+    expect(hb.remainingSeconds).toBeGreaterThan(1790);
+    const row = await env.DB.prepare('SELECT answer_text FROM part1_answers WHERE candidate_id = ? AND question_id = ?').bind('w9', s1.questions[0].id).first<any>();
+    expect(row.answer_text).toBe('Saved by the clock sync.');
+    // A question that isn't theirs is ignored.
+    expect((await (await dreq('/api/candidate/part1/heartbeat', jsonPost(cookie, { questionId: 'd2-0', answerText: 'x' }))).json<any>()).saved).toBe(false);
+    await dreq('/api/candidate/part1/submit', jsonPost(cookie));
+    const after = await (await dreq('/api/candidate/part1/heartbeat', jsonPost(cookie, { questionId: s1.questions[0].id, answerText: 'changed' }))).json<any>();
+    expect(after.closed).toBe(true);
+    const still = await env.DB.prepare('SELECT answer_text FROM part1_answers WHERE candidate_id = ? AND question_id = ?').bind('w9', s1.questions[0].id).first<any>();
+    expect(still.answer_text).toBe('Saved by the clock sync.');
+  });
+
+  it('rejects invalid data at the database level', async () => {
+    await expect(env.DB.prepare("UPDATE candidates SET status = 'done' WHERE id = 'w9'").run()).rejects.toThrow(/invalid candidate status/);
+    await expect(env.DB.prepare("INSERT INTO question_bank (id, category, prompt, marks) VALUES ('bad', 'part1', 'x', 0)").run()).rejects.toThrow(/invalid marks/);
+    await expect(env.DB.prepare("INSERT INTO question_bank (id, category, prompt, marks) VALUES ('bad', 'essay', 'x', 5)").run()).rejects.toThrow(/CHECK/);
+    await env.DB.prepare("INSERT INTO part2_questions (id, candidate_id, position, prompt, rubric) VALUES ('a', 'w9', 0, 'p', '')").run();
+    await expect(env.DB.prepare("INSERT INTO part2_questions (id, candidate_id, position, prompt, rubric) VALUES ('b', 'w9', 0, 'p', '')").run()).rejects.toThrow(/UNIQUE/);
+  });
+
+  it('deleting a candidate removes their integrity events too', async () => {
+    await env.DB.prepare("INSERT INTO attempt_events (candidate_id, part, type) VALUES ('w9', 2, 'paste')").run();
+    const admin = await adminLogin();
+    expect((await dreq('/api/admin/candidates/w9', { method: 'DELETE', headers: { Cookie: admin } })).status).toBe(200);
+    const n = await env.DB.prepare("SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = 'w9'").first<any>();
+    expect(n.n).toBe(0);
+  });
+
+  it('expired admin sessions stop working', async () => {
+    const admin = await adminLogin();
+    expect((await dreq('/api/admin/config', { headers: { Cookie: admin } })).status).toBe(200);
+    await env.DB.prepare("UPDATE admin_sessions SET expires_at = ?").bind(new Date(Date.now() - 60_000).toISOString()).run();
+    expect((await dreq('/api/admin/config', { headers: { Cookie: admin } })).status).toBe(401);
+  });
+});
+
+describe('writers site — same admin features and protections as the support site', () => {
+  beforeEach(async () => {
+    await migrateDocs();
+    await seedDocsBank();
+    await seedCandidate('a1', 'a1@x.com', 'part2_ready');
+  });
+
+  it('every admin route needs a signed-in admin', async () => {
+    for (const [path, method] of [['/api/admin/config', 'GET'], ['/api/admin/candidates', 'GET'], ['/api/admin/export.csv', 'GET'], ['/api/admin/assessment-length', 'POST'], ['/api/admin/questions', 'POST'], ['/api/admin/candidates/a1', 'GET'], ['/api/admin/candidates/a1/retake', 'POST']] as const) {
+      expect((await dreq(path, { method, headers: { 'Content-Type': 'application/json' }, body: method === 'POST' ? '{}' : undefined })).status, path).toBe(401);
+    }
+  });
+
+  it('panel members can view and grade but not change setup or candidates', async () => {
+    const panel = await adminLogin('panel@test.local', 'test-panel-pass');
+    expect((await dreq('/api/admin/candidates', { headers: { Cookie: panel } })).status).toBe(200);
+    expect((await dreq('/api/admin/candidates/a1', { headers: { Cookie: panel } })).status).toBe(200);
+    for (const [path, method] of [
+      ['/api/admin/questions', 'POST'], ['/api/admin/questions/d1-0', 'PUT'], ['/api/admin/questions/d1-0', 'DELETE'],
+      ['/api/admin/questions/d1-0/toggle-active', 'POST'], ['/api/admin/questions/bulk-import', 'POST'],
+      ['/api/admin/candidates/a1/retake', 'POST'], ['/api/admin/candidates/a1/resume', 'POST'], ['/api/admin/candidates/a1/force-submit', 'POST'],
+      ['/api/admin/candidates/a1/revoke', 'POST'], ['/api/admin/candidates/a1', 'DELETE'], ['/api/admin/resumes/process', 'POST'],
+      ['/api/admin/assessment-length', 'POST'], ['/api/admin/members', 'POST'],
+    ] as const) {
+      expect((await dreq(path, { method, headers: { Cookie: panel, 'Content-Type': 'application/json' }, body: '{}' })).status, `${method} ${path}`).toBe(403);
+    }
+  });
+
+  it('force submit, revoke and restore access work on the two-part test', async () => {
+    const admin = await adminLogin();
+    const { cookie } = await candidateLogin('a1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    expect((await dreq('/api/admin/candidates/a1/force-submit', jsonPost(admin))).status).toBe(200);
+    let at = await env.DB.prepare("SELECT part1_submitted_at, part2_submitted_at FROM attempts WHERE candidate_id = 'a1'").first<any>();
+    expect(at.part1_submitted_at && at.part2_submitted_at).toBeTruthy();
+    expect((await env.DB.prepare("SELECT status FROM candidates WHERE id = 'a1'").first<any>()).status).toBe('submitted');
+
+    await seedCandidate('a2', 'a2@x.com', 'part2_ready');
+    const c2 = (await candidateLogin('a2@x.com')).cookie;
+    await dreq('/api/candidate/part1/start', jsonPost(c2));
+    await dreq('/api/admin/candidates/a2/revoke', jsonPost(admin));
+    expect((await dreq('/api/candidate/me', { headers: { Cookie: c2 } })).status).toBe(401); // session stops working at once
+    expect((await candidateLogin('a2@x.com')).res.status).toBe(403);
+    at = await env.DB.prepare("SELECT part1_submitted_at, part2_submitted_at FROM attempts WHERE candidate_id = 'a2'").first<any>();
+    expect(at.part1_submitted_at && at.part2_submitted_at).toBeTruthy();
+    expect((await dreq('/api/admin/candidates/a2/unrevoke', jsonPost(admin))).status).toBe(200);
+  });
+
+  it('flags a blocked second sign-in and leaving the test', async () => {
+    const admin = await adminLogin();
+    const { cookie } = await candidateLogin('a1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    await dreq('/api/candidate/part1/tab-switch', jsonPost(cookie, { type: 'fullscreen_exited' }));
+    expect((await candidateLogin('a1@x.com')).res.status).toBe(403);
+    const flags = await (await dreq('/api/admin/flags', { headers: { Cookie: admin } })).json<any>();
+    const items = flags.flags.find((f: any) => f.candidateId === 'a1').items.map((i: any) => i.type);
+    expect(items).toEqual(expect.arrayContaining(['duplicate_login', 'left_test']));
+  });
+
+  it('question soft-delete, restore and disable keep the bank counts right', async () => {
+    const admin = await adminLogin();
+    const pool = async () => (await (await dreq('/api/admin/config', { headers: { Cookie: admin } })).json<any>()).docs.pool;
+    expect(await pool()).toEqual({ part1: 6, part2: 3 });
+    await dreq('/api/admin/questions/d1-0', { method: 'DELETE', headers: { Cookie: admin } });
+    await dreq('/api/admin/questions/d2-0/toggle-active', jsonPost(admin));
+    expect(await pool()).toEqual({ part1: 5, part2: 2 });
+    await dreq('/api/admin/questions/d1-0/restore', jsonPost(admin));
+    const q = await env.DB.prepare("SELECT deleted_at FROM question_bank WHERE id = 'd1-0'").first<any>();
+    expect(q.deleted_at).toBeNull();
+  });
+
+  it('the manager can add a writers panel member who then signs in', async () => {
+    const admin = await adminLogin();
+    expect((await dreq('/api/admin/members', jsonPost(admin, { name: 'Docs Lead', email: 'lead@docs.test', password: 'a-strong-pass', role: 'manager' }))).status).toBe(200);
+    expect((await dreq('/api/admin/login', jsonPost('', { email: 'lead@docs.test', password: 'a-strong-pass' }))).status).toBe(200);
+  });
+
+  it('never shows the candidate marks, scores or reasoning, even after grading', async () => {
+    const { cookie } = await candidateLogin('a1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    await env.DB.prepare("UPDATE part1_answers SET ai_score = 4, ai_reasoning = 'secret', max_marks = 5").run();
+    for (const p of ['/api/candidate/me', '/api/candidate/part1/questions']) {
+      const t = await (await dreq(p, { headers: { Cookie: cookie } })).text();
+      for (const k of ['ai_score', 'ai_reasoning', 'max_marks', 'secret', '"marks"']) expect(t.includes(k), `${p} leaked ${k}`).toBe(false);
+    }
   });
 });

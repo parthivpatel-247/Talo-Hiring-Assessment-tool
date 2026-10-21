@@ -58,6 +58,13 @@ Run these from the repository on the `main` branch.
    ```
 6. Commit the `database_id` change from step 1 (`git commit -am "Set talo-docs database id"`).
 
+**Already applied the migrations before migration 0017 was added?** Run the same
+command again before deploying. It applies only the new `0017_writers_indexes.sql`
+(indexes, integrity rules and the `attempt_events` table):
+```bash
+npx wrangler d1 migrations apply talo-docs-db --remote --env docs
+```
+
 ## First use
 
 1. Open https://talo-docs.hevo-talo.workers.dev/admin/ and sign in with `parthiv.patel@hevodata.com` and the `ADMIN_PASSWORD` you set.
@@ -89,4 +96,8 @@ This works the same as the support site. Some points specific to the two parts:
 npx wrangler d1 migrations apply talo-docs-db --local --env docs
 npx wrangler dev --env docs        # http://127.0.0.1:8787, local secrets in .dev.vars.docs
 npx vitest run test/docs.test.ts   # the writers' tests (the full suite: npm test)
+npm run test:limits                # 100-candidate drive against the Workers Free limits
+node scripts/writers-parity-check.mjs   # browser check of the candidate protections (needs wrangler dev --env docs)
 ```
+
+Database design, Free-plan budget and the v1 parity check: `docs/WRITERS-DATA-DESIGN.md`.

@@ -11,6 +11,11 @@ const WORD_LIMIT = 1000;
 const TEAM = document.body && document.body.dataset.team === 'docs' ? 'docs' : 'support';
 const IS_DOCS = TEAM === 'docs';
 // Per-question word limit (writers' questions carry their own); support uses WORD_LIMIT.
+// Writers' site: the clock syncs every 30 s and the same request saves the answer
+// being typed (support: 10 s sync + a separate 15 s autosave). Fewer requests and
+// database writes keep a full drive inside Cloudflare's free daily limits.
+const HEARTBEAT_MS = IS_DOCS ? 30000 : 10000;
+const HEARTBEAT_FAILS_BEFORE_OFFLINE = IS_DOCS ? 1 : 2;
 function limitFor(q) { return (q && Number(q.wordLimit) > 0) ? Number(q.wordLimit) : WORD_LIMIT; }
 
 // Theme toggle
@@ -341,6 +346,7 @@ function makePart(part) {
     const clamped = clampWords(answer.value, limitFor(current()));
     if (clamped !== answer.value) answer.value = clamped;
     const q = current();
+    if (!q) return; // no questions loaded (e.g. the part could not start)
     state.answers[q.id] = answer.value;
     // Part 2: count genuine typing (not paste) toward the "typed" signal.
     if (part === 'part2' && q) {
@@ -456,7 +462,15 @@ function makePart(part) {
 
   function startAutosave() {
     clearInterval(state.saveInterval);
+    if (IS_DOCS) return; // writers' site: answers ride along with the clock sync
     state.saveInterval = setInterval(saveCurrent, 15000); // 15s snapshot
+  }
+  // Writers' site: the current answer, if it changed since the last save.
+  function pendingAnswer() {
+    if (!IS_DOCS) return null;
+    const q = current(); if (!q) return null;
+    const val = state.answers[q.id] || '';
+    return lastSaved[q.id] === val ? null : { questionId: q.id, answerText: val };
   }
 
   // Prefetch + pre-render questions into the (hidden) panel BEFORE the candidate
@@ -490,7 +504,13 @@ function makePart(part) {
     state.hbFails = 0;
     state.interval = setInterval(async () => {
       try {
-        const { remainingSeconds } = await api(`/api/candidate/${part}/heartbeat`, { method: 'POST' });
+        const pending = pendingAnswer();
+        const res = await api(`/api/candidate/${part}/heartbeat`, { method: 'POST', ...(pending ? { body: JSON.stringify(pending) } : {}) });
+        const remainingSeconds = res.remainingSeconds;
+        if (pending && res.saved) {
+          lastSaved[pending.questionId] = pending.answerText;
+          savedTag.classList.add('show'); setTimeout(() => savedTag.classList.remove('show'), 1400);
+        }
         state.hbFails = 0;
         if (typeof goOnline === 'function') goOnline(); // recovered
         state.remaining = remainingSeconds;
@@ -499,9 +519,9 @@ function makePart(part) {
       } catch {
         // Connection lost: after 2 misses, pause the timer and show the overlay.
         state.hbFails = (state.hbFails || 0) + 1;
-        if (state.hbFails >= 2 && typeof goOffline === 'function') goOffline();
+        if (state.hbFails >= HEARTBEAT_FAILS_BEFORE_OFFLINE && typeof goOffline === 'function') goOffline();
       }
-    }, 10000);
+    }, HEARTBEAT_MS);
   }
   function stop() { clearInterval(state.interval); clearInterval(state.saveInterval); clearInterval(state.tick); }
 
@@ -531,6 +551,18 @@ function goOffline() {
   if (typeof clearAwayTimer === 'function') clearAwayTimer(); // a dropped connection is not a tab-switch — cancel any away countdown
   currentPart.ctrl.stop(); // freeze the local countdown + heartbeat + autosave
   showOfflineOverlay();
+  if (IS_DOCS) startRecoveryProbe();
+}
+// Writers' site: while the "connection lost" screen is up, check every 10 s whether
+// the server is reachable again (the browser's 'online' event doesn't fire when the
+// network was up but a request failed), and resume as soon as it is.
+let recoveryProbe = null;
+function startRecoveryProbe() {
+  clearInterval(recoveryProbe);
+  recoveryProbe = setInterval(async () => {
+    if (!offline) { clearInterval(recoveryProbe); recoveryProbe = null; return; }
+    try { await api('/api/candidate/me'); clearInterval(recoveryProbe); recoveryProbe = null; goOnline(); } catch { /* still offline */ }
+  }, 10000);
 }
 function goOnline() {
   if (!offline) return;
@@ -650,7 +682,10 @@ function checkFullscreen() {
   if (!lockdownArmed || !lp || lockedCtrl(lp).state.submitted) return;
   const inFs = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
   if (!inFs) {
-    if (!fsOut) { fsOut = true; violation('fullscreen_exited'); }
+    // Out of full screen with no countdown running (for example a second exit right
+    // after returning, which the 1.5 s debounce swallowed): raise it again, so staying
+    // out of full screen always leads to the countdown.
+    if (!fsOut || !awayTick) { fsOut = true; violation('fullscreen_exited'); }
   } else {
     fsOut = false;
     checkReturned();

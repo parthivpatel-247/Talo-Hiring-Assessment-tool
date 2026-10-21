@@ -223,6 +223,7 @@ async function loadConfig({ preserveEdits = false } = {}) {
     const note = $('analysis-note');
     if (note && !analyzing && note.dataset.docsDefault !== '1') { note.dataset.docsDefault = '1'; note.textContent = 'AI reads each submitted answer as a whole and gives marks with a short reason. Export the results to CSV to review them.'; }
     const th = document.querySelector('#question-table thead th:nth-child(4)'); if (th) th.textContent = 'Word limit';
+    const pb = $('process-btn'); if (pb && !pb.disabled) pb.textContent = 'Parse resumes';
   }
   const who = document.querySelector('.who'); if (who) who.textContent = IS_MANAGER ? 'Manager' : 'Panel member';
   populateCollegeControls();
@@ -522,7 +523,23 @@ $('upload-btn').addEventListener('click', async () => {
   form.append('college', col);
   setNotice('upload-status', `Uploading ${files.length} file(s) for ${col}…`);
   try {
-    const r = await api('/api/admin/resumes/upload', { method: 'POST', body: form });
+    let r;
+    if (IS_DOCS) {
+      // Writers' site: send 10 files per request so each request stays small
+      // (Workers Free per-request limits); the results are combined.
+      r = { uploaded: [], skipped: [] };
+      const list = Array.from(files);
+      for (let i = 0; i < list.length; i += 10) {
+        const part = new FormData();
+        for (const f of list.slice(i, i + 10)) part.append('files', f);
+        part.append('college', col);
+        setNotice('upload-status', `Uploading ${Math.min(i + 10, list.length)} of ${list.length} file(s)…`);
+        const rr = await api('/api/admin/resumes/upload', { method: 'POST', body: part });
+        r.uploaded.push(...(rr.uploaded || [])); r.skipped.push(...(rr.skipped || []));
+      }
+    } else {
+      r = await api('/api/admin/resumes/upload', { method: 'POST', body: form });
+    }
     const skipped = r.skipped || [];
     const base = `Uploaded ${r.uploaded.length} resume(s) — they appear below as "(unparsed)". Now click "Parse resumes" to fill in each name & email.`;
     const skipTail = skipped.length ? ` Skipped ${skipped.length}: ${skipped.map((s) => `${s.filename} (${s.reason})`).join('; ')}.` : '';
@@ -1135,7 +1152,8 @@ async function showDetail(id) {
   // Paste activity in Part 2 (open-book): a wholesale paste is a sign of a
   // pasted/AI answer and is penalized in grading — surface it to the admin too.
   let pasteCount = 0, pasteMax = 0;
-  try {
+  if (IS_DOCS && data.integrity) { pasteCount = data.integrity.pastes || 0; pasteMax = data.integrity.maxPaste || 0; }
+  else try {
     const log = data.attempt?.part2_tab_switch_log ? JSON.parse(data.attempt.part2_tab_switch_log) : [];
     for (const e of log) if (e && (e.type === 'paste' || e.type === 'paste_blocked')) { pasteCount++; pasteMax = Math.max(pasteMax, Number(e.chars) || 0); }
   } catch (_) {}

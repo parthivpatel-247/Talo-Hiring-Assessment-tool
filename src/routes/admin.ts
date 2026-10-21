@@ -12,6 +12,7 @@ import { part1Summary, part2Summary, part3Summary, cohortSummaries, EMPTY_SUMMAR
 import { ensurePart3Schema, seedDefaultPart3 } from '../lib/part3bank';
 import { getAssessmentMinutes } from '../lib/timer';
 import { isDocs } from '../lib/team';
+import { isManagerOnlyRoute, MANAGER_ONLY_MESSAGE } from '../lib/roles';
 import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
 
 const PROCESS_BATCH_LIMIT = 20;
@@ -251,6 +252,10 @@ export async function handleAdminRoute(
   // Writers site (TEAM = "docs"): the routes that differ for its two-part writing
   // test are handled in admin-docs.ts; everything else below is shared.
   if (isDocs(env)) {
+    // Same manager-only rule as below, applied before any writers route runs.
+    if (isManagerOnlyRoute(path, request.method) && role !== 'manager') {
+      return json({ error: MANAGER_ONLY_MESSAGE }, { status: 403 });
+    }
     const docsRes = await handleDocsAdminRoute(request, env, path, role);
     if (docsRes) return docsRes;
   }
@@ -416,21 +421,9 @@ export async function handleAdminRoute(
   }
 
   // ---- Role gate: setup/config/destructive actions are manager-only. ----
-  const managerOnly =
-    (path === '/api/admin/resumes/upload' && request.method === 'POST') ||
-    (path === '/api/admin/resumes/process' && request.method === 'POST') ||
-    (path === '/api/admin/questions' && request.method === 'POST') ||
-    (path === '/api/admin/questions/bulk-import' && request.method === 'POST') ||
-    (path === '/api/admin/questions/enrich-all' && request.method === 'POST') ||
-    (/^\/api\/admin\/questions\/[^/]+\/enrich$/.test(path) && request.method === 'POST') ||
-    (/^\/api\/admin\/questions\/[^/]+\/toggle-active$/.test(path) && request.method === 'POST') ||
-    (/^\/api\/admin\/questions\/[^/]+\/restore$/.test(path) && request.method === 'POST') ||
-    (/^\/api\/admin\/questions\/[^/]+$/.test(path) && (request.method === 'PUT' || request.method === 'DELETE')) ||
-    (path === '/api/admin/part3/seed' && request.method === 'POST') ||
-    (/^\/api\/admin\/candidates\/[^/]+$/.test(path) && request.method === 'DELETE') ||
-    (/^\/api\/admin\/candidates\/[^/]+\/(force-submit|manual|retake|resume|revoke|unrevoke|college)$/.test(path) && request.method === 'POST');
+  const managerOnly = isManagerOnlyRoute(path, request.method);
   if (managerOnly && role !== 'manager') {
-    return json({ error: 'This action needs manager access. Log in with the manager password to do it.' }, { status: 403 });
+    return json({ error: MANAGER_ONLY_MESSAGE }, { status: 403 });
   }
 
   // ---- Resume upload ----
@@ -439,7 +432,8 @@ export async function handleAdminRoute(
     const form = await request.formData();
     const files = form.getAll('files') as unknown as File[];
     if (!files.length) return json({ error: 'No files uploaded' }, { status: 400 });
-    if (files.length > 100) return json({ error: 'Upload at most 100 resumes at a time' }, { status: 400 });
+    const maxFiles = Number(env.MAX_UPLOAD_FILES) || 100;
+    if (files.length > maxFiles) return json({ error: `Upload at most ${maxFiles} resumes at a time` }, { status: 400 });
     // Optional college for this batch — must be one of the configured colleges.
     const collegeRaw = ((form.get('college') as string) || '').trim();
     const college = (await getColleges(env)).includes(collegeRaw) ? collegeRaw : null;
@@ -485,7 +479,7 @@ export async function handleAdminRoute(
 
   if (path === '/api/admin/resumes/process' && request.method === 'POST') {
     const rows = await env.DB.prepare('SELECT * FROM candidates WHERE status = ? LIMIT ?')
-      .bind('uploaded', PROCESS_BATCH_LIMIT)
+      .bind('uploaded', Number(env.RESUME_PROCESS_BATCH) || PROCESS_BATCH_LIMIT)
       .all<Candidate>();
     const batch = rows.results ?? [];
 

@@ -1,9 +1,9 @@
 import type { Env, Candidate } from '../types';
 import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
-import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId } from '../lib/db';
+import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
-import { startPart, heartbeat, logTabSwitch, durationSeconds } from '../lib/timer';
-import { getDocsConfig, DocsPoolTooSmall } from '../lib/team';
+import { startPart, durationSeconds } from '../lib/timer';
+import { getDocsConfig, DocsPoolTooSmall, type DocsConfig } from '../lib/team';
 
 /**
  * CANDIDATE API for the writers site (TEAM = "docs").
@@ -18,6 +18,15 @@ import { getDocsConfig, DocsPoolTooSmall } from '../lib/team';
  */
 
 type Attempt = Record<string, unknown> | null;
+
+/**
+ * The writers' page syncs the clock every 30 s (the support test: every 10 s), and
+ * the same request carries the answer being typed, so one request does both jobs.
+ * That keeps a 100-student drive well inside the Workers Free daily request and D1
+ * write limits. A gap longer than this cap is treated as a disconnect: the clock
+ * only loses up to the cap, as with the support test's 15 s cap at 10 s beats.
+ */
+const HEARTBEAT_CAP_SECONDS = 45;
 
 async function requireCandidate(env: Env, request: Request): Promise<Candidate | null> {
   const id = await getCandidateIdFromRequest(env, request);
@@ -69,6 +78,27 @@ function partOpen(at: Attempt, part: 'part1' | 'part2'): boolean {
   if (!at || !at[`${part}_started_at`] || at[`${part}_submitted_at`]) return false;
   const remaining = at[`${part}_remaining_seconds`];
   return remaining == null || Number(remaining) > 0;
+}
+
+/**
+ * Records one integrity event (leaving the test, a paste, typing metrics) as its own
+ * row in attempt_events, and bumps the part's leave-the-test counter in the same
+ * atomic batch. One INSERT per event, so events that arrive together are all kept.
+ * Pastes and typing metrics are signals, not tab switches, so they don't count.
+ */
+const NOT_SWITCHES = new Set(['paste', 'paste_blocked', 'copy_blocked', 'metrics']);
+async function logEvent(env: Env, candidateId: string, part: 1 | 2, body: Record<string, unknown>): Promise<void> {
+  const type = typeof body.type === 'string' && body.type ? body.type.slice(0, 40) : 'unknown';
+  const n = (v: unknown, max: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(v))) : null);
+  const qid = typeof body.questionId === 'string' ? body.questionId.slice(0, 64) : null;
+  const stmts = [
+    env.DB.prepare('INSERT INTO attempt_events (candidate_id, part, type, question_id, chars, typed, pasted, pastes, ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(candidateId, part, type, qid, n(body.chars, 200000), n(body.typed, 200000), n(body.pasted, 200000), n(body.pastes, 1000), n(body.ms, 24 * 60 * 60 * 1000)),
+  ];
+  if (!NOT_SWITCHES.has(type)) {
+    stmts.push(env.DB.prepare(`UPDATE attempts SET part${part}_tab_switch_count = part${part}_tab_switch_count + 1 WHERE candidate_id = ?`).bind(candidateId));
+  }
+  await env.DB.batch(stmts);
 }
 
 async function closePart(env: Env, candidateId: string, part: 'part1' | 'part2'): Promise<void> {
@@ -149,14 +179,53 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     return json({ candidate: { name: candidate.name, email: candidate.email, status: candidate.status }, attempt });
   }
 
-  const cfg = await getDocsConfig(env);
+  // Loaded once per request, and only by the routes that need them.
+  let cfgCache: DocsConfig | null = null;
+  const config = async () => (cfgCache ??= await getDocsConfig(env));
   const at = (await getAttempt(env, candidate.id)) as Attempt;
+
+  // Clock sync for a running part, optionally saving the answer being typed in the
+  // same request. Returns the seconds left (0 = the part's time is up).
+  const beat = async (part: 'part1' | 'part2'): Promise<Response> => {
+    if (!at || !at[`${part}_started_at`] || at[`${part}_submitted_at`]) return json({ remainingSeconds: 0, closed: true });
+    const body = await request.json<{ questionId?: unknown; answerText?: unknown }>().catch(() => ({} as { questionId?: unknown; answerText?: unknown }));
+    const remaining = Number(at[`${part}_remaining_seconds`] ?? 0);
+    const last = at[`${part}_last_heartbeat_at`] ? Date.parse(String(at[`${part}_last_heartbeat_at`])) : Date.now();
+    const elapsed = Math.min(Math.max(0, (Date.now() - last) / 1000), HEARTBEAT_CAP_SECONDS);
+    const next = Math.max(0, Math.round(remaining - elapsed));
+    const stmts = [
+      env.DB.prepare(`UPDATE attempts SET ${part}_remaining_seconds = ?, ${part}_last_heartbeat_at = ? WHERE candidate_id = ? AND ${part}_submitted_at IS NULL`)
+        .bind(next, nowIso(), candidate.id),
+    ];
+    let saved = false;
+    if (typeof body.questionId === 'string' && body.questionId && typeof body.answerText === 'string' && remaining > 0) {
+      const owned = part === 'part1'
+        ? await env.DB.prepare('SELECT qb.word_limit FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id WHERE pa.candidate_id = ? AND pa.question_id = ?')
+            .bind(candidate.id, body.questionId).first<{ word_limit: number | null }>()
+        : await env.DB.prepare('SELECT word_limit FROM part2_questions WHERE candidate_id = ? AND id = ?')
+            .bind(candidate.id, body.questionId).first<{ word_limit: number | null }>();
+      if (owned) {
+        const text = body.answerText.slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
+        stmts.push(env.DB.prepare(
+          `INSERT INTO ${part}_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
+           ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
+        ).bind(candidate.id, body.questionId, text));
+        saved = true;
+      }
+    }
+    await env.DB.batch(stmts);
+    if (next <= 0) {
+      if (part === 'part1') await closePart(env, candidate.id, 'part1'); // Part 1 closes; Part 2 is next
+      else await finishAssessment(env, candidate.id);
+    }
+    return json({ remainingSeconds: next, saved });
+  };
 
   // ---------------- Part 1: closed book ----------------
   if (path === '/api/candidate/part1/prepare' && request.method === 'POST') {
     if (at?.part1_submitted_at) return json({ error: 'Part 1 is closed.', closed: true }, { status: 409 });
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
-    return json({ questions: await part1Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part1/start' && request.method === 'POST') {
@@ -164,11 +233,11 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
     await startPart(env, candidate.id, 'part1');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part1/questions' && request.method === 'GET') {
-    return json({ questions: await part1Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part1/answer' && request.method === 'POST') {
@@ -179,7 +248,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     ).bind(candidate.id, questionId).first<{ word_limit: number | null }>();
     if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
     if (!partOpen(at, 'part1')) return json({ error: 'Part 1 is closed. Your saved answers were kept.', closed: true }, { status: 409 });
-    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || cfg.wordLimit));
+    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
     await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
        ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
@@ -187,15 +256,11 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     return json({ ok: true });
   }
 
-  if (path === '/api/candidate/part1/heartbeat' && request.method === 'POST') {
-    const remaining = await heartbeat(env, candidate.id, 'part1');
-    if (remaining <= 0) await closePart(env, candidate.id, 'part1'); // Part 1 closes; Part 2 is next
-    return json({ remainingSeconds: remaining });
-  }
+  if (path === '/api/candidate/part1/heartbeat' && request.method === 'POST') return beat('part1');
 
   if (path === '/api/candidate/part1/tab-switch' && request.method === 'POST') {
-    const { type } = await request.json<{ type: string }>().catch(() => ({ type: 'unknown' }));
-    await logTabSwitch(env, candidate.id, 'part1', typeof type === 'string' ? type.slice(0, 40) : 'unknown');
+    const body = await request.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    await logEvent(env, candidate.id, 1, body);
     return json({ ok: true });
   }
 
@@ -215,7 +280,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   if (path === '/api/candidate/part2/prepare' && request.method === 'POST') {
     const blocked = part2Gate(); if (blocked) return blocked;
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
-    return json({ questions: await part2Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part2/start' && request.method === 'POST') {
@@ -223,12 +288,12 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     try { await assignDocsPart2(env, candidate.id); } catch (err) { return notReady(err); }
     await startPart(env, candidate.id, 'part2');
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part2'), questions: await part2Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part2'), questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part2/questions' && request.method === 'GET') {
     if (!at?.part1_submitted_at) return json({ error: 'Finish Part 1 first.' }, { status: 409 });
-    return json({ questions: await part2Questions(env, candidate.id, cfg.wordLimit) });
+    return json({ questions: await part2Questions(env, candidate.id, (await config()).wordLimit) });
   }
 
   if (path === '/api/candidate/part2/answer' && request.method === 'POST') {
@@ -238,7 +303,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       .bind(candidate.id, questionId).first<{ word_limit: number | null }>();
     if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
     if (!partOpen(at, 'part2')) return json({ error: 'Part 2 is closed. Your saved answers were kept.', closed: true }, { status: 409 });
-    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || cfg.wordLimit));
+    const text = String(answerText ?? '').slice(0, answerCap(owned.word_limit || (await config()).wordLimit));
     await env.DB.prepare(
       `INSERT INTO part2_answers (candidate_id, question_id, answer_text) VALUES (?, ?, ?)
        ON CONFLICT (candidate_id, question_id) DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
@@ -246,25 +311,11 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     return json({ ok: true });
   }
 
-  if (path === '/api/candidate/part2/heartbeat' && request.method === 'POST') {
-    const remaining = await heartbeat(env, candidate.id, 'part2');
-    if (remaining <= 0) await finishAssessment(env, candidate.id);
-    return json({ remainingSeconds: remaining });
-  }
+  if (path === '/api/candidate/part2/heartbeat' && request.method === 'POST') return beat('part2');
 
   if (path === '/api/candidate/part2/tab-switch' && request.method === 'POST') {
-    type SwitchBody = { type: string; chars?: number; questionId?: string; typed?: number; pasted?: number; pastes?: number; ms?: number };
-    const body = await request.json<SwitchBody>().catch(() => ({ type: 'unknown' } as SwitchBody));
-    const type = typeof body.type === 'string' ? body.type.slice(0, 40) : 'unknown';
-    const clampN = (v: unknown, max: number) => (Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(Number(v)))) : undefined);
-    await logTabSwitch(env, candidate.id, 'part2', type, {
-      chars: clampN(body.chars, 100000),
-      questionId: typeof body.questionId === 'string' ? body.questionId.slice(0, 64) : undefined,
-      typed: clampN(body.typed, 200000),
-      pasted: clampN(body.pasted, 200000),
-      pastes: clampN(body.pastes, 1000),
-      ms: clampN(body.ms, 24 * 60 * 60 * 1000),
-    }); // logged only — Part 2 never blocks
+    const body = await request.json<Record<string, unknown>>().catch(() => ({} as Record<string, unknown>));
+    await logEvent(env, candidate.id, 2, body); // logged only — Part 2 never blocks
     return json({ ok: true });
   }
 
