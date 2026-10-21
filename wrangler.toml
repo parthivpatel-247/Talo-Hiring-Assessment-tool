@@ -104,7 +104,7 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "talo-docs-db"
 # Paste the id printed by `npx wrangler d1 create talo-docs-db` here.
-database_id = "REPLACE_WITH_TALO_DOCS_DB_ID"
+database_id = "75a629c5-11f1-48ae-a5e6-cf9ec83dcddc"
 migrations_dir = "migrations-docs"
 
 [[env.docs.r2_buckets]]
