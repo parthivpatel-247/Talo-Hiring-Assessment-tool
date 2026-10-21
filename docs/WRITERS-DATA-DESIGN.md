@@ -58,6 +58,14 @@ How the writers site keeps its numbers down:
 | `part1_seen`, `question_usage` | candidate × question / question | composite / `question_id` | Rotation: what each candidate has seen, and how often each question has been used |
 | `settings` | setting | `key` | Questions and minutes per part, colleges |
 | `admin_users`, `admin_sessions`, `admin_audit` | panel account / session / admin action | `id` / `token` / `id` | Accounts and roles; revocable sessions; activity log |
+| `rate_limits` | sign-in counter | `bucket` | Fixed-window count and pause end per network, account or trusted browser. Keys are keyed hashes, never a raw email or IP. No secondary index (an index would double the writes). Rows older than a day are deleted daily. Migration 0018 (support: 0016); the Worker also creates it if missing |
+
+Columns the Worker adds on first use, so a missed migration can't break a drive:
+- `candidates.grading_claim` / `grading_claimed_at` and `parse_claim` / `parse_claimed_at` / `parse_attempts`: the parallel grading and parsing claims.
+- `attempts.part1_deadline_at` / `part2_deadline_at` / `part1_reopen_until`: the hard end times and the 3-hour reopen after an admin Resume or Retake.
+- `admin_sessions.user_id`.
+
+Two Worker instances starting at the same moment can both try to add a column. "Duplicate column" counts as success, and requests on one instance share a single check.
 
 `part3_*` and `interview_questions` exist because the writers site runs the same code and migrations as support, but nothing on the writers site writes to them.
 
@@ -107,7 +115,12 @@ A few queries still scan a table on purpose, because they need every row: the co
 
 - **Multi-step changes run in one D1 batch,** which is a single transaction: clock sync plus answer save, finishing a test, retake, resume, the purge, and each integrity event with its counter.
 - **Assigning questions is safe when two requests overlap** (the page's prefetch and Start can arrive together). Each row is inserted only if its position is free, and the UNIQUE index backs that up.
-- **Grading claims are atomic.** `UPDATE … WHERE id IN (SELECT … LIMIT n)` means parallel grading calls never grade the same candidate twice.
+- **Grading and resume-parsing claims are atomic.** `UPDATE … WHERE id IN (SELECT … LIMIT n)` means parallel calls never grade the same candidate, or parse the same resume, twice.
+  - **Parsing:** the admin page sends 5 parse requests at once on the writers site and 2 on support.
+  - **Stale claims:** a claim older than 10 minutes is taken over, and a parse only saves if its request still holds the claim.
+  - **Stuck resumes:** a resume claimed 3 times without finishing is marked failed with a reason.
+  - **Duplicate emails:** two resumes with the same email running at the same time get a clear duplicate message, enforced by the UNIQUE email.
+- **Sign-in counting is atomic and happens before the password check,** so 12 simultaneous guesses still get only 5 tries (tested). A good sign-in gives its count back.
 - **Submitting twice is harmless.** Submit and close use `COALESCE`, so the first close time is kept. A clock sync can't move a part that is already closed (`WHERE …_submitted_at IS NULL`).
 - **The server decides what can still be written.** Part 1 answers are refused once Part 1 is closed, and Part 2 is refused before Part 1 is closed.
 
@@ -119,6 +132,17 @@ A few queries still scan a table on purpose, because they need every row: the co
 - **Backups:** D1 Time Travel can restore the database to any minute in the last 7 days on the Free plan.
 
 ## 3. System design
+
+- **Request limits:**
+  - **Sign-in limits in D1** are exact and work on every plan; see `docs/WRITERS-SITE.md`, "On the day".
+  - **Per-request ceilings on every `/api/` call** use Cloudflare's Workers Rate Limiting bindings, at no D1 cost:
+    - 3,000 a minute per network (a college shares one address);
+    - 120 a minute per candidate;
+    - 600 a minute per admin session.
+
+    They fail open, so a limiter problem never blocks a test.
+  - **On the pages:** a short ceiling hit (429) is retried after a few seconds. The candidate's clock sync just skips a tick instead of showing "Connection lost".
+  - **IPv6:** addresses count by /64. Only Cloudflare's `CF-Connecting-IP` is trusted.
 
 - **Two fully separate deployments from one codebase.** `talo` and `talo-docs` each have their own Worker, D1 database, R2 bucket, secrets, admin accounts and address. Writers-only code runs only when `TEAM = "docs"`. Each site's candidate page is built into its own static assets, so neither site ships the other's page.
 - **The Worker is stateless.** Candidate sessions are HMAC-signed cookies and need no database read. Admin sessions are signed tokens that are also stored in D1, so they can be revoked and they expire.
@@ -173,7 +197,7 @@ Every admin button and candidate control was clicked in a real browser against a
 | M1 | A demoted or deactivated panel member kept their old role until their session expired. | Admin sessions carry the user id; every request checks the current role and active flag. Removing a member, deactivating them or changing their password signs them out. |
 | M2 | An answer could change the grader's instructions. | The answer is wrapped in a random per-call boundary and the grader is told to treat it only as text to mark. |
 | M3 | Grading could run on a half-finished attempt. | Grade is refused until both parts are submitted. |
-| M4 | A page could log unlimited integrity events, or spam the blocked-sign-in log. | At most 300 events per part, and only while the part is running. The blocked-sign-in log row is written at most once a minute per candidate. Per-IP rate limiting isn't available on workers.dev. |
+| M4 | A page could log unlimited integrity events, or spam the blocked-sign-in log. | At most 300 events per part, and only while the part is running. The blocked-sign-in log row is written at most once a minute per candidate. (Per-network limits were added later the same day; see below.) |
 | M5 | Any file named `.pdf` was accepted as a resume. | It must also start with the PDF signature `%PDF-`. It is served with a sandbox policy, `nosniff`, a cleaned filename and `no-store`. |
 | L1 | `/me` showed the candidate their outcome (shortlisted / rejected). | The candidate only sees their stage (not started, between parts, done). |
 | L2 | Spreadsheet exports could carry formulas (`=`, `+`, `-`, `@`). | Such values are prefixed with `'`. |
@@ -185,6 +209,38 @@ Every admin button and candidate control was clicked in a real browser against a
 UI fixes from the same run: a failing row action (Resume, Retake, Revoke…) now shows the error instead of failing silently, Revoke asks for confirmation, and a failed Start Part 1 returns the candidate to the start screen with a Try again button.
 
 **Tests:** 124 tests in 15 files pass, including the 88 support tests, which are unchanged. There are 11 new writers security tests and 3 new shared ones (`test/security-fixes.test.ts`). The 100-candidate limits run passes 9/9. The browser parity check passes 17/17, and a smoke run of the support site passes 13/13 with no writers controls showing.
+
+### Rate limiting, parallel parsing and the second v1-parity pass (2026-10-21)
+
+**Added on both sites:**
+- sign-in limits with trusted browsers and a manager's **Lift sign-in pauses**;
+- per-request ceilings;
+- claim-based parallel resume parsing;
+- race-safe schema checks.
+
+**Fixed on the writers site, from a route-by-route comparison with v1:**
+
+| Gap | Fix |
+|---|---|
+| Resume or Retake of Part 1 failed once the test was closed | A 3-hour reopen for that candidate, used up when they start |
+| No bulk question import on the writers admin page | Shown with the writers format, sent 30 per request |
+| Part 2 typing metrics were often lost at time-out, close or reload | Sent and waited for at submit and close, delivered by beacon on reload, and accepted up to 2 minutes after the part closes |
+| The allowed sign-in between the parts was flagged as "Multiple logins" | Only flagged beyond that one sign-in |
+| The "auto-submitted by the lockdown" flag text was wrong on both sites | Corrected |
+| Part 2 didn't record switching to another window | Now recorded |
+
+**Found while testing:** two requests arriving together on a fresh Worker instance could both try to add the same column, and one of them failed with a server error. Seen with `part1_deadline_at` and the parse claims; fixed for every runtime column.
+
+**Results:**
+- **Automated tests:** 176 tests in 16 files pass. The 100-candidate limits run passes 9/9.
+  - A parse call costs 8 queries and 10 rows written for 2 resumes.
+  - The very first call costs 124 rows written, because it adds the claim columns once.
+- **Browser checks:**
+  - UI audit: 70/70;
+  - v1 parity: 17/17;
+  - 429s and pauses: writers 13/13, support 12/12;
+  - support smoke run: 13/13.
+- **Parallel parsing:** 26 resumes, two of them duplicates, were parsed with 5 requests at a time. 24 were parsed and the 2 duplicates were reported clearly; no resume was parsed twice and none was left claimed.
 
 ## 5. Changes in shared code (support site gets them only when it is next deployed from `main`)
 
@@ -218,3 +274,5 @@ UI fixes from the same run: a failing row action (Resume, Retake, Revoke…) now
    If those work today, the account is on Paid and none of the Free limits apply. Please check under Workers & Pages → Plans in the Cloudflare dashboard.
 2. **Same-day drives:** see section 1.
 3. **v2:** port the writers mode, including `attempt_events` and these rules, before v2 replaces `main`.
+4. **Rate Limiting bindings and the plan:** Cloudflare's docs don't say which plans include the Workers Rate Limiting binding. Both dry-run deploys accept the `[[ratelimits]]` blocks. If a real deploy ever refuses them, delete the three blocks for that site. The ceilings then switch off, but the sign-in limits in D1 keep working.
+5. **Support site:** a server error on the clock sync still leaves a support candidate on "Connection lost" until the browser reports it is back online. The writers page checks the server every 10 s instead. Porting that check to support changes the live support page, so it is left for a deploy you choose.

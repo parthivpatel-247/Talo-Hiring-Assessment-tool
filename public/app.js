@@ -55,15 +55,23 @@ function limitFor(q) { return (q && Number(q.wordLimit) > 0) ? Number(q.wordLimi
   else run();
 })();
 
-async function api(path, opts = {}) {
+async function api(path, opts = {}, tries = 0) {
+  const { noRetry, ...fetchOpts } = opts;
   const res = await fetch(path, {
-    ...opts,
+    ...fetchOpts,
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
     credentials: 'include',
     cache: 'no-store',
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
+    // The server asked for a few seconds' pause (a short per-request ceiling): wait
+    // and send the same request again, up to twice. The clock sync opts out
+    // (noRetry), since it simply runs again on its next tick.
+    if (res.status === 429 && body.kind === 'ceiling' && !noRetry && tries < 2) {
+      await new Promise((r) => setTimeout(r, Math.min(15, Number(body.retryAfter) || 5) * 1000));
+      return api(path, opts, tries + 1);
+    }
     const err = new Error(body.error || `Request failed (${res.status})`);
     err.status = res.status;
     throw err;
@@ -428,18 +436,26 @@ function makePart(part) {
 
   // Send the aggregated authenticity metrics for every answered question. Called
   // once at submit so grading has typed-vs-pasted and time-spent signals.
-  function flushMetrics() {
-    if (part !== 'part2') return;
-    Object.keys(state.metrics).forEach((qid) => {
+  function metricsPayloads() {
+    return Object.keys(state.metrics).map((qid) => {
       const m = state.metrics[qid];
-      logSwitch('part2', 'metrics', {
-        questionId: qid,
-        typed: Math.round(m.typed),
-        pasted: Math.round(m.pasted),
-        pastes: m.pastes,
-        ms: Math.max(0, m.lastAt - m.firstAt),
-      });
+      return { type: 'metrics', questionId: qid, typed: Math.round(m.typed), pasted: Math.round(m.pasted), pastes: m.pastes, ms: Math.max(0, m.lastAt - m.firstAt) };
     });
+  }
+  // Resolves once every metrics row has been sent (failures are ignored: these are
+  // signals for the panel, never a reason to hold up a submit).
+  function flushMetrics() {
+    if (part !== 'part2') return Promise.resolve();
+    return Promise.all(metricsPayloads().map((b) =>
+      api('/api/candidate/part2/tab-switch', { method: 'POST', body: JSON.stringify(b) }).catch(() => {})));
+  }
+  // For a page that is closing or reloading: the browser delivers beacons even as
+  // the page goes away, where an ordinary request would be cancelled.
+  function beaconMetrics() {
+    if (part !== 'part2' || !navigator.sendBeacon) return;
+    for (const b of metricsPayloads()) {
+      try { navigator.sendBeacon('/api/candidate/part2/tab-switch', new Blob([JSON.stringify(b)], { type: 'application/json' })); } catch {}
+    }
   }
 
   prevBtn.addEventListener('click', () => goTo(state.idx - 1));
@@ -508,7 +524,8 @@ function makePart(part) {
     state.interval = setInterval(async () => {
       try {
         const pending = pendingAnswer();
-        const res = await api(`/api/candidate/${part}/heartbeat`, { method: 'POST', ...(pending ? { body: JSON.stringify(pending) } : {}) });
+        const res = await api(`/api/candidate/${part}/heartbeat`, { method: 'POST', noRetry: true, ...(pending ? { body: JSON.stringify(pending) } : {}) });
+        state.busy = 0;
         const remainingSeconds = res.remainingSeconds;
         if (pending && res.saved) {
           lastSaved[pending.questionId] = pending.answerText;
@@ -523,6 +540,13 @@ function makePart(part) {
         // Writers' site: a 401 means the session was ended (access revoked by the
         // invigilator), not a network problem — say so instead of "connection lost".
         if (IS_DOCS && err && err.status === 401) { stop(); sessionEnded(); return; }
+        // 429 = the server is up but asked us to slow down for a few seconds: skip
+        // this sync (the local clock keeps running) rather than treat it as offline.
+        if (err && err.status === 429) {
+          state.busy = (state.busy || 0) + 1;
+          if (state.busy === 4) flashWarning('The server is busy for a moment. Keep going — your answers and time are safe.', false);
+          return;
+        }
         // Connection lost: after 2 misses, pause the timer and show the overlay.
         state.hbFails = (state.hbFails || 0) + 1;
         if (state.hbFails >= HEARTBEAT_FAILS_BEFORE_OFFLINE && typeof goOffline === 'function') goOffline();
@@ -531,7 +555,7 @@ function makePart(part) {
   }
   function stop() { clearInterval(state.interval); clearInterval(state.saveInterval); clearInterval(state.tick); }
 
-  return { state, load, startAutosave, prefetch, startHeartbeat, stop, renderNav, saveCurrent, flushMetrics };
+  return { state, load, startAutosave, prefetch, startHeartbeat, stop, renderNav, saveCurrent, flushMetrics, beaconMetrics };
 }
 
 const P1 = makePart('part1');
@@ -801,7 +825,11 @@ async function closeAssessment(message) {
   P1.stop();
   if (IS_DOCS) {
     // Writers' test: closing early ends BOTH parts (saved answers are kept).
-    if (P2) { P2.state.submitted = true; try { await P2.saveCurrent(); } catch {} P2.stop(); }
+    if (P2) {
+      const p2Started = P2.state.questions.length > 0;
+      P2.state.submitted = true; try { await P2.saveCurrent(); } catch {} P2.stop();
+      if (p2Started) await P2.flushMetrics();
+    }
     await api('/api/candidate/part2/submit', { method: 'POST' }).catch(() => {});
   } else {
     await api('/api/candidate/part1/submit', { method: 'POST' }).catch(() => {});
@@ -964,8 +992,8 @@ async function finishPart2() {
   currentPart = null; offline = false; removeOfflineOverlay();
   P2.state.submitted = true;
   await P2.saveCurrent();
-  P2.flushMetrics();
   P2.stop();
+  await P2.flushMetrics();
   await api('/api/candidate/part2/submit', { method: 'POST' }).catch(() => {});
   document.body.classList.remove('assessment');
   hide('part2-section'); show('done-section');
@@ -981,6 +1009,15 @@ if (IS_DOCS) {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && part2Running() && !offline) logSwitch('part2', 'tab_hidden');
   });
+  // Switching to another window (a second monitor, say) blurs the page without hiding
+  // the tab. Wait a moment so a tab switch, which fires both, is logged only once.
+  window.addEventListener('blur', () => {
+    if (!part2Running() || offline) return;
+    setTimeout(() => { if (!document.hidden && !document.hasFocus() && part2Running() && !offline) logSwitch('part2', 'window_blur'); }, 400);
+  });
+  // Closing or reloading the page during Part 2 (a reload ends the test) still
+  // delivers the typing metrics the panel sees next to each answer.
+  window.addEventListener('pagehide', () => { if (part2Running()) P2.beaconMetrics(); });
 }
 
 // Resume on refresh

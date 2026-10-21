@@ -4,7 +4,7 @@ import { json } from '../lib/auth';
 import { newId, nowIso } from '../lib/db';
 import { gradeWritingAnswer } from '../lib/openai';
 import { getDocsConfig, docsPoolCounts, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
-import { ensureDocsAttemptCols, docsStartOpen } from './candidate-docs';
+import { ensureDocsAttemptCols, docsStartOpen, REOPEN_SECONDS } from './candidate-docs';
 
 /**
  * ADMIN API overrides for the writers site (TEAM = "docs").
@@ -220,9 +220,9 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare(
         `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0,
          part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL,
-         part1_deadline_at=NULL, part2_deadline_at=NULL
+         part1_deadline_at=NULL, part2_deadline_at=NULL, part1_reopen_until=?
          WHERE candidate_id = ?`
-      ).bind(id),
+      ).bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
@@ -257,7 +257,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       // Cut off during Part 1 (or the test was closed while in Part 1): reopen Part 1.
       reopened = 'part1';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL WHERE candidate_id = ?').bind(id),
+        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL, part1_reopen_until = ? WHERE candidate_id = ?').bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), id),
         env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
       ]);
     }

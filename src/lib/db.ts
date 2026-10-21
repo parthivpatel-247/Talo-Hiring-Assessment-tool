@@ -38,14 +38,35 @@ export async function ensureAttempt(env: Env, candidateId: string) {
  * so it retries next time.
  */
 const ensured = new Set<string>();
+// Requests that arrive together on a fresh instance share ONE run of the check
+// instead of each racing to add the same column.
+const inFlight = new Map<string, Promise<void>>();
 export async function ensureOnce(key: string, fn: () => Promise<void>): Promise<void> {
   if (ensured.has(key)) return;
-  await fn();
-  ensured.add(key);
+  let p = inFlight.get(key);
+  if (!p) {
+    p = fn().then(() => { ensured.add(key); }).finally(() => { inFlight.delete(key); });
+    inFlight.set(key, p);
+  }
+  await p;
 }
 /** Tests reset the database between cases, so they must reset this cache too. */
 export function resetEnsureCache(): void {
   ensured.clear();
+  inFlight.clear();
+}
+
+/**
+ * ALTER TABLE … ADD COLUMN that tolerates the column already being there. Two
+ * Worker instances starting at the same moment can both see the column missing;
+ * the second ALTER then fails with "duplicate column name", which is success.
+ */
+export async function addColumn(env: Env, sql: string): Promise<void> {
+  try {
+    await env.DB.prepare(sql).run();
+  } catch (err) {
+    if (!/duplicate column/i.test(String(err))) throw err;
+  }
 }
 
 /** Self-heal: question_bank gained a `hint` column (migration 0012). Keeps the
@@ -55,7 +76,7 @@ export async function ensureQuestionHintCol(env: Env): Promise<void> {
     await ensureOnce('qb.hint', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(question_bank)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'hint')) {
-        await env.DB.prepare('ALTER TABLE question_bank ADD COLUMN hint TEXT').run();
+        await addColumn(env, 'ALTER TABLE question_bank ADD COLUMN hint TEXT');
       }
     });
   } catch { /* best effort */ }
@@ -67,7 +88,7 @@ export async function ensureQuestionDeletedCol(env: Env): Promise<void> {
     await ensureOnce('qb.deleted_at', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(question_bank)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'deleted_at')) {
-        await env.DB.prepare('ALTER TABLE question_bank ADD COLUMN deleted_at TEXT').run();
+        await addColumn(env, 'ALTER TABLE question_bank ADD COLUMN deleted_at TEXT');
       }
     });
   } catch { /* best effort */ }
@@ -79,7 +100,7 @@ export async function ensureQuestionCheckpointsCol(env: Env): Promise<void> {
     await ensureOnce('qb.checkpoints', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(question_bank)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'checkpoints')) {
-        await env.DB.prepare('ALTER TABLE question_bank ADD COLUMN checkpoints TEXT').run();
+        await addColumn(env, 'ALTER TABLE question_bank ADD COLUMN checkpoints TEXT');
       }
     });
   } catch { /* best effort */ }
@@ -92,8 +113,23 @@ export async function ensureGradingClaimCols(env: Env): Promise<void> {
     await ensureOnce('candidates.grading_claim', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(candidates)').all<{ name: string }>();
       const have = new Set((cols.results ?? []).map((c) => c.name));
-      if (!have.has('grading_claim')) await env.DB.prepare('ALTER TABLE candidates ADD COLUMN grading_claim TEXT').run();
-      if (!have.has('grading_claimed_at')) await env.DB.prepare('ALTER TABLE candidates ADD COLUMN grading_claimed_at TEXT').run();
+      if (!have.has('grading_claim')) await addColumn(env, 'ALTER TABLE candidates ADD COLUMN grading_claim TEXT');
+      if (!have.has('grading_claimed_at')) await addColumn(env, 'ALTER TABLE candidates ADD COLUMN grading_claimed_at TEXT');
+    });
+  } catch { /* best effort */ }
+}
+
+/** Ensure candidates has the parse-claim columns, so parse requests running at the
+ *  same time each take a DISJOINT set of waiting resumes (no resume parsed twice). */
+export async function ensureParseClaimCols(env: Env): Promise<void> {
+  try {
+    await ensureOnce('candidates.parse_claim', async () => {
+      const cols = await env.DB.prepare('PRAGMA table_info(candidates)').all<{ name: string }>();
+      const have = new Set((cols.results ?? []).map((c) => c.name));
+      if (!have.has('parse_claim')) await addColumn(env, 'ALTER TABLE candidates ADD COLUMN parse_claim TEXT');
+      if (!have.has('parse_claimed_at')) await addColumn(env, 'ALTER TABLE candidates ADD COLUMN parse_claimed_at TEXT');
+      if (!have.has('parse_attempts')) await addColumn(env, 'ALTER TABLE candidates ADD COLUMN parse_attempts INTEGER NOT NULL DEFAULT 0');
+      await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_candidates_parse_claim ON candidates(parse_claim)').run();
     });
   } catch { /* best effort */ }
 }

@@ -1,6 +1,7 @@
 import type { Env, Candidate } from '../types';
 import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
-import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce } from '../lib/db';
+import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
+import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce, addColumn } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
 import { startPart, durationSeconds } from '../lib/timer';
 import { getDocsConfig, DocsPoolTooSmall, type DocsConfig } from '../lib/team';
@@ -48,10 +49,16 @@ export async function ensureDocsAttemptCols(env: Env): Promise<void> {
   await ensureOnce('docs.attempt_deadlines', async () => {
     const cols = await env.DB.prepare('PRAGMA table_info(attempts)').all<{ name: string }>();
     const have = new Set((cols.results ?? []).map((c) => c.name));
-    if (!have.has('part1_deadline_at')) await env.DB.prepare('ALTER TABLE attempts ADD COLUMN part1_deadline_at TEXT').run();
-    if (!have.has('part2_deadline_at')) await env.DB.prepare('ALTER TABLE attempts ADD COLUMN part2_deadline_at TEXT').run();
+    if (!have.has('part1_deadline_at')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part1_deadline_at TEXT');
+    if (!have.has('part2_deadline_at')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part2_deadline_at TEXT');
+    // Set by an admin Resume or Retake of Part 1: until this time the candidate may
+    // start Part 1 even while the test is closed. Cleared when they start.
+    if (!have.has('part1_reopen_until')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part1_reopen_until TEXT');
   });
 }
+
+/** How long an admin Resume or Retake of Part 1 lets a candidate start while the test is closed. */
+export const REOPEN_SECONDS = 3 * 60 * 60;
 
 /** Is the test open for candidates to START Part 1? (Admin switch; closed by default.) */
 export async function docsStartOpen(env: Env): Promise<boolean> {
@@ -128,8 +135,17 @@ function pastDeadline(at: Attempt, part: 'part1' | 'part2'): boolean {
  */
 const NOT_SWITCHES = new Set(['paste', 'paste_blocked', 'copy_blocked', 'metrics']);
 async function logEvent(env: Env, candidateId: string, part: 1 | 2, body: Record<string, unknown>, at: Attempt): Promise<void> {
-  // Only while the part is running, and at most MAX_EVENTS_PER_PART per part.
-  if (!at || !at[`part${part}_started_at`] || at[`part${part}_submitted_at`]) return;
+  // Only while the part is running, and at most MAX_EVENTS_PER_PART per part. The one
+  // exception: Part 2 typing metrics may arrive up to 2 minutes after the part closed,
+  // because the page sends them at submit or time-out, which is often just after the
+  // server has closed the part.
+  if (!at || !at[`part${part}_started_at`]) return;
+  const closedAt = at[`part${part}_submitted_at`];
+  if (closedAt) {
+    const closedMs = Date.parse(String(closedAt).replace(' ', 'T') + (String(closedAt).endsWith('Z') ? '' : 'Z'));
+    const lateMetrics = part === 2 && body.type === 'metrics' && Number.isFinite(closedMs) && Date.now() - closedMs <= 120_000;
+    if (!lateMetrics) return;
+  }
   const count = await env.DB.prepare('SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = ? AND part = ?')
     .bind(candidateId, part).first<{ n: number }>();
   if ((count?.n ?? 0) >= MAX_EVENTS_PER_PART) return;
@@ -168,8 +184,12 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   if (path === '/api/candidate/login' && request.method === 'POST') {
     const { email } = await request.json<{ email: string }>().catch(() => ({ email: '' }));
     if (!email || typeof email !== 'string') return json({ error: 'email required' }, { status: 400 });
+    const paused = await candidateSigninPaused(env, request);
+    if (paused) return paused;
     const candidate = (await getCandidateByEmail(env, email)) as Candidate | null;
     if (!candidate) {
+      const limited = await candidateUnknownEmail(env, request);
+      if (limited) return limited;
       return json({ error: 'This email is not on the assessment list. Check with your placement coordinator.' }, { status: 403 });
     }
     if (candidate.access_revoked) {
@@ -311,12 +331,16 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
 
   if (path === '/api/candidate/part1/start' && request.method === 'POST') {
     if (at?.part1_submitted_at) return json({ error: 'Part 1 is closed.', closed: true }, { status: 409 });
-    if (!at?.part1_started_at && !(await docsStartOpen(env))) {
+    // Closing the test stops NEW starters only. A candidate a manager has given a
+    // Resume or Retake of Part 1 may start it while closed, within 3 hours of that.
+    const reopened = !!at?.part1_reopen_until && Date.parse(String(at.part1_reopen_until)) > Date.now();
+    if (!at?.part1_started_at && !reopened && !(await docsStartOpen(env))) {
       return json({ error: 'The assessment has not opened yet. Please wait for the invigilator to open it.', notOpen: true }, { status: 409 });
     }
     try { await assignDocsPart1(env, candidate.id); } catch (err) { return notReady(err); }
     await startPart(env, candidate.id, 'part1');
     await setDeadline('part1');
+    if (at?.part1_reopen_until) await env.DB.prepare('UPDATE attempts SET part1_reopen_until = NULL WHERE candidate_id = ?').bind(candidate.id).run();
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
     return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
   }

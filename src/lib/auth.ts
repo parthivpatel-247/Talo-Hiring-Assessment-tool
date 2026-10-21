@@ -136,7 +136,9 @@ async function ensureSessionUserCol(env: Env): Promise<void> {
   if (sessionUserColReady) return;
   const cols = await env.DB.prepare('PRAGMA table_info(admin_sessions)').all<{ name: string }>();
   if (!(cols.results ?? []).some((c) => c.name === 'user_id')) {
-    await env.DB.prepare('ALTER TABLE admin_sessions ADD COLUMN user_id TEXT').run();
+    // Another instance may add it at the same moment: "duplicate column" is success.
+    await env.DB.prepare('ALTER TABLE admin_sessions ADD COLUMN user_id TEXT').run()
+      .catch((err) => { if (!/duplicate column/i.test(String(err))) throw err; });
   }
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS idx_admin_sessions_user ON admin_sessions(user_id)').run();
   sessionUserColReady = true;
@@ -210,4 +212,34 @@ export function withCookie(response: Response, cookie: string): Response {
   const r = new Response(response.body, response);
   r.headers.append('Set-Cookie', cookie);
   return r;
+}
+
+// ---------------------------------------------------------------------------
+// Trusted admin device. After a good admin sign-in the browser gets a signed,
+// HttpOnly cookie, scoped to the sign-in URL only, that names the account. Sign-ins
+// from that browser for that account skip the network-wide and account-wide sign-in
+// pauses, so a student on the same campus network can't lock the invigilators out
+// by typing wrong passwords. That browser has its own small limit instead.
+// ---------------------------------------------------------------------------
+const DEVICE_COOKIE = 'chs_admin_dev';
+const DEVICE_SECONDS = 60 * 60 * 24 * 90;
+
+export async function createAdminDeviceCookie(env: Env, account: string, deviceId: string): Promise<string> {
+  const token = await sign(env.SESSION_SECRET, { k: 'dev', a: account, d: deviceId, iat: Date.now() });
+  return `${DEVICE_COOKIE}=${token}; Path=/api/admin/login; HttpOnly; Secure; SameSite=Strict; Max-Age=${DEVICE_SECONDS}`;
+}
+
+/** The device id if the request carries a valid trusted-device cookie for `account`. */
+export async function adminDeviceFor(env: Env, request: Request, account: string): Promise<string | null> {
+  const p = await verify<{ k?: string; a?: string; d?: string; iat?: number }>(env.SESSION_SECRET, readCookie(request, DEVICE_COOKIE));
+  if (!p || p.k !== 'dev' || p.a !== account || typeof p.d !== 'string' || !p.d) return null;
+  if (typeof p.iat !== 'number' || Date.now() - p.iat > DEVICE_SECONDS * 1000) return null;
+  return p.d;
+}
+
+/** The trusted-device id in the request, whichever account it names (or null). */
+export async function adminDeviceId(env: Env, request: Request): Promise<string | null> {
+  const p = await verify<{ k?: string; d?: string; iat?: number }>(env.SESSION_SECRET, readCookie(request, DEVICE_COOKIE));
+  if (!p || p.k !== 'dev' || typeof p.d !== 'string' || typeof p.iat !== 'number' || Date.now() - p.iat > DEVICE_SECONDS * 1000) return null;
+  return p.d;
 }

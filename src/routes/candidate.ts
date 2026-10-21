@@ -1,5 +1,6 @@
 import type { Env, Candidate } from '../types';
 import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
+import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, ensureQuestionHintCol, ensureQuestionDeletedCol } from '../lib/db';
 import { assignPart1Questions, assignPart3Questions } from '../lib/randomize';
 import { startPart, heartbeat, markSubmitted, logTabSwitch, durationSeconds } from '../lib/timer';
@@ -58,11 +59,15 @@ export async function handleCandidateRoute(
 
   // --- Login: email must be on the allowlist (built from uploaded resumes). No OTP, by design. ---
   if (path === '/api/candidate/login' && request.method === 'POST') {
-    const { email } = await request.json<{ email: string }>();
-    if (!email) return json({ error: 'email required' }, { status: 400 });
+    const { email } = await request.json<{ email: string }>().catch(() => ({ email: '' }));
+    if (!email || typeof email !== 'string') return json({ error: 'email required' }, { status: 400 });
+    const paused = await candidateSigninPaused(env, request);
+    if (paused) return paused;
 
     const candidate = (await getCandidateByEmail(env, email)) as Candidate | null;
     if (!candidate) {
+      const limited = await candidateUnknownEmail(env, request);
+      if (limited) return limited;
       return json({ error: 'This email is not on the assessment list. Check with your placement coordinator.' }, { status: 403 });
     }
     if (candidate.access_revoked) {

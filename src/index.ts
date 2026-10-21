@@ -5,6 +5,7 @@ import { json } from './lib/auth';
 import { ensurePart3Schema } from './lib/part3bank';
 import { isDocs } from './lib/team';
 import { purgeExpiredDocs } from './routes/admin-docs';
+import { requestGuard, purgeRateLimits } from './lib/ratelimit';
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
@@ -19,6 +20,12 @@ export default {
       if (path.startsWith('/api/') && request.method !== 'GET' && request.method !== 'HEAD') {
         const origin = request.headers.get('Origin');
         if (origin && origin !== url.origin) return json({ error: 'Cross-site request refused' }, { status: 403 });
+      }
+      // Per-request ceilings on every API call (src/lib/ratelimit.ts). Static files
+      // are served by Cloudflare before the Worker runs, so they never reach this.
+      if (path.startsWith('/api/')) {
+        const limited = await requestGuard(request, env);
+        if (limited) return limited;
       }
       if (path.startsWith('/api/admin/')) {
         return await handleAdminRoute(request, env, ctx, path);
@@ -47,6 +54,8 @@ export default {
   async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
     // The writers site purges set-based (fixed query count) — see purgeExpiredDocs.
     ctx.waitUntil(isDocs(env) ? purgeExpiredDocs(env) : purgeExpiredCandidates(env));
+    // Old sign-in counters (both sites).
+    ctx.waitUntil(purgeRateLimits(env).catch((err) => console.error('rate_limits purge failed:', err)));
   },
 };
 

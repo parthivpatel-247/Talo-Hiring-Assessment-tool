@@ -1,6 +1,6 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
 import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, timingSafeEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
-import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema } from '../lib/db';
+import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
   parseResume,
@@ -14,6 +14,7 @@ import { getAssessmentMinutes } from '../lib/timer';
 import { isDocs } from '../lib/team';
 import { isManagerOnlyRoute, MANAGER_ONLY_MESSAGE } from '../lib/roles';
 import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
+import { adminSigninBegin, adminSigninFailed, adminSigninSucceeded, unlockAdminAccount, liftAllPauses, activePauses } from '../lib/ratelimit';
 
 const PROCESS_BATCH_LIMIT = 20;
 
@@ -93,7 +94,7 @@ async function ensureCollegeSchema(env: Env): Promise<void> {
       const cols = await env.DB.prepare('PRAGMA table_info(candidates)').all<{ name: string }>();
       const hasCollege = (cols.results ?? []).some((c) => c.name === 'college');
       if (!hasCollege) {
-        await env.DB.prepare('ALTER TABLE candidates ADD COLUMN college TEXT').run();
+        await addColumn(env, 'ALTER TABLE candidates ADD COLUMN college TEXT');
       }
     });
   } catch { /* best effort — reads already tolerate a missing table/column */ }
@@ -112,7 +113,7 @@ async function ensureAuthSchema(env: Env): Promise<void> {
       // Self-heal: panel members are identified by a real email (added later).
       const cols = await env.DB.prepare('PRAGMA table_info(admin_users)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'email')) {
-        await env.DB.prepare('ALTER TABLE admin_users ADD COLUMN email TEXT').run();
+        await addColumn(env, 'ALTER TABLE admin_users ADD COLUMN email TEXT');
       }
     });
   } catch { /* best effort */ }
@@ -126,7 +127,7 @@ async function ensurePart2AiCol(env: Env): Promise<void> {
     await ensureOnce('part2.ai', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(part2_answers)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'ai_content_pct')) {
-        await env.DB.prepare('ALTER TABLE part2_answers ADD COLUMN ai_content_pct REAL').run();
+        await addColumn(env, 'ALTER TABLE part2_answers ADD COLUMN ai_content_pct REAL');
       }
     });
   } catch { /* best effort */ }
@@ -138,7 +139,7 @@ async function ensureInterviewAnswerCol(env: Env): Promise<void> {
     await ensureOnce('interview.model_answer', async () => {
       const cols = await env.DB.prepare('PRAGMA table_info(interview_questions)').all<{ name: string }>();
       if (!(cols.results ?? []).some((c) => c.name === 'model_answer')) {
-        await env.DB.prepare('ALTER TABLE interview_questions ADD COLUMN model_answer TEXT').run();
+        await addColumn(env, 'ALTER TABLE interview_questions ADD COLUMN model_answer TEXT');
       }
     });
   } catch { /* best effort */ }
@@ -213,10 +214,11 @@ export async function handleAdminRoute(
   path: string
 ): Promise<Response> {
   if (path === '/api/admin/login' && request.method === 'POST') {
-    const body = await request.json<{ email?: string; username?: string; password?: string }>();
+    const body = await request.json<{ email?: string; username?: string; password?: string }>().catch(() => ({} as { email?: string; username?: string; password?: string }));
     // BOTH email and password are required — there is no password-only login.
-    const loginEmail = (body.email || body.username || '').trim().toLowerCase();
-    const pass = body.password || '';
+    const loginEmail = String(body.email || body.username || '').trim().toLowerCase().slice(0, 254);
+    const pass = typeof body.password === 'string' ? body.password : '';
+    if (pass.length > 1024) return json({ error: 'Wrong email or password' }, { status: 401 });
     if (!loginEmail || !pass) return json({ error: 'Email and password are both required.' }, { status: 400 });
 
     let loginRole: AdminRole | null = null;
@@ -224,6 +226,16 @@ export async function handleAdminRoute(
     await ensureAuthSchema(env);
     // 1) Named account created in the Access section (keyed by email).
     const row = await env.DB.prepare('SELECT * FROM admin_users WHERE (email = ? OR username = ?) AND active = 1').bind(loginEmail, loginEmail).first<any>();
+
+    // Sign-in limits (src/lib/ratelimit.ts). This attempt is counted, and a paused
+    // account or network refused, BEFORE the password is checked, so guessing can't
+    // continue during a pause and a burst of simultaneous guesses can't slip past.
+    const adminEmailCfg = (env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const panelEmailCfg = (env.PANEL_EMAIL || '').trim().toLowerCase();
+    const account = row ? `u:${row.id}` : (loginEmail === adminEmailCfg || loginEmail === panelEmailCfg) && loginEmail ? `e:${loginEmail}` : null;
+    const begun = await adminSigninBegin(env, request, account);
+    if ('refused' in begun) return begun.refused;
+
     if (row && (await verifyPassword(pass, row.pass_salt, row.pass_hash))) {
       loginRole = row.role === 'manager' ? 'manager' : 'member';
       loginUserId = row.id;
@@ -234,9 +246,12 @@ export async function handleAdminRoute(
       if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && timingSafeEqual(pass, env.ADMIN_PASSWORD)) loginRole = 'manager';
       else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && timingSafeEqual(pass, env.PANEL_PASSWORD)) loginRole = 'member';
     }
-    if (!loginRole) return json({ error: 'Wrong email or password' }, { status: 401 });
+    if (!loginRole) return adminSigninFailed(env, begun.state, loginEmail, newId);
+    // A good sign-in gives its count back and marks this browser as trusted for the
+    // account (see adminSigninSucceeded).
+    const deviceCookie = await adminSigninSucceeded(env, request, begun.state, account ?? `u:${loginUserId}`);
     const { cookie } = await createAdminSession(env, loginRole, loginUserId);
-    return withCookie(json({ ok: true, role: loginRole }), cookie);
+    return withCookie(withCookie(json({ ok: true, role: loginRole }), cookie), deviceCookie);
   }
 
   // Logout — clears the admin session so you can sign back in as a different role
@@ -250,6 +265,15 @@ export async function handleAdminRoute(
   if (!role) return json({ error: 'Not authenticated as admin' }, { status: 401 });
   // Indexes + rotation tables (runs once per Worker instance, then is a no-op).
   await ensurePerfSchema(env);
+
+  // Lift every sign-in pause (both sites, manager only): for when a pause on the
+  // campus network, or on an account, is getting in the way during a drive.
+  if (path === '/api/admin/signin-pauses/clear' && request.method === 'POST') {
+    if (role !== 'manager') return json({ error: MANAGER_ONLY_MESSAGE }, { status: 403 });
+    const cleared = await liftAllPauses(env);
+    await audit(env, 'signin_pauses_lifted', null, `${cleared} sign-in counter(s) cleared`);
+    return json({ ok: true, cleared });
+  }
 
   // Writers site (TEAM = "docs"): the routes that differ for its two-part writing
   // test are handled in admin-docs.ts; everything else below is shared.
@@ -265,10 +289,11 @@ export async function handleAdminRoute(
   // Who am I + college list — used by the frontend to tailor the UI (both roles).
   if (path === '/api/admin/config' && request.method === 'GET') {
     if (isDocs(env)) {
-      return json({ role, colleges: await getColleges(env), ...(await docsAdminConfig(env)) });
+      return json({ role, colleges: await getColleges(env), signinPauses: await activePauses(env), ...(await docsAdminConfig(env)) });
     }
     return json({
       role,
+      signinPauses: await activePauses(env),
       colleges: await getColleges(env),
       questionCategories: await questionCategories(env),
       assessmentMinutes: await getAssessmentMinutes(env),
@@ -310,16 +335,20 @@ export async function handleAdminRoute(
        LEFT JOIN attempts a ON a.candidate_id = c.id
        LEFT JOIN (SELECT candidate_id, COUNT(*) AS n FROM admin_audit
                   WHERE action = 'duplicate_login_blocked' GROUP BY candidate_id) d ON d.candidate_id = c.id
-       WHERE COALESCE(a.login_count, 0) > 1 OR COALESCE(a.part1_tab_switch_count, 0) > 0 OR COALESCE(d.n, 0) > 0`
-    ).all<{ id: string; name: string | null; email: string; college: string | null; login_count: number; tab_switches: number; dup_blocks: number }>();
+       WHERE COALESCE(a.login_count, 0) > ? OR COALESCE(a.part1_tab_switch_count, 0) > 0 OR COALESCE(d.n, 0) > 0`
+    ).bind(isDocs(env) ? 2 : 1).all<{ id: string; name: string | null; email: string; college: string | null; login_count: number; tab_switches: number; dup_blocks: number }>();
     const rank: Record<string, number> = { high: 2, medium: 1 };
+    const docsSite = isDocs(env);
     type Item = { type: string; severity: 'high' | 'medium'; label: string; detail: string };
     const flags: { candidateId: string; name: string | null; email: string; college: string | null; severity: 'high' | 'medium'; items: Item[] }[] = [];
     for (const r of rows.results ?? []) {
       const items: Item[] = [];
       if (r.dup_blocks > 0) items.push({ type: 'duplicate_login', severity: 'high', label: 'Duplicate login blocked', detail: `${r.dup_blocks} blocked login attempt(s) after the test had started — possible second person on the same email.` });
-      if (r.login_count > 1) items.push({ type: 'multiple_logins', severity: r.login_count >= 3 ? 'high' : 'medium', label: 'Multiple logins', detail: `${r.login_count} logins recorded on this account.` });
-      if (r.tab_switches > 0) items.push({ type: 'left_test', severity: r.tab_switches >= 3 ? 'high' : 'medium', label: 'Left the test', detail: `Left full-screen / switched tab ${r.tab_switches} time(s)${r.tab_switches >= 3 ? ' — auto-submitted by the lockdown.' : '.'}` });
+      // The writers site allows one extra sign-in between Part 1 and Part 2, so it
+      // only flags sign-ins beyond that.
+      const allowedLogins = docsSite ? 2 : 1;
+      if (r.login_count > allowedLogins) items.push({ type: 'multiple_logins', severity: r.login_count >= allowedLogins + 2 ? 'high' : 'medium', label: 'Multiple logins', detail: `${r.login_count} sign-ins recorded on this account${docsSite ? ' (one extra sign-in between the parts is normal)' : ''}.` });
+      if (r.tab_switches > 0) items.push({ type: 'left_test', severity: r.tab_switches >= 3 ? 'high' : 'medium', label: 'Left the test', detail: `Left full-screen / switched tab ${r.tab_switches} time(s)${docsSite ? ' in Part 1' : ''}. Each time, the candidate had 10 seconds to return before the test was submitted.` });
       if (!items.length) continue;
       const severity: 'high' | 'medium' = items.some((i) => i.severity === 'high') ? 'high' : 'medium';
       flags.push({ candidateId: r.id, name: r.name, email: r.email, college: r.college, severity, items });
@@ -422,6 +451,8 @@ export async function handleAdminRoute(
     // A new password or deactivation signs the account out everywhere. (Role changes
     // apply on the next request anyway, because the session reads the current role.)
     if (b.password || b.active === false) await revokeUserSessions(env, id);
+    // A manager setting a new password also lifts any sign-in pause on the account.
+    if (b.password) await unlockAdminAccount(env, `u:${id}`).catch(() => {});
     await audit(env, 'member_update', null, id);
     return json({ ok: true });
   }
@@ -490,10 +521,31 @@ export async function handleAdminRoute(
   }
 
   if (path === '/api/admin/resumes/process' && request.method === 'POST') {
-    const rows = await env.DB.prepare('SELECT * FROM candidates WHERE status = ? LIMIT ?')
-      .bind('uploaded', Number(env.RESUME_PROCESS_BATCH) || PROCESS_BATCH_LIMIT)
-      .all<Candidate>();
-    const batch = rows.results ?? [];
+    // Several parse requests may run at once (the admin page sends a few in parallel,
+    // and two admins may press Parse together). Each request first CLAIMS a disjoint
+    // set of waiting resumes in one UPDATE (SQLite serialises writes, so two claims
+    // never pick the same row), then parses only what it claimed. A claim left by a
+    // request that died part-way is taken over after 10 minutes (longer than any
+    // batch takes, even with OpenAI retries). The final save only lands if this
+    // request still holds the claim, so a slow request can't overwrite a takeover.
+    // A resume that has been claimed 3 times without finishing (a PDF that crashes
+    // the reader, say) is marked failed instead of being retried forever.
+    await ensureParseClaimCols(env);
+    const token = newId('parse');
+    await env.DB.prepare(
+      `UPDATE candidates SET parse_claim = ?, parse_claimed_at = datetime('now'), parse_attempts = parse_attempts + 1
+        WHERE id IN (SELECT id FROM candidates
+                      WHERE status = 'uploaded'
+                        AND (parse_claim IS NULL OR parse_claimed_at IS NULL OR parse_claimed_at < datetime('now', '-10 minutes'))
+                      LIMIT ?)`
+    ).bind(token, Number(env.RESUME_PROCESS_BATCH) || PROCESS_BATCH_LIMIT).run();
+    const rows = await env.DB.prepare("SELECT * FROM candidates WHERE parse_claim = ? AND status = 'uploaded'").bind(token).all<Candidate & { parse_attempts: number }>();
+    const claimedRows = rows.results ?? [];
+    const gaveUp = claimedRows.filter((c) => Number(c.parse_attempts) > 3);
+    if (gaveUp.length) {
+      await env.DB.batch(gaveUp.map((c) => env.DB.prepare("UPDATE candidates SET status = 'parse_failed', parse_claim = NULL WHERE id = ? AND parse_claim = ?").bind(c.id, token)));
+    }
+    const batch = claimedRows.filter((c) => Number(c.parse_attempts) <= 3);
 
     // Parse resumes CONCURRENTLY (bounded). Each resume is a slow PDF-extract +
     // OpenAI round-trip; doing 20 one-after-another is what made a batch take over
@@ -534,11 +586,19 @@ export async function handleAdminRoute(
         // We parse identity (name + email) + skills, then mark ready. 'part2_ready'
         // is kept as the internal "ready to start" status so the rest of the
         // pipeline (login, assignment) is unchanged.
-        await env.DB.prepare(
-          `UPDATE candidates SET email = ?, name = ?, skills = ?, projects = ?, parsed_at = ?, status = 'part2_ready' WHERE id = ?`
-        )
-          .bind(email, nameFromResume(parsed.name, text), JSON.stringify(parsed.skills), JSON.stringify(parsed.projects), nowIso(), candidate.id)
-          .run();
+        try {
+          const saved = await env.DB.prepare(
+            `UPDATE candidates SET email = ?, name = ?, skills = ?, projects = ?, parsed_at = ?, status = 'part2_ready', parse_claim = NULL WHERE id = ? AND parse_claim = ?`
+          )
+            .bind(email, nameFromResume(parsed.name, text), JSON.stringify(parsed.skills), JSON.stringify(parsed.projects), nowIso(), candidate.id, token)
+            .run();
+          // Another request took this resume over (this one ran past the 10 minutes).
+          if (!saved.meta?.changes) return { id: candidate.id, filename: candidate.resume_filename, ok: false as const, skipped: true, error: 'taken over by another parse request' };
+        } catch (e) {
+          // Another request running at the same time took this email first (emails are UNIQUE).
+          if (/UNIQUE/i.test(String(e))) throw new Error(`parsed email ${email} is already used by another candidate — check for a duplicate resume`);
+          throw e;
+        }
         return { id: candidate.id, filename: candidate.resume_filename, ok: true as const };
       } catch (err) {
         // Keep whatever identity we could read (name, skills) even when the email is
@@ -546,17 +606,27 @@ export async function handleAdminRoute(
         // an anonymous "(unparsed)" row.
         const name = parsed ? nameFromResume(parsed.name, text) : null;
         await env.DB.prepare(
-          "UPDATE candidates SET status = 'parse_failed', name = COALESCE(?, name), skills = COALESCE(?, skills), projects = COALESCE(?, projects) WHERE id = ?"
+          "UPDATE candidates SET status = 'parse_failed', parse_claim = NULL, name = COALESCE(?, name), skills = COALESCE(?, skills), projects = COALESCE(?, projects) WHERE id = ? AND parse_claim = ?"
         )
-          .bind(name, parsed ? JSON.stringify(parsed.skills ?? []) : null, parsed ? JSON.stringify(parsed.projects ?? []) : null, candidate.id)
+          .bind(name, parsed ? JSON.stringify(parsed.skills ?? []) : null, parsed ? JSON.stringify(parsed.projects ?? []) : null, candidate.id, token)
           .run()
           .catch(() => {});
-        return { id: candidate.id, filename: candidate.resume_filename, ok: false as const, error: err instanceof Error ? err.message : String(err) };
+        const msg = err instanceof Error ? err.message : String(err);
+        // Never show raw database or storage errors in the admin table.
+        const safe = /D1_|SQLITE|constraint/i.test(msg) ? 'could not save this resume — try Parse again' : msg;
+        return { id: candidate.id, filename: candidate.resume_filename, ok: false as const, error: safe };
       }
     });
 
-    const remaining = await env.DB.prepare('SELECT COUNT(*) as n FROM candidates WHERE status = ?').bind('uploaded').first<{ n: number }>();
-    return json({ processed: results, remainingToProcess: remaining?.n ?? 0 });
+    // remainingToProcess: still waiting, including resumes another request is parsing
+    // right now (inFlight), so the page keeps going until every one is done.
+    const remaining = await env.DB.prepare(
+      `SELECT COUNT(*) AS n,
+              SUM(CASE WHEN parse_claim IS NOT NULL AND parse_claimed_at >= datetime('now', '-10 minutes') THEN 1 ELSE 0 END) AS inFlight
+         FROM candidates WHERE status = 'uploaded'`
+    ).first<{ n: number; inFlight: number | null }>();
+    const failedReads = gaveUp.map((c) => ({ id: c.id, filename: c.resume_filename, ok: false as const, error: 'this resume could not be read after 3 tries — check the PDF opens, or use "Fix email" to enter the details' }));
+    return json({ processed: [...failedReads, ...results], claimed: claimedRows.length, remainingToProcess: remaining?.n ?? 0, inFlight: remaining?.inFlight ?? 0 });
   }
 
   // Admin-only resume PDF stream (for the side panel viewer).

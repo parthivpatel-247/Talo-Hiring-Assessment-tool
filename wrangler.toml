@@ -25,6 +25,27 @@ bucket_name = "campus-hiring-resumes"
 [triggers]
 crons = ["0 3 * * *"]
 
+# Per-request ceilings on every /api/ call (src/lib/ratelimit.ts). Cloudflare's
+# Workers Rate Limiting: no D1 cost, approximate, counted per Cloudflare location.
+# A whole college shares ONE internet address, so the per-address ceiling is high;
+# a normal candidate makes about 10 requests a minute on this site. Each site uses
+# its own namespace_id so the two sites never share counters. If a deploy ever
+# rejects these blocks, delete them: the sign-in limits in D1 still apply.
+[[ratelimits]]
+name = "RL_IP"
+namespace_id = "1001"
+simple = { limit = 3000, period = 60 }
+
+[[ratelimits]]
+name = "RL_CANDIDATE"
+namespace_id = "1002"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "RL_ADMIN"
+namespace_id = "1003"
+simple = { limit = 600, period = 60 }
+
 [vars]
 OPENAI_MODEL = "gpt-4o-mini"
 # Login requires BOTH email and password. These are the emails for the two
@@ -114,6 +135,27 @@ bucket_name = "talo-docs-resumes"
 [env.docs.triggers]
 crons = ["0 3 * * *"]
 
+# Per-request ceilings on every /api/ call (src/lib/ratelimit.ts). Cloudflare's
+# Workers Rate Limiting: no D1 cost, approximate, counted per Cloudflare location.
+# A whole college shares ONE internet address, so the per-address ceiling is high;
+# a writers candidate makes about 3 requests a minute. Each site uses
+# its own namespace_id so the two sites never share counters. If a deploy ever
+# rejects these blocks, delete them: the sign-in limits in D1 still apply.
+[[env.docs.ratelimits]]
+name = "RL_IP"
+namespace_id = "2001"
+simple = { limit = 3000, period = 60 }
+
+[[env.docs.ratelimits]]
+name = "RL_CANDIDATE"
+namespace_id = "2002"
+simple = { limit = 120, period = 60 }
+
+[[env.docs.ratelimits]]
+name = "RL_ADMIN"
+namespace_id = "2003"
+simple = { limit = 600, period = 60 }
+
 [env.docs.vars]
 TEAM = "docs"
 OPENAI_MODEL = "gpt-4o-mini"
@@ -146,7 +188,8 @@ ANALYSIS_BATCH_SIZE = "4"
 #   Grading: 1 candidate per request (6 OpenAI calls, at most 30 with retries).
 GRADING_BATCH_SIZE = "1"
 GRADING_CONCURRENCY = "1"
-#   Resume parsing: 2 PDFs per request (PDF reading is the CPU-heavy step).
+#   Resume parsing: 2 PDFs per request (PDF reading is the CPU-heavy step). The admin
+#   page sends 5 such requests at once; each claims its own resumes, none twice.
 RESUME_PROCESS_BATCH = "2"
 RESUME_PARSE_CONCURRENCY = "2"
 #   Resume upload: 10 files per request (the page sends larger sets in chunks).

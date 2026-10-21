@@ -58,6 +58,11 @@ export interface Env {
   // it stays inside the Workers Free per-request limits (CPU, D1 queries).
   RESUME_PROCESS_BATCH?: string;
   MAX_UPLOAD_FILES?: string;
+  // Per-request ceilings ([[ratelimits]] in wrangler.toml). Optional: when a binding
+  // isn't configured the ceiling is simply off. See src/lib/ratelimit.ts.
+  RL_IP?: import('./lib/ratelimit').RateLimiter;
+  RL_CANDIDATE?: import('./lib/ratelimit').RateLimiter;
+  RL_ADMIN?: import('./lib/ratelimit').RateLimiter;
 }
 
 export interface Candidate {

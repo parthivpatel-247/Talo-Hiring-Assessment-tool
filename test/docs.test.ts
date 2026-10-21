@@ -4,6 +4,7 @@ import worker from '../src/index';
 import { migrate, seedCandidate, openAiReply, applySql } from './helpers';
 import m16 from '../migrations-docs/0016_writers_two_part.sql?raw';
 import m17 from '../migrations-docs/0017_writers_indexes.sql?raw';
+import m18 from '../migrations-docs/0018_rate_limits.sql?raw';
 import { MAILTO_ONLY_PDF_B64 as PDF_B64 } from './fixtures/resumes';
 
 /**
@@ -36,6 +37,7 @@ async function migrateDocs(open = true) {
   await migrate();
   await applySql(m16);
   await applySql(m17);
+  await applySql(m18);
   // Most tests run with the test opened by the admin (it is closed by default).
   if (open) await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', '1')").run();
 }
@@ -553,5 +555,90 @@ describe('writers site — security fixes (audit 2026-10-21)', () => {
     await dreq('/api/candidate/part1/start', jsonPost(cookie));
     const admin = await adminLogin();
     expect((await dreq('/api/admin/candidates/s1/grade', jsonPost(admin))).status).toBe(409);
+  });
+});
+
+describe('writers site — v1 parity fixes (2026-10-21, second pass)', () => {
+  beforeEach(async () => {
+    await migrateDocs();
+    await seedDocsBank();
+    await seedCandidate('v1', 'v1@x.com', 'part2_ready');
+  });
+  const setOpen = (v: '0' | '1') => env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(v).run();
+
+  it('closing the test stops new starters, but a candidate given Resume or Retake can still start', async () => {
+    const { cookie } = await candidateLogin('v1@x.com');
+    expect((await dreq('/api/candidate/part1/start', jsonPost(cookie))).status).toBe(200);
+    await setOpen('0');
+    await seedCandidate('v2', 'v2@x.com', 'part2_ready');
+    const late = await candidateLogin('v2@x.com');
+    expect((await dreq('/api/candidate/part1/start', jsonPost(late.cookie))).status).toBe(409); // new starter: refused
+    const admin = await adminLogin();
+    for (const action of ['resume', 'retake']) {
+      expect((await dreq(`/api/admin/candidates/v1/${action}`, jsonPost(admin))).status).toBe(200);
+      const again = await candidateLogin('v1@x.com');
+      expect(again.res.status).toBe(200);
+      expect((await dreq('/api/candidate/part1/start', jsonPost(again.cookie))).status, action).toBe(200);
+    }
+  });
+
+  it('the Resume/Retake reopen lasts 3 hours and is used up by starting', async () => {
+    const { cookie } = await candidateLogin('v1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    await setOpen('0');
+    const admin = await adminLogin();
+    await dreq('/api/admin/candidates/v1/retake', jsonPost(admin));
+    const until = (await env.DB.prepare("SELECT part1_reopen_until FROM attempts WHERE candidate_id = 'v1'").first<any>()).part1_reopen_until;
+    const hours = (Date.parse(until) - Date.now()) / 3600000;
+    expect(hours).toBeGreaterThan(2.9); expect(hours).toBeLessThan(3.1);
+    // Past the 3 hours, a closed test refuses the start again.
+    await env.DB.prepare("UPDATE attempts SET part1_reopen_until = ? WHERE candidate_id = 'v1'").bind(new Date(Date.now() - 1000).toISOString()).run();
+    let c = (await candidateLogin('v1@x.com')).cookie;
+    expect((await dreq('/api/candidate/part1/start', jsonPost(c))).status).toBe(409);
+    // A fresh Retake reopens it; starting uses the reopen up.
+    await dreq('/api/admin/candidates/v1/retake', jsonPost(admin));
+    c = (await candidateLogin('v1@x.com')).cookie;
+    expect((await dreq('/api/candidate/part1/start', jsonPost(c))).status).toBe(200);
+    expect((await env.DB.prepare("SELECT part1_reopen_until FROM attempts WHERE candidate_id = 'v1'").first<any>()).part1_reopen_until).toBeNull();
+  });
+
+  it('Part 2 typing metrics sent just after the part closed are kept; much later ones are not', async () => {
+    const { cookie } = await candidateLogin('v1@x.com');
+    await dreq('/api/candidate/part1/start', jsonPost(cookie));
+    await dreq('/api/candidate/part1/submit', jsonPost(cookie));
+    const s2 = await (await dreq('/api/candidate/part2/start', jsonPost(cookie))).json<any>();
+    const qid = s2.questions[0].id;
+    await dreq('/api/candidate/part2/submit', jsonPost(cookie));
+    expect((await dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'metrics', questionId: qid, typed: 900, pasted: 0, pastes: 0, ms: 600000 }))).status).toBe(200);
+    // A paste or tab switch after the close is NOT accepted (only metrics get the grace).
+    await dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'tab_hidden' }));
+    const rows = (await env.DB.prepare("SELECT type, typed FROM attempt_events WHERE candidate_id = 'v1' AND part = 2").all<any>()).results ?? [];
+    expect(rows).toEqual([{ type: 'metrics', typed: 900 }]);
+    // 3 minutes later: refused.
+    await env.DB.prepare("UPDATE attempts SET part2_submitted_at = datetime('now', '-3 minutes') WHERE candidate_id = 'v1'").run();
+    await dreq('/api/candidate/part2/tab-switch', jsonPost(cookie, { type: 'metrics', questionId: qid, typed: 5 }));
+    expect((await env.DB.prepare("SELECT COUNT(*) AS n FROM attempt_events WHERE candidate_id = 'v1' AND part = 2").first<any>()).n).toBe(1);
+  });
+
+  it('the allowed sign-in between the parts is not flagged as "multiple logins"', async () => {
+    await env.DB.prepare("INSERT INTO attempts (candidate_id, login_count) VALUES ('v1', 2)").run();
+    const admin = await adminLogin();
+    let flags = (await (await dreq('/api/admin/flags', { headers: { Cookie: admin } })).json<any>()).flags;
+    expect(flags).toHaveLength(0);
+    await env.DB.prepare("UPDATE attempts SET login_count = 3 WHERE candidate_id = 'v1'").run();
+    flags = (await (await dreq('/api/admin/flags', { headers: { Cookie: admin } })).json<any>()).flags;
+    expect(flags[0].items[0].type).toBe('multiple_logins');
+  });
+
+  it('bulk import takes 30 per request, skips duplicates and bad rows, and is manager-only', async () => {
+    const admin = await adminLogin();
+    const rows = Array.from({ length: 30 }, (_, i) => ({ part: (i % 2) + 1, prompt: `Imported writing task number ${i}`, wordLimit: 200 }));
+    const r = await (await dreq('/api/admin/questions/bulk-import', jsonPost(admin, { questions: rows }))).json<any>();
+    expect(r.imported).toBe(30);
+    const again = await (await dreq('/api/admin/questions/bulk-import', jsonPost(admin, { questions: [...rows.slice(0, 2), { part: 3, prompt: 'x' }] }))).json<any>();
+    expect(again).toMatchObject({ imported: 0, duplicates: 2, skipped: 1 });
+    expect((await dreq('/api/admin/questions/bulk-import', jsonPost(admin, { questions: [...rows, rows[0]] }))).status).toBe(400);
+    const panel = await adminLogin('panel@test.local', 'test-panel-pass');
+    expect((await dreq('/api/admin/questions/bulk-import', jsonPost(panel, { questions: rows.slice(0, 1) }))).status).toBe(403);
   });
 });

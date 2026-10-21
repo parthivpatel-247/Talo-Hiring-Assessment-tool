@@ -191,6 +191,9 @@ describe('writers site stays inside Cloudflare Workers Free limits', () => {
     for (let i = 0; i < 11; i++) tooMany.append('files', new File([pdf], `x${i}.pdf`, { type: 'application/pdf' }));
     const over = await call('/api/admin/resumes/upload', { method: 'POST', headers: { Cookie: admin }, body: tooMany });
     expect(over.res.status).toBe(400);
+    // The first parse call on a fresh database also adds the parse-claim columns and
+    // index (a one-time cost); the second call is what every later call costs.
+    await step('admin: parse resumes (first call ever)', '/api/admin/resumes/process', post(admin));
     await step('admin: parse resumes (one call)', '/api/admin/resumes/process', post(admin));
   }, 120_000);
 

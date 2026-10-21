@@ -34,7 +34,7 @@ const svg = (name, w = 16) => `<svg viewBox="0 0 24 24" width="${w}" height="${w
   });
 })();
 
-async function api(path, opts = {}) {
+async function api(path, opts = {}, tries = 0) {
   const res = await fetch(path, {
     ...opts,
     headers: opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json', ...(opts.headers || {}) },
@@ -43,6 +43,13 @@ async function api(path, opts = {}) {
   });
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
+    // A short per-request ceiling (429, kind 'ceiling'): wait a few seconds and send
+    // the same request again, up to 3 times. A sign-in pause is shown as is, never
+    // retried (that would resend a password).
+    if (res.status === 429 && b.kind === 'ceiling' && tries < 3) {
+      await new Promise((r) => setTimeout(r, (Number(b.retryAfter) || 5) * 1000));
+      return api(path, opts, tries + 1);
+    }
     // On a 500 the detail carries the real cause — surface it so failures are diagnosable.
     const msg = (res.status >= 500 && b.detail) ? `${b.error || 'Server error'}: ${b.detail}` : (b.error || `Request failed (${res.status})`);
     throw new Error(msg);
@@ -208,10 +215,13 @@ async function loadConfig({ preserveEdits = false } = {}) {
     if (cfg.assessmentMinutes) ASSESSMENT_MINUTES = cfg.assessmentMinutes;
     IS_DOCS = cfg.team === 'docs';
     DOCS = IS_DOCS ? cfg.docs : null;
+    SIGNIN_PAUSES = Number(cfg.signinPauses) || 0;
   } catch { ROLE = 'manager'; COLLEGES = []; }
   IS_MANAGER = ROLE === 'manager';
   document.body.classList.toggle('member', !IS_MANAGER);
   document.body.classList.toggle('team-docs', IS_DOCS);
+  renderPauses();
+  if (IS_DOCS && $('bulk-json')) $('bulk-json').placeholder = '{"questions":[{"part":1,"prompt":"...","marks":5,"wordLimit":150},{"part":2,"prompt":"..."}]}';
   const driveName = IS_DOCS ? 'Writers drive' : 'Campus drive';
   $('page-sub').textContent = IS_MANAGER ? `${driveName} · Batch 2026 · Manager` : `${driveName} · Batch 2026 · Panel member`;
   if (IS_DOCS) {
@@ -353,6 +363,24 @@ if ($('duration-save-btn')) $('duration-save-btn').addEventListener('click', asy
 });
 
 // ---- Writers site: questions + minutes for each part (manager only) ----
+// Sign-in pauses (both sites): shown on Overview only while one is active.
+let SIGNIN_PAUSES = 0;
+function renderPauses() {
+  const card = $('pauses-card'); if (!card) return;
+  card.classList.toggle('hidden', !SIGNIN_PAUSES);
+  $('pauses-pill').textContent = String(SIGNIN_PAUSES);
+  const btn = $('pauses-lift-btn');
+  btn.disabled = !IS_MANAGER;
+  btn.title = IS_MANAGER ? '' : 'Only a manager can lift sign-in pauses';
+}
+if ($('pauses-lift-btn')) $('pauses-lift-btn').addEventListener('click', async () => {
+  if (!confirm('Lift every sign-in pause now? Anyone paused can sign in again straight away, and all wrong-sign-in counts start from zero.')) return;
+  const btn = $('pauses-lift-btn'); btn.disabled = true;
+  try { await api('/api/admin/signin-pauses/clear', { method: 'POST' }); SIGNIN_PAUSES = 0; }
+  catch (e) { alert('Could not lift the pauses: ' + e.message); }
+  finally { renderPauses(); }
+});
+
 function renderDocsOpen() {
   if (!DOCS) return;
   const open = !!DOCS.startOpen;
@@ -573,6 +601,9 @@ $('upload-btn').addEventListener('click', async () => {
     await refreshCandidates();
   } catch (err) { setNotice('upload-status', `Error: ${err.message}`, 'warn'); }
 });
+// Parse requests sent at once each round. The writers site keeps each request small
+// (2 resumes), so it sends more of them; support sends 2 requests of up to 20.
+const parseWave = () => (IS_DOCS ? 5 : 2); // read at click time: IS_DOCS is set once the config loads
 let _parsing = false;
 $('process-btn').addEventListener('click', async () => {
   if (_parsing) return;
@@ -581,28 +612,47 @@ $('process-btn').addEventListener('click', async () => {
   const prevLabel = btn.innerHTML;
   btn.disabled = true;
   try {
-    // Auto-loop through every waiting batch so a cohort of 100 is ONE click, not five.
-    // Each batch parses its resumes concurrently server-side; we just keep pulling
-    // the next batch until none remain, updating the running totals as we go.
-    let totalProcessed = 0, totalFailed = 0, rounds = 0;
+    // Auto-loop through every waiting resume so a cohort of 100 is ONE click. Each
+    // round sends parseWave() requests at once; the server gives each request its own
+    // claimed set of resumes, so none is parsed twice. A round where every waiting
+    // resume is already being parsed elsewhere (another admin, or a request that
+    // died and is waiting to be taken over) just waits a few seconds.
+    let totalProcessed = 0, totalFailed = 0, rounds = 0, idleRounds = 0;
     const failures = [];
     while (true) {
       rounds++;
       btn.innerHTML = '<span class="spinner"></span> Parsing…';
-      setNotice('upload-status', totalProcessed
+      setNotice('upload-status', totalProcessed || totalFailed
         ? `Parsing… ${totalProcessed} done so far${totalFailed ? ` (${totalFailed} failed)` : ''}. Working through the rest…`
-        : 'Parsing resumes — running several at once, this is much faster than before…');
-      const r = await api('/api/admin/resumes/process', { method: 'POST' });
-      const failed = r.processed.filter((p) => !p.ok);
-      totalProcessed += r.processed.filter((p) => p.ok).length;
-      totalFailed += failed.length;
-      for (const f of failed) failures.push(`${f.filename}: ${f.error}`);
+        : 'Parsing resumes — several at once…');
+      // While waiting on resumes another request holds, one request a round is enough.
+      const settled = await Promise.allSettled(Array.from({ length: idleRounds ? 1 : parseWave() }, () => api('/api/admin/resumes/process', { method: 'POST' })));
+      const rs = settled.filter((x) => x.status === 'fulfilled').map((x) => x.value);
+      if (!rs.length) throw settled[0].reason;
+      let remaining = 0, claimed = 0, inFlight = 0;
+      for (const r of rs) {
+        const done = (r.processed || []).filter((p) => !p.skipped); // skipped: another request took it over
+        const failed = done.filter((p) => !p.ok);
+        totalProcessed += done.length - failed.length;
+        totalFailed += failed.length;
+        for (const f of failed) failures.push(`${f.filename}: ${f.error}`);
+        claimed += r.claimed ?? (r.processed || []).length;
+        remaining = Math.max(remaining, r.remainingToProcess || 0);
+        inFlight = Math.max(inFlight, r.inFlight || 0);
+      }
       await refreshCandidates(); // show progress filling into the table each round
-      if (rounds === 1 && r.processed.length === 0 && r.remainingToProcess === 0) {
+      if (rounds === 1 && claimed === 0 && remaining === 0) {
         setNotice('upload-status', 'No resumes waiting to be parsed. Upload PDFs first, or every uploaded resume is already processed.', 'ok');
         return;
       }
-      if (r.remainingToProcess === 0) break;
+      if (remaining === 0) break;
+      if (claimed === 0) {
+        // Everything left is being parsed by another request. Wait, but not forever:
+        // a request that died is taken over after 10 minutes.
+        if (++idleRounds > 240) { setNotice('upload-status', `Stopped waiting — ${remaining} resume(s) are still marked as being parsed elsewhere. Click Parse resumes again in a few minutes.`, 'warn'); return; }
+        setNotice('upload-status', `Parsing… ${totalProcessed} done here; ${inFlight || remaining} being parsed by another session or a request that will be retried. Waiting…`);
+        await new Promise((r) => setTimeout(r, 3000));
+      } else idleRounds = 0;
     }
     const failTail = failures.length ? ` Failures: ${failures.join('; ')}` : '';
     const msg = totalFailed
@@ -686,7 +736,24 @@ async function importQuestionsFromText(text) {
     setNotice('bank-status', 'No questions found in that JSON. It should be {"questions":[ … ]} with at least one entry.', 'warn'); return;
   }
   try {
-    const r = await api('/api/admin/questions/bulk-import', { method: 'POST', body: JSON.stringify({ questions }) });
+    let r;
+    if (IS_DOCS) {
+      // The writers site takes at most 30 per request (Workers Free query limit), so
+      // send the file in chunks of 30 and add up the results.
+      r = { imported: 0, duplicates: 0, skipped: 0 };
+      for (let i = 0; i < questions.length; i += 30) {
+        setNotice('bank-status', `Importing ${Math.min(i + 30, questions.length)} of ${questions.length}…`);
+        const part = await api('/api/admin/questions/bulk-import', { method: 'POST', body: JSON.stringify({ questions: questions.slice(i, i + 30) }) });
+        r.imported += part.imported || 0; r.duplicates += part.duplicates || 0; r.skipped += part.skipped || 0;
+      }
+      const tail = (r.duplicates ? ` Skipped ${r.duplicates} already in the bank.` : '') + (r.skipped ? ` Skipped ${r.skipped} with a missing or invalid part, prompt, marks or word limit.` : '');
+      setNotice('bank-status', r.imported ? `Imported ${r.imported} question(s).${tail}` : `Nothing new imported.${tail}`, r.imported && !r.skipped ? 'ok' : 'warn');
+      $('bulk-json').value = ''; const f = $('bulk-json-file'); if (f) f.value = '';
+      await refreshQuestions();
+      loadConfig({ preserveEdits: true }); // refresh the "In the bank" counts
+      return;
+    }
+    r = await api('/api/admin/questions/bulk-import', { method: 'POST', body: JSON.stringify({ questions }) });
     const dupTail = r.duplicates ? ` Skipped ${r.duplicates} already in the bank (no duplicates added).` : '';
     const msg = r.imported
       ? `Imported ${r.imported} question(s).${dupTail} Now click "Enrich all with AI" to generate their sample data and rubrics.`
@@ -1134,7 +1201,11 @@ $('analyze-btn').addEventListener('click', async () => {
     while (remaining > 0) {
       btn.innerHTML = '<span class="spinner"></span> Grading…';
       // Fire a wave of grading calls in parallel; each grades its own batch.
-      const rs = await Promise.all(Array.from({ length: GRADE_WAVE }, () => api('/api/admin/analysis/run', { method: 'POST' })));
+      // allSettled: one failed call (a dropped connection, say) doesn't stop the run;
+      // its candidates are released and picked up by a later call.
+      const settled = await Promise.allSettled(Array.from({ length: GRADE_WAVE }, () => api('/api/admin/analysis/run', { method: 'POST' })));
+      const rs = settled.filter((x) => x.status === 'fulfilled').map((x) => x.value);
+      if (!rs.length) throw settled[0].reason;
       let roundOk = 0;
       remaining = 0;
       const failures = [];

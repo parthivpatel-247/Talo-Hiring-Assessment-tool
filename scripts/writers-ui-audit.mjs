@@ -140,6 +140,25 @@ await admin.locator('#member-table tbody tr', { hasText: 'panel.member@example.c
 await admin.locator('#member-table tbody tr', { hasText: 'panel.member@example.com' }).locator('[data-mtoggle]').click(); await settle(admin, 800);
 check('Deactivate marks the account inactive', /inactive|disabled|off/i.test(await admin.locator('#member-table tbody tr', { hasText: 'panel.member@example.com' }).textContent()));
 await admin.locator('#member-table tbody tr', { hasText: 'panel.member@example.com' }).locator('[data-mtoggle]').click(); await settle(admin, 800);
+// Sign-in pause: 5 wrong passwords for the panel account from a browser that never
+// signed in to it pauses that account on this network; the manager sees it on
+// Overview and can lift it.
+{
+  const gctx = await browser.newContext(); const g = await gctx.newPage();
+  instrument(g, 'guesser', ['/api/admin/login', '/api/admin/candidates']);
+  await g.goto(BASE + '/admin/');
+  await g.fill('#login-email', 'panel.member@example.com');
+  for (let i = 0; i < 5; i++) { await g.fill('#login-password', 'guess-' + i); await g.click('#login-btn'); await settle(g, 300); }
+  check('repeated wrong passwords pause sign-in with a clear message', /paused for 15 minutes/i.test(await g.textContent('#login-error')), await g.textContent('#login-error'));
+  await admin.reload(); await admin.waitForSelector('#shell:not(.hidden)'); await settle(admin, 1200);
+  check('Overview shows the sign-in pause to the manager', await admin.isVisible('#pauses-card') && (await admin.textContent('#pauses-pill')).trim() === '1');
+  admin.dialogQueue.push(true); await admin.click('#pauses-lift-btn'); await settle(admin, 800);
+  check('Lift sign-in pauses clears it', !(await admin.isVisible('#pauses-card')));
+  await g.fill('#login-password', 'panel-pass-123'); await g.click('#login-btn');
+  check('…and the account can sign in again straight away', await g.waitForSelector('#shell:not(.hidden)', { timeout: 8000 }).then(() => true).catch(() => false));
+  await gctx.close();
+  await nav(admin, 'access');
+}
 admin.dialogQueue.push('panel-pass-456');
 await admin.locator('#member-table tbody tr', { hasText: 'panel.member@example.com' }).locator('[data-mpass]').click(); await settle(admin, 1200);
 
@@ -264,6 +283,16 @@ for (const [btn, fmt, head] of [['#export-summary', 'summary', 'Part 1 score'], 
   const text = readFileSync(await dl.path(), 'utf8');
   check(`Export ${fmt} downloads a CSV with the right columns`, text.includes(head) && /talo-writers/.test(dl.suggestedFilename()), dl.suggestedFilename());
 }
+// Bulk import (writers format), sent in chunks of 30 by the page.
+await nav(admin, 'questions');
+await admin.click('#view-questions details summary');
+check('bulk import is offered on the writers site with the writers format', /"part":1/.test(await admin.getAttribute('#bulk-json', 'placeholder')) && await admin.isVisible('#bulk-import-btn'));
+const bulk = { questions: Array.from({ length: 35 }, (_, i) => ({ part: (i % 2) + 1, prompt: `Bulk writing task ${i + 1}: explain this setting to a new user.`, wordLimit: 200 })) };
+await admin.fill('#bulk-json', JSON.stringify(bulk)); await admin.click('#bulk-import-btn'); await settle(admin, 2500);
+const bulkMsg = await admin.textContent('#bank-status');
+check('bulk import of 35 questions (2 requests) imports all 35', /Imported 35/.test(bulkMsg), bulkMsg);
+await admin.fill('#bulk-json', JSON.stringify({ questions: bulk.questions.slice(0, 3) })); await admin.click('#bulk-import-btn'); await settle(admin, 1500);
+check('re-importing the same questions skips them as duplicates', /Skipped 3 already in the bank/.test(await admin.textContent('#bank-status')), await admin.textContent('#bank-status'));
 await nav(admin, 'activity'); await settle(admin, 800);
 check('Activity log lists actions', (await admin.locator('#audit-table tbody tr').count()) > 5);
 admin.dialogQueue.push(true); await nav(admin, 'overview'); await kebab(admin, 'Meera', 'delete');

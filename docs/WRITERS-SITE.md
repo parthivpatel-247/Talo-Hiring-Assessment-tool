@@ -58,18 +58,27 @@ Run these from the repository on the `main` branch.
    ```
 6. Commit the `database_id` change from step 1 (`git commit -am "Set talo-docs database id"`).
 
-**Already applied the migrations before migration 0017 was added?** Run the same
-command again before deploying. It applies only the new `0017_writers_indexes.sql`
-(indexes, integrity rules and the `attempt_events` table):
+**Already applied the migrations earlier?** Run the same command again before
+deploying. It applies only the files you don't have yet: `0017_writers_indexes.sql`
+(indexes, integrity rules, the `attempt_events` table) and `0018_rate_limits.sql`
+(the sign-in limits table):
 ```bash
 npx wrangler d1 migrations apply talo-docs-db --remote --env docs
 ```
+The support site has a matching new file, `migrations/0016_rate_limits.sql`. Apply it
+before the support site's next deploy from `main`:
+```bash
+npx wrangler d1 migrations apply campus-hiring-assessment-db --remote
+```
+(If a migration is missed, the Worker creates the table itself on the first sign-in.)
 
 ## First use
 
 1. Open https://talo-docs.hevo-talo.workers.dev/admin/ and sign in with `parthiv.patel@hevodata.com` and the `ADMIN_PASSWORD` you set.
 2. Go to **Access** and add the writers' manager and panel members, each with their own email and password.
-3. Go to **Question bank** and add questions, choosing Part 1 or Part 2 for each, with marks and an optional word limit.
+3. Go to **Question bank** and add questions, choosing Part 1 or Part 2 for each, with marks and an optional word limit. To add many at once, open **Bulk import (JSON)** and pick a file shaped like
+   `{"questions":[{"part":1,"prompt":"…","marks":5,"wordLimit":150},{"part":2,"prompt":"…"}]}`.
+   `marks` and `wordLimit` are optional. Questions already in the bank are skipped, and any length of file works: the page sends it 30 at a time.
 4. Go to **Resumes → Assessment length** and check that both parts show green under "In the bank". Each part needs at least as many active questions as its question count. A candidate can't start a part whose bank is too small; they are asked to tell the invigilator.
 5. Do a test run before the real drive:
    1. Upload a resume that has your own email on it, then select **Parse**.
@@ -87,6 +96,13 @@ This works the same as the support site. Some points specific to the two parts:
 
 - **Resume (same questions and answers)** reopens the part the candidate was cut off in. If they were between the parts, nothing needs reopening: they sign in again and select Start Part 2.
 - **Retake** clears both parts and draws new questions.
+- After a **Resume** or **Retake** of Part 1, that candidate can start Part 1 even if the test is closed, for the next 3 hours. Starting uses it up.
+- **Sign-in limits.**
+  - **Admins:** 5 wrong passwords for one account from one network pause that account there for 15 minutes. 20 wrong sign-ins from one network pause the network.
+  - **Browsers already used:** a browser that has signed in to the account before isn't affected by those pauses, so a student on the college network can't lock the invigilators out. That browser has its own limit of 10 wrong passwords.
+  - **Candidates:** 200 sign-ins with emails that aren't on the list, from one network in 10 minutes, pause candidate sign-in on that network for 10 minutes.
+  - **Lifting a pause:** whenever any pause is active, a **Sign-in paused** card appears at the top of Overview. A manager's **Lift sign-in pauses** clears every pause at once.
+  - **Before the drive:** sign in once on each invigilator laptop, so those browsers are trusted.
 - Refreshing the page while a part is running ends the assessment (the same rule as support). Refreshing between the parts is safe.
 - **Each part has a hard end time:** its minutes plus up to 10 minutes for connection drops (`DOCS_MAX_PAUSE_MINUTES`). After that the server closes the part and refuses further saves, even if the page is still open.
 - A candidate sign-in lasts 12 hours. If you **Revoke** a candidate, their page shows "Your session was ended by the hiring team" at its next sync.
@@ -105,8 +121,11 @@ npx wrangler dev --env docs        # http://127.0.0.1:8787, local secrets in .de
 npx vitest run test/docs.test.ts   # the writers' tests (the full suite: npm test)
 npm run test:limits                # 100-candidate drive against the Workers Free limits
 node scripts/writers-parity-check.mjs   # browser check of the candidate protections (needs wrangler dev --env docs)
-ADMIN_EMAIL=... ADMIN_PASSWORD=... QA_DIR=./qa node scripts/writers-ui-audit.mjs   # clicks every admin and candidate control (63 checks)
+ADMIN_EMAIL=... ADMIN_PASSWORD=... QA_DIR=./qa node scripts/writers-ui-audit.mjs   # clicks every admin and candidate control (70 checks)
+SITE=writers BASE=http://127.0.0.1:8788 CAND_EMAIL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/ratelimit-ui-check.mjs   # 429s and sign-in pauses in the browser (13 checks; SITE=support: 12)
 ```
+
+**Load tests:** the per-request ceilings (`[[ratelimits]]` in `wrangler.toml`) allow 3,000 requests a minute from one network. A load test run from one machine that simulates more than about 300 students will hit that ceiling. Run load tests against a local `wrangler dev`, or raise `RL_IP` for the test and put it back afterwards.
 
 The UI audit needs a local stand-in for OpenAI so that parsing and grading run without a real key. Point `OPENAI_BASE_URL=http://127.0.0.1:8799` in `.dev.vars.docs` at any small server that answers `/v1/chat/completions` with JSON. Never put a real key or real student resumes in `QA_DIR`.
 

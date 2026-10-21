@@ -70,6 +70,15 @@
       <main>
         <!-- Overview -->
         <section class="view" id="view-overview">
+          <section class="card hidden" id="pauses-card">
+            <div class="card-head">
+              <div>
+                <h2>Sign-in paused <span class="pill warn" id="pauses-pill">0</span></h2>
+                <p class="muted" id="pauses-note" style="margin:4px 0 0;font-size:13px">After repeated wrong sign-ins, sign-in is paused for a few minutes for a network or an account. If this is blocking real candidates or panel members, lift the pauses.</p>
+              </div>
+              <div class="r"><button id="pauses-lift-btn" class="secondary">Lift sign-in pauses</button></div>
+            </div>
+          </section>
           <section class="card docs-only" id="docs-open-card">
             <div class="card-head">
               <div>
@@ -153,9 +162,10 @@
               </div>
               <div id="qform-status" class="notice hidden"></div>
               <div id="enrich-all-status" class="notice hidden"></div>
-              <details style="margin-top:16px" class="support-only">
+              <details style="margin-top:16px">
                 <summary>Bulk import (JSON) — optional</summary>
-                <p class="muted" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file (easiest), or paste the JSON below. Then click "Enrich all with AI".</p>
+                <p class="muted support-only" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file (easiest), or paste the JSON below. Then click "Enrich all with AI".</p>
+                <p class="muted docs-only" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file, or paste the JSON below. Each question needs <code>part</code> (1 or 2) and <code>prompt</code>; <code>marks</code> and <code>wordLimit</code> are optional. Questions already in the bank are skipped. Example: <code>{"questions":[{"part":1,"prompt":"Rewrite this error message…","marks":5,"wordLimit":150}]}</code></p>
                 <input type="file" id="bulk-json-file" accept=".json,application/json" style="margin-bottom:10px" />
                 <textarea id="bulk-json" placeholder='{"questions":[{"category":"sql","prompt":"...","referenceAnswer":"..."}]}'></textarea>
                 <div class="btn-row"><button id="bulk-import-btn" class="secondary">Import JSON</button></div>

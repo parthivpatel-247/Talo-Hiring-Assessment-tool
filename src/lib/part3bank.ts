@@ -1,5 +1,5 @@
 import type { Env } from '../types';
-import { ensureOnce } from './db';
+import { ensureOnce, addColumn } from './db';
 
 /**
  * Part 3 — closed-book debugging & break-fix.
@@ -213,7 +213,7 @@ export async function ensurePart3Schema(env: Env): Promise<void> {
       ];
       for (const [name, type] of toAdd) {
         if (!have.has(name)) {
-          await env.DB.prepare(`ALTER TABLE attempts ADD COLUMN ${name} ${type}`).run();
+          await addColumn(env, `ALTER TABLE attempts ADD COLUMN ${name} ${type}`);
         }
       }
     });
