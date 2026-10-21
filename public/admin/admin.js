@@ -56,6 +56,8 @@ async function api(path, opts = {}, tries = 0) {
   }
   return res.json();
 }
+// Numbers from the server, escaped anyway: a value stored as text must never become markup.
+function num(v) { return escapeHtml(v == null ? '' : String(v)); }
 // Escapes text for HTML content AND attribute values (quotes included).
 function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
@@ -216,11 +218,13 @@ async function loadConfig({ preserveEdits = false } = {}) {
     IS_DOCS = cfg.team === 'docs';
     DOCS = IS_DOCS ? cfg.docs : null;
     SIGNIN_PAUSES = Number(cfg.signinPauses) || 0;
+    START_OPEN = !!cfg.startOpen;
   } catch { ROLE = 'manager'; COLLEGES = []; }
   IS_MANAGER = ROLE === 'manager';
   document.body.classList.toggle('member', !IS_MANAGER);
   document.body.classList.toggle('team-docs', IS_DOCS);
   renderPauses();
+  renderDocsOpen();
   if (IS_DOCS && $('bulk-json')) $('bulk-json').placeholder = '{"questions":[{"part":1,"prompt":"...","marks":5,"wordLimit":150},{"part":2,"prompt":"..."}]}';
   const driveName = IS_DOCS ? 'Writers drive' : 'Campus drive';
   $('page-sub').textContent = IS_MANAGER ? `${driveName} · Batch 2026 · Manager` : `${driveName} · Batch 2026 · Panel member`;
@@ -230,7 +234,6 @@ async function loadConfig({ preserveEdits = false } = {}) {
     VIEWS.questions.sub = 'Writing questions for Part 1 and Part 2';
     const qp = $('q-prompt'); if (qp) qp.placeholder = 'e.g. Rewrite this error message so a first-time user understands what went wrong and what to do next: …';
     renderDocsLength(preserveEdits);
-    renderDocsOpen();
     const addBtn = $('q-add-btn'); if (addBtn && !addBtn.disabled) addBtn.textContent = 'Add question';
     const note = $('analysis-note');
     if (note && !analyzing && note.dataset.docsDefault !== '1') { note.dataset.docsDefault = '1'; note.textContent = 'AI reads each submitted answer as a whole and gives marks with a short reason. Export the results to CSV to review them.'; }
@@ -381,11 +384,14 @@ if ($('pauses-lift-btn')) $('pauses-lift-btn').addEventListener('click', async (
   finally { renderPauses(); }
 });
 
+// Open / close the test (both sites). Writers starts closed; support starts open.
+let START_OPEN = false;
 function renderDocsOpen() {
-  if (!DOCS) return;
-  const open = !!DOCS.startOpen;
-  const pill = $('docs-open-pill'), btn = $('docs-open-btn');
+  const open = !!START_OPEN;
+  const what = IS_DOCS ? 'Part 1' : 'the test';
+  const pill = $('docs-open-pill'), btn = $('docs-open-btn'), note = $('docs-open-note');
   if (pill) { pill.textContent = open ? 'Open' : 'Closed'; pill.className = 'pill ' + (open ? 'ok' : 'warn'); }
+  if (note) note.textContent = `Candidates can sign in and read the rules at any time, but can start ${what} only while the test is open. Anyone given Resume or Retake can start for 3 hours even while it is closed.`;
   if (btn) {
     btn.textContent = open ? 'Close the test' : 'Open the test';
     btn.className = open ? 'secondary' : 'primary';
@@ -394,13 +400,13 @@ function renderDocsOpen() {
   }
 }
 if ($('docs-open-btn')) $('docs-open-btn').addEventListener('click', async () => {
-  if (!DOCS) return;
-  const next = !DOCS.startOpen;
-  if (!confirm(next ? 'Open the test? Candidates who have signed in can then start Part 1.' : 'Close the test? Candidates already in the test carry on; nobody new can start Part 1.')) return;
+  const next = !START_OPEN;
+  const what = IS_DOCS ? 'Part 1' : 'the test';
+  if (!confirm(next ? `Open the test? Candidates who have signed in can then start ${what}.` : `Close the test? Candidates already in the test carry on; nobody new can start ${what}.`)) return;
   const btn = $('docs-open-btn'); btn.disabled = true;
   try {
     const r = await api('/api/admin/start-open', { method: 'POST', body: JSON.stringify({ open: next }) });
-    DOCS.startOpen = r.startOpen;
+    START_OPEN = !!r.startOpen;
   } catch (e) { alert('Could not change the test status: ' + e.message); }
   finally { renderDocsOpen(); }
 });
@@ -519,6 +525,8 @@ if ($('login-email')) $('login-email').addEventListener('keydown', (e) => { if (
 async function doLogout() {
   stopAutoRefresh();
   try { await api('/api/admin/logout', { method: 'POST' }); } catch (e) {}
+  // Reload so no candidate data, resume, or running loop stays in this page.
+  try { location.replace('/admin/'); return; } catch (e) {}
   $('shell').classList.add('hidden');
   $('login-section').classList.remove('hidden');
   if ($('login-email')) $('login-email').value = '';
@@ -565,41 +573,48 @@ $('refresh-btn').addEventListener('click', () => refreshAll());
 $('detail-close').addEventListener('click', () => $('detail-section').classList.add('hidden'));
 
 /* ---- Resumes ---- */
+let _uploading = false;
 $('upload-btn').addEventListener('click', async () => {
+  if (_uploading) return; // a double-click must not upload the same files twice
   const files = $('resume-files').files;
   if (!files.length) { setNotice('upload-status', 'Choose one or more PDF files first.', 'warn'); return; }
-  const form = new FormData(); for (const f of files) form.append('files', f);
   // College is OPTIONAL: if none is picked (or none exist), the batch uploads as
   // "Unassigned". Only prompt when colleges DO exist but none was selected, so the
   // admin doesn't forget to group a batch by accident.
   const col = $('upload-college') ? $('upload-college').value : '';
   if (!col && COLLEGES.length && !confirm('No college selected — upload this batch as "Unassigned"?')) return;
-  form.append('college', col);
-  setNotice('upload-status', `Uploading ${files.length} file(s) for ${col}…`);
-  try {
-    let r;
-    if (IS_DOCS) {
-      // Writers' site: send 10 files per request so each request stays small
-      // (Workers Free per-request limits); the results are combined.
-      r = { uploaded: [], skipped: [] };
-      const list = Array.from(files);
-      for (let i = 0; i < list.length; i += 10) {
-        const part = new FormData();
-        for (const f of list.slice(i, i + 10)) part.append('files', f);
-        part.append('college', col);
-        setNotice('upload-status', `Uploading ${Math.min(i + 10, list.length)} of ${list.length} file(s)…`);
-        const rr = await api('/api/admin/resumes/upload', { method: 'POST', body: part });
-        r.uploaded.push(...(rr.uploaded || [])); r.skipped.push(...(rr.skipped || []));
-      }
-    } else {
-      r = await api('/api/admin/resumes/upload', { method: 'POST', body: form });
-    }
-    const skipped = r.skipped || [];
-    const base = `Uploaded ${r.uploaded.length} resume(s) — they appear below as "(unparsed)". Now click "Parse resumes" to fill in each name & email.`;
-    const skipTail = skipped.length ? ` Skipped ${skipped.length}: ${skipped.map((s) => `${s.filename} (${s.reason})`).join('; ')}.` : '';
-    setNotice('upload-status', base + skipTail, skipped.length ? 'warn' : 'ok');
-    await refreshCandidates();
-  } catch (err) { setNotice('upload-status', `Error: ${err.message}`, 'warn'); }
+  _uploading = true;
+  const ubtn = $('upload-btn'); ubtn.disabled = true;
+  setNotice('upload-status', `Uploading ${files.length} file(s)${col ? ` for ${col}` : ''}…`);
+  // Chunks of 10 on the writers site (Workers Free per-request limits), one request
+  // on support. If a chunk fails, say exactly which files already went in, so a
+  // re-upload doesn't create duplicates.
+  const list = Array.from(files);
+  const size = IS_DOCS ? 10 : list.length;
+  const r = { uploaded: [], skipped: [] };
+  let failedAt = -1, failMsg = '';
+  for (let i = 0; i < list.length; i += size) {
+    const part = new FormData();
+    for (const f of list.slice(i, i + size)) part.append('files', f);
+    part.append('college', col);
+    if (IS_DOCS) setNotice('upload-status', `Uploading ${Math.min(i + size, list.length)} of ${list.length} file(s)…`);
+    try {
+      const rr = await api('/api/admin/resumes/upload', { method: 'POST', body: part });
+      r.uploaded.push(...(rr.uploaded || [])); r.skipped.push(...(rr.skipped || []));
+    } catch (err) { failedAt = i; failMsg = err.message; break; }
+  }
+  const skipped = r.skipped || [];
+  const skipTail = skipped.length ? ` Skipped ${skipped.length}: ${skipped.map((s) => `${s.filename} (${s.reason})`).join('; ')}.` : '';
+  if (failedAt >= 0) {
+    const notSent = list.slice(failedAt).map((f) => f.name);
+    setNotice('upload-status', `Error: ${failMsg}. ${r.uploaded.length} resume(s) were uploaded before the error. Not uploaded (choose only these and try again): ${notSent.join(', ')}.${skipTail}`, 'warn');
+  } else {
+    setNotice('upload-status', `Uploaded ${r.uploaded.length} resume(s) — they appear below as "(unparsed)". Now click "Parse resumes" to fill in each name & email.` + skipTail, skipped.length ? 'warn' : 'ok');
+    // Clear the picker, so pressing Upload again can't add the same resumes twice.
+    $('resume-files').value = '';
+  }
+  _uploading = false; ubtn.disabled = false;
+  await refreshCandidates().catch(() => {});
 });
 // Parse requests sent at once each round. The writers site keeps each request small
 // (2 resumes), so it sends more of them; support sends 2 requests of up to 20.
@@ -815,8 +830,8 @@ async function refreshQuestions() {
     // Deleted bin: show when it was removed, with a Restore action.
     tbody.innerHTML = questions.map((q) => `<tr class="deleted-row">
         <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span></td>
-        <td>${escapeHtml(q.prompt).slice(0, 96)}${q.prompt.length > 96 ? '…' : ''}</td>
-        <td class="tnum">${q.marks}</td>
+        <td>${escapeHtml(q.prompt.slice(0, 96))}${q.prompt.length > 96 ? '…' : ''}</td>
+        <td class="tnum">${num(q.marks)}</td>
         <td>${questionExtraCell(q)}</td>
         <td><span class="pill muted">deleted</span></td>
         <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button><button class="primary sm" data-qrestore="${q.id}">Restore</button></div></td>
@@ -832,13 +847,17 @@ async function refreshQuestions() {
 
   tbody.innerHTML = questions.map((q) => `<tr>
       <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span></td>
-      <td>${escapeHtml(q.prompt).slice(0, 96)}${q.prompt.length > 96 ? '…' : ''}</td>
-      <td class="tnum">${q.marks}</td>
+      <td>${escapeHtml(q.prompt.slice(0, 96))}${q.prompt.length > 96 ? '…' : ''}</td>
+      <td class="tnum">${num(q.marks)}</td>
       <td>${questionExtraCell(q)}</td>
       <td>${q.active ? '<span class="pill ok">active</span>' : '<span class="pill muted">off</span>'}</td>
       <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button><button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
     </tr>`).join('');
-  tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); if (IS_DOCS) loadConfig({ preserveEdits: true }); }));
+  tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.disabled) return; b.disabled = true;
+    try { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); if (IS_DOCS) loadConfig({ preserveEdits: true }); }
+    catch (e) { alert('Could not change the question: ' + e.message); b.disabled = false; }
+  }));
   wireQuestionDetail(tbody, questions);
   tbody.querySelectorAll('[data-qdel]').forEach((b) => b.addEventListener('click', async () => {
     const q = questions.find((x) => x.id === b.dataset.qdel);
@@ -878,8 +897,8 @@ async function refreshPart3Questions() {
   if (!questions.length) { tbody.innerHTML = '<tr><td colspan="5" class="empty">No Part 3 questions yet — click "Load / refresh built-in Part 3 bank" above.</td></tr>'; return; }
   tbody.innerHTML = questions.map((q) => `<tr>
       <td><span class="badge ${q.kind === 'buggy_fix' ? 'muted' : ''}">${q.kind === 'buggy_fix' ? 'Buggy fix' : 'Scenario'}</span></td>
-      <td>${escapeHtml((q.title ? q.title + ' — ' : '') + q.prompt).slice(0, 96)}${((q.title ? q.title + ' — ' : '') + q.prompt).length > 96 ? '…' : ''}</td>
-      <td class="tnum">${q.marks}</td>
+      <td>${escapeHtml(((q.title ? q.title + ' — ' : '') + q.prompt).slice(0, 96))}${((q.title ? q.title + ' — ' : '') + q.prompt).length > 96 ? '…' : ''}</td>
+      <td class="tnum">${num(q.marks)}</td>
       <td>${q.active ? '<span class="pill ok">active</span>' : '<span class="pill muted">off</span>'}</td>
       <td><div class="rowmenu"><button class="secondary sm" data-p3view="${q.id}">View</button></div></td>
     </tr>`).join('');
@@ -894,7 +913,7 @@ async function refreshPart3Questions() {
     const tr = document.createElement('tr');
     tr.className = 'qdetail-row';
     tr.innerHTML = `<td colspan="5"><div class="qdetail">
-      <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${q.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'} · ${q.marks} marks</h3>
+      <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${q.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'} · ${num(q.marks)} marks</h3>
       ${q.title ? `<p style="margin:0 0 6px"><strong>${escapeHtml(q.title)}</strong></p>` : ''}
       <p style="margin:0 0 8px">${escapeHtml(q.prompt)}</p>
       ${q.code_snippet ? `<pre class="softpre" style="background:#0f172a;color:#e2e8f0">${escapeHtml(q.code_snippet)}</pre>` : ''}
@@ -921,18 +940,18 @@ if (part3SeedBtn) part3SeedBtn.addEventListener('click', async () => {
 // question in the Question bank — not on the Overview page.
 // 4th column of the question table: sample data (support) or word limit (writers).
 function questionExtraCell(q) {
-  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${q.word_limit}</span>` : `<span class="muted">default (${DOCS ? DOCS.wordLimit : 1000})</span>`;
+  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${num(q.word_limit)}</span>` : `<span class="muted">default (${DOCS ? DOCS.wordLimit : 1000})</span>`;
   return q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—';
 }
 function questionDetailHtml(q) {
   if (IS_DOCS) {
     return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${q.marks} marks · word limit ${q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default')}</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${num(q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default'))}</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
   </div>`;
   }
   return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(q.category.toUpperCase())} · ${q.marks} marks</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(q.category.toUpperCase())} · ${num(q.marks)} marks</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
     <div class="detail-block"><h3>Hint (shown to candidate on demand)</h3><pre class="softpre">${escapeHtml(q.hint || '(none — click Enrich all to generate)')}</pre></div>
     <div class="detail-block"><h3>Sample data (shown to candidate)</h3><div class="cand-preview">${q.sample_data ? renderRich(q.sample_data) : '<span class="muted">(none — click Enrich all to generate)</span>'}</div></div>
@@ -1027,7 +1046,7 @@ function renderCandidateTable() {
   tbody.innerHTML = rows.map((c) => {
     const nm = c.name || '(unparsed)';
     const em = c.email || '(pending)';
-    const flags = (c.accessRevoked ? '<span class="flag">revoked</span>' : '') + (c.loginCount > 1 ? `<span class="flag" title="${c.loginCount} logins — check for a second person">⚠ ${c.loginCount} logins</span>` : '');
+    const flags = (c.accessRevoked ? '<span class="flag">revoked</span>' : '') + (c.loginCount > 1 ? `<span class="flag" title="${num(c.loginCount)} logins — check for a second person">⚠ ${num(c.loginCount)} logins</span>` : '');
     const fix = IS_MANAGER && (c.status === 'parse_failed' || !c.email) ? `<button data-fix="${c.id}">${svg('mail', 15)} Fix email</button>` : '';
     const mgrItems = IS_MANAGER ? `
               <button data-force="${c.id}">${svg('send', 15)} Force submit</button>
@@ -1041,16 +1060,16 @@ function renderCandidateTable() {
       <td>${collegeCell(c)}</td>
       <td><span class="pill ${statusPill(c.status)}">${escapeHtml(statusLabel(c.status))}</span>${flags}</td>
       <td>${IS_DOCS
-        ? (c.part1.graded || c.part2.graded ? `<span class="score" title="Part 1">${c.part1.awarded}<small>/${c.part1.max}</small></span> <span class="score" title="Part 2">${c.part2.awarded}<small>/${c.part2.max}</small></span>` : '<span class="muted">—</span>')
-        : (c.part1.graded ? `<span class="score">${c.part1.awarded}<small>/${c.part1.max}</small></span>` : '<span class="muted">—</span>')}</td>
-      <td>${c.part1.graded || (IS_DOCS && c.part2.graded) ? `<span class="score">${c.totalAwarded}<small>/${c.totalMax}</small></span>` : '<span class="muted">—</span>'}</td>
+        ? (c.part1.graded || c.part2.graded ? `<span class="score" title="Part 1">${num(c.part1.awarded)}<small>/${num(c.part1.max)}</small></span> <span class="score" title="Part 2">${num(c.part2.awarded)}<small>/${num(c.part2.max)}</small></span>` : '<span class="muted">—</span>')
+        : (c.part1.graded ? `<span class="score">${num(c.part1.awarded)}<small>/${num(c.part1.max)}</small></span>` : '<span class="muted">—</span>')}</td>
+      <td>${c.part1.graded || (IS_DOCS && c.part2.graded) ? `<span class="score">${num(c.totalAwarded)}<small>/${num(c.totalMax)}</small></span>` : '<span class="muted">—</span>'}</td>
       <td>
         <div class="rowmenu">
           <button class="secondary sm" data-view="${c.id}">${svg('eye', 14)} View</button>
           <div class="kebab-wrap">
             <button class="kebab" data-kebab aria-label="More actions">${svg('dots', 16)}</button>
             <div class="menu" hidden>
-              <button data-grade="${c.id}">${svg('bolt', 15)} Grade now</button>${mgrItems}
+              ${['submitted', 'evaluated', 'shortlisted', 'rejected'].includes(c.status) ? `<button data-grade="${c.id}">${svg('bolt', 15)} Grade now</button>` : ''}${mgrItems}
               <div class="sep"></div>
               <button data-shortlist="${c.id}">${svg('star', 15)} Shortlist</button>
               <button class="danger" data-reject="${c.id}">${svg('x', 15)} Reject</button>
@@ -1074,11 +1093,13 @@ function wireCandidateRows(tb) {
       if (filterCollege !== 'all') renderCandidateTable(); // may move out of the current filter
     } catch (e) { alert('Could not set college: ' + e.message); }
   }));
-  tb.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => showDetail(b.dataset.view)));
+  tb.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => showDetail(b.dataset.view).catch((e) => alert('Could not open this candidate: ' + e.message))));
   tb.querySelectorAll('[data-grade]').forEach((b) => b.addEventListener('click', async () => {
+    if (b.disabled) return;
+    b.disabled = true; // one grading per click (the server also refuses a second at once)
     b.innerHTML = '<span class="spinner"></span> Grading…';
-    try { await api(`/api/admin/candidates/${b.dataset.grade}/grade`, { method: 'POST' }); await refreshCandidates(); showDetail(b.dataset.grade); }
-    catch (e) { alert('Grading failed: ' + e.message); await refreshCandidates(); }
+    try { await api(`/api/admin/candidates/${b.dataset.grade}/grade`, { method: 'POST' }); await refreshCandidates(); await showDetail(b.dataset.grade); }
+    catch (e) { alert('Grading failed: ' + e.message); await refreshCandidates().catch(() => {}); }
   }));
   // Every row action reports failures (e.g. "needs manager access") instead of failing silently.
   const act = async (label, fn) => {
@@ -1226,7 +1247,7 @@ $('analyze-btn').addEventListener('click', async () => {
     }
     if (remaining === 0) setNotice('analysis-status', 'All submissions graded. Open each candidate to see per-question marks and deduction reasons.', 'ok');
   } catch (err) { setNotice('analysis-status', `Error: ${err.message}`, 'warn'); }
-  finally { analyzing = false; btn.textContent = 'Analyze all submissions'; await refreshCandidates(); }
+  finally { analyzing = false; btn.textContent = 'Analyze all submissions'; await refreshCandidates().catch(() => {}); }
 });
 async function refreshCandidatesSilent() { try { const { candidates } = await api('/api/admin/candidates'); renderStats(candidates); } catch {} }
 
@@ -1281,7 +1302,7 @@ async function showDetail(id) {
   const answerBlock = (a, i) => `
     <div class="question">
       <div class="qhead"><span class="qnum">Q${i + 1}</span>${IS_DOCS ? `<span class="badge muted">${countWordsAdmin(a.answer_text)} words</span>` : `${a.category ? `<span class="badge muted">${escapeHtml(a.category)}</span>` : ''}${a.based_on_skill ? `<span class="badge">${escapeHtml(a.based_on_skill)}</span>` : ''}`}
-        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${a.ai_score}/${a.max_marks}` : 'not graded'}</span></div>
+        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${num(a.ai_score)}/${num(a.max_marks)}` : 'not graded'}</span></div>
       <p class="qprompt"><strong>${escapeHtml(a.prompt)}</strong></p>
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
       ${a.ai_content_pct != null ? `<p class="muted" style="margin:8px 0 0"><strong>AI-likelihood (estimate):</strong> <span class="pill ${a.ai_content_pct >= 70 ? 'danger' : a.ai_content_pct >= 40 ? 'warn' : 'ok'}">${Math.round(a.ai_content_pct)}%</span> <span style="font-size:11px">how AI-generated the answer looks — a guide, not proof</span></p>` : ''}
@@ -1291,7 +1312,7 @@ async function showDetail(id) {
   const part3Block = (a, i) => `
     <div class="question">
       <div class="qhead"><span class="qnum">Q${i + 1}</span><span class="badge ${a.kind === 'buggy_fix' ? 'muted' : ''}">${a.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'}</span>
-        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${a.ai_score}/${a.max_marks}` : 'not graded'}</span></div>
+        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${num(a.ai_score)}/${num(a.max_marks)}` : 'not graded'}</span></div>
       <p class="qprompt"><strong>${a.title ? escapeHtml(a.title) + ' — ' : ''}${escapeHtml(a.prompt)}</strong></p>
       ${a.code_snippet ? `<pre class="softpre" style="background:#0f172a;color:#e2e8f0">${escapeHtml(a.code_snippet)}</pre>` : ''}
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>

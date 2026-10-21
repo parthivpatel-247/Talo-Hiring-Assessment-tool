@@ -14,9 +14,17 @@ import { getAssessmentMinutes } from '../lib/timer';
 import { isDocs } from '../lib/team';
 import { isManagerOnlyRoute, MANAGER_ONLY_MESSAGE } from '../lib/roles';
 import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
+import { ensureDocsAttemptCols, testIsOpen, openSetting } from './candidate-docs';
 import { adminSigninBegin, adminSigninFailed, adminSigninSucceeded, unlockAdminAccount, liftAllPauses, activePauses } from '../lib/ratelimit';
 
 const PROCESS_BATCH_LIMIT = 20;
+
+/** A question's marks: a whole number from 1 to 100, or null if invalid. */
+function marksValue(v: unknown): number | null {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= 100 ? n : null;
+}
+const DIFFICULTIES = new Set(['easy', 'medium', 'hard']);
 
 /**
  * Run `fn` over every item with at most `limit` in flight at once, preserving
@@ -275,6 +283,19 @@ export async function handleAdminRoute(
     return json({ ok: true, cleared });
   }
 
+  // Open / close the test (both sites, manager only). Closed = nobody NEW can start;
+  // candidates already in the test carry on. Writers starts closed, support open.
+  if (path === '/api/admin/start-open' && request.method === 'POST') {
+    if (role !== 'manager') return json({ error: MANAGER_ONLY_MESSAGE }, { status: 403 });
+    const b = await request.json<{ open?: unknown }>().catch(() => ({} as { open?: unknown }));
+    if (typeof b.open !== 'boolean') return json({ error: 'Send open: true or false.' }, { status: 400 });
+    await ensureCollegeSchema(env); // guarantees the settings table exists
+    await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+      .bind(openSetting(env).key, b.open ? '1' : '0').run();
+    await audit(env, b.open ? 'test_opened' : 'test_closed', null, b.open ? 'Candidates can start the test' : 'Starting the test is closed');
+    return json({ ok: true, startOpen: b.open });
+  }
+
   // Writers site (TEAM = "docs"): the routes that differ for its two-part writing
   // test are handled in admin-docs.ts; everything else below is shared.
   if (isDocs(env)) {
@@ -289,11 +310,12 @@ export async function handleAdminRoute(
   // Who am I + college list — used by the frontend to tailor the UI (both roles).
   if (path === '/api/admin/config' && request.method === 'GET') {
     if (isDocs(env)) {
-      return json({ role, colleges: await getColleges(env), signinPauses: await activePauses(env), ...(await docsAdminConfig(env)) });
+      return json({ role, colleges: await getColleges(env), signinPauses: await activePauses(env), startOpen: await testIsOpen(env), ...(await docsAdminConfig(env)) });
     }
     return json({
       role,
       signinPauses: await activePauses(env),
+      startOpen: await testIsOpen(env),
       colleges: await getColleges(env),
       questionCategories: await questionCategories(env),
       assessmentMinutes: await getAssessmentMinutes(env),
@@ -372,13 +394,19 @@ export async function handleAdminRoute(
     const lower = names.map((n) => n.toLowerCase());
     if (new Set(lower).size !== lower.length) return json({ error: 'College names must be unique.' }, { status: 400 });
     // Apply renames to candidates first (from → to), skipping no-op/unknown.
-    const renames = Array.isArray(b.renames) ? b.renames : [];
-    for (const r of renames) {
-      const from = String(r?.from ?? '').trim();
-      const to = String(r?.to ?? '').trim();
-      if (from && to && from !== to && names.includes(to)) {
-        await env.DB.prepare('UPDATE candidates SET college = ? WHERE college = ?').bind(to, from).run();
-      }
+    // All renames apply in ONE statement against the old values, so swapping two
+    // names (A→B and B→A) swaps the groups instead of merging them.
+    const renames = (Array.isArray(b.renames) ? b.renames : [])
+      .map((r: { from?: unknown; to?: unknown }) => ({ from: String(r?.from ?? '').trim(), to: String(r?.to ?? '').trim() }))
+      .filter((r: { from: string; to: string }) => r.from && r.to && r.from !== r.to && names.includes(r.to))
+      .slice(0, 20);
+    const seenFrom = new Set<string>();
+    const uniqueRenames = renames.filter((r: { from: string }) => (seenFrom.has(r.from) ? false : (seenFrom.add(r.from), true)));
+    if (uniqueRenames.length) {
+      await env.DB.prepare(
+        `UPDATE candidates SET college = CASE college ${uniqueRenames.map(() => 'WHEN ? THEN ?').join(' ')} END
+          WHERE college IN (${uniqueRenames.map(() => '?').join(',')})`
+      ).bind(...uniqueRenames.flatMap((r: { from: string; to: string }) => [r.from, r.to]), ...uniqueRenames.map((r: { from: string }) => r.from)).run();
     }
     // Cascade REMOVED colleges: any candidate whose college is no longer in the
     // valid list (a college that was deleted, not renamed) becomes Unassigned, so
@@ -415,7 +443,7 @@ export async function handleAdminRoute(
     const r: AdminRole = b.role === 'manager' ? 'manager' : 'member';
     if (!name || name.length > 64) return json({ error: 'A name (up to 64 characters) is required.' }, { status: 400 });
     if (!email || !EMAIL_RE.test(email) || email.length > 200) return json({ error: 'A valid email address is required.' }, { status: 400 });
-    if (password.length < 6) return json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
+    if (password.length < 10 || password.length > 256) return json({ error: 'Password must be 10 to 256 characters.' }, { status: 400 });
     const exists = await env.DB.prepare('SELECT 1 FROM admin_users WHERE email = ? OR username = ?').bind(email, name).first();
     if (exists) return json({ error: 'A member with that email or name already exists.' }, { status: 409 });
     const { salt, hash } = await hashPassword(password);
@@ -441,7 +469,7 @@ export async function handleAdminRoute(
     if (b.role === 'manager' || b.role === 'member') { sets.push('role = ?'); binds.push(b.role); }
     if (typeof b.active === 'boolean') { sets.push('active = ?'); binds.push(b.active ? 1 : 0); }
     if (typeof b.password === 'string' && b.password) {
-      if (b.password.length < 6) return json({ error: 'Password must be at least 6 characters.' }, { status: 400 });
+      if (b.password.length < 10 || b.password.length > 256) return json({ error: 'Password must be 10 to 256 characters.' }, { status: 400 });
       const { salt, hash } = await hashPassword(b.password);
       sets.push('pass_salt = ?', 'pass_hash = ?'); binds.push(salt, hash);
     }
@@ -638,15 +666,19 @@ export async function handleAdminRoute(
     if (!c) return json({ error: 'Not found' }, { status: 404 });
     const obj = await env.RESUMES.get(c.resume_r2_key);
     if (!obj) return json({ error: 'Resume file missing' }, { status: 404 });
-    // Served as a sandboxed PDF: no content sniffing, no scripts, never cached, and the
-    // (uploader-controlled) file name is sanitised for the header.
+    // Served as a PDF only: no content sniffing, never cached, framed only by the
+    // admin page, and the (uploader-controlled) file name is sanitised for the header.
     const safeName = (c.resume_filename || 'resume.pdf').replace(/[^\w.\- ]+/g, '_').slice(0, 120) || 'resume.pdf';
     return new Response(obj.body, {
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${safeName}"`,
         'X-Content-Type-Options': 'nosniff',
-        'Content-Security-Policy': "sandbox; default-src 'none'; object-src 'self'; plugin-types application/pdf",
+        // Always a PDF (the upload checks the %PDF- signature and nosniff stops the
+        // browser guessing otherwise), framed only by our own admin page. No CSP
+        // "sandbox": Chrome refuses to show a PDF in a sandboxed document.
+        'Content-Security-Policy': "frame-ancestors 'self'",
+        'X-Frame-Options': 'SAMEORIGIN',
         'Cache-Control': 'no-store',
       },
     });
@@ -693,12 +725,17 @@ export async function handleAdminRoute(
       marks?: number;
       difficulty?: string;
       enrich?: boolean;
-    }>();
-    if (!body.prompt || !body.category) return json({ error: 'category and prompt are required' }, { status: 400 });
+    }>().catch(() => ({} as any));
+    if (typeof body.prompt !== 'string' || !body.prompt.trim() || typeof body.category !== 'string') return json({ error: 'category and prompt are required' }, { status: 400 });
+    if (body.prompt.length > 20000 || (body.referenceAnswer != null && (typeof body.referenceAnswer !== 'string' || body.referenceAnswer.length > 20000))) {
+      return json({ error: 'The question and reference answer must each be under 20,000 characters.' }, { status: 400 });
+    }
+    if (body.marks != null && marksValue(body.marks) == null) return json({ error: 'Marks must be a whole number from 1 to 100.' }, { status: 400 });
+    if (body.difficulty != null && !DIFFICULTIES.has(String(body.difficulty))) return json({ error: 'Difficulty must be easy, medium or hard.' }, { status: 400 });
     if (!QUESTION_CATEGORIES.some((c) => c.value === body.category)) {
       return json({ error: `Unknown question type "${body.category}".` }, { status: 400 });
     }
-    const marks = body.marks ?? defaultMarks(env, body.category);
+    const marks = body.marks != null ? (marksValue(body.marks) as number) : defaultMarks(env, body.category);
     const id = newId('q');
 
     await ensureQuestionHintCol(env);
@@ -786,9 +823,15 @@ export async function handleAdminRoute(
   // Edit a question's fields.
   const editMatch = path.match(/^\/api\/admin\/questions\/([^/]+)$/);
   if (editMatch && request.method === 'PUT') {
-    const b = await request.json<Partial<{ prompt: string; reference_answer: string; sample_data: string; rubric: string; marks: number; difficulty: string; active: number }>>();
+    const b = await request.json<Partial<{ prompt: string; reference_answer: string; sample_data: string; rubric: string; marks: number; difficulty: string; active: number }>>().catch(() => ({} as any));
     const q = (await env.DB.prepare('SELECT * FROM question_bank WHERE id = ?').bind(editMatch[1]).first()) as QuestionBankRow | null;
     if (!q) return json({ error: 'Not found' }, { status: 404 });
+    for (const k of ['prompt', 'reference_answer', 'sample_data', 'rubric'] as const) {
+      if (b[k] != null && (typeof b[k] !== 'string' || (b[k] as string).length > 20000)) return json({ error: `${k} must be text under 20,000 characters.` }, { status: 400 });
+    }
+    if (b.marks != null && marksValue(b.marks) == null) return json({ error: 'Marks must be a whole number from 1 to 100.' }, { status: 400 });
+    if (b.difficulty != null && !DIFFICULTIES.has(String(b.difficulty))) return json({ error: 'Difficulty must be easy, medium or hard.' }, { status: 400 });
+    if (b.active != null && b.active !== 0 && b.active !== 1) return json({ error: 'active must be 0 or 1.' }, { status: 400 });
     await env.DB.prepare(
       'UPDATE question_bank SET prompt = ?, reference_answer = ?, sample_data = ?, rubric = ?, marks = ?, difficulty = ?, active = ? WHERE id = ?'
     )
@@ -797,7 +840,7 @@ export async function handleAdminRoute(
         b.reference_answer ?? q.reference_answer,
         b.sample_data ?? q.sample_data,
         b.rubric ?? q.rubric,
-        b.marks ?? q.marks,
+        b.marks != null ? marksValue(b.marks) : q.marks,
         b.difficulty ?? q.difficulty,
         b.active ?? q.active,
         q.id
@@ -819,7 +862,8 @@ export async function handleAdminRoute(
     const qid = qRestoreMatch[1];
     const q = await env.DB.prepare('SELECT id FROM question_bank WHERE id = ?').bind(qid).first();
     if (!q) return json({ error: 'Not found' }, { status: 404 });
-    await env.DB.prepare('UPDATE question_bank SET deleted_at = NULL WHERE id = ?').bind(qid).run();
+    // Deleting also switched it off; restoring puts it back in rotation.
+    await env.DB.prepare('UPDATE question_bank SET deleted_at = NULL, active = 1 WHERE id = ?').bind(qid).run();
     await audit(env, 'restore_question', null, qid);
     return json({ ok: true });
   }
@@ -848,7 +892,11 @@ export async function handleAdminRoute(
     const list = Array.isArray(body.questions) ? body.questions : [];
     // Keep only well-formed entries: a valid category and a non-empty prompt.
     const allowed = new Set(QUESTION_CATEGORIES.map((c) => c.value));
-    const valid = list.filter((q) => q && typeof q.category === 'string' && allowed.has(q.category) && typeof q.prompt === 'string' && q.prompt.trim().length > 0);
+    const valid = list.filter((q) => q && typeof q.category === 'string' && allowed.has(q.category) && typeof q.prompt === 'string' && q.prompt.trim().length > 0
+      && q.prompt.length <= 20000
+      && (q.referenceAnswer == null || (typeof q.referenceAnswer === 'string' && q.referenceAnswer.length <= 20000))
+      && (q.marks == null || marksValue(q.marks) != null)
+      && (q.difficulty == null || DIFFICULTIES.has(String(q.difficulty))));
     if (!valid.length) {
       return json({ error: `No valid questions to import. Each needs a category (${QUESTION_CATEGORIES.map((c) => `"${c.value}"`).join(', ')}) and a non-empty prompt.` }, { status: 400 });
     }
@@ -873,7 +921,7 @@ export async function handleAdminRoute(
     );
     await env.DB.batch(
       fresh.map((q) =>
-        stmt.bind(newId('q'), q.category, q.prompt, q.referenceAnswer ?? null, q.marks ?? defaultMarks(env, q.category as string), q.difficulty ?? 'medium')
+        stmt.bind(newId('q'), q.category, q.prompt, q.referenceAnswer ?? null, q.marks != null ? marksValue(q.marks) : defaultMarks(env, q.category as string), q.difficulty ?? 'medium')
       )
     );
     return json({ ok: true, imported: fresh.length, duplicates, skipped: list.length - valid.length });
@@ -1086,7 +1134,7 @@ export async function handleAdminRoute(
     // Leading BOM so Excel opens UTF-8 (names, accents) correctly.
     const fname = `talo-results-${fmt}-${new Date().toISOString().slice(0, 10)}.csv`;
     return new Response('﻿' + lines.join('\r\n'), {
-      headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${fname}"` },
+      headers: { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${fname}"`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' },
     });
   }
 
@@ -1141,7 +1189,7 @@ export async function handleAdminRoute(
     // claims pick different rows (the second sees the first's rows already 'grading').
     const token = newId('grade');
     await env.DB.prepare(
-      "UPDATE candidates SET status = 'grading', grading_claim = ?, grading_claimed_at = datetime('now') WHERE id IN (SELECT id FROM candidates WHERE status = 'submitted' LIMIT ?)"
+      "UPDATE candidates SET status = 'grading', grading_claim = ?, grading_claimed_at = datetime('now') WHERE id IN (SELECT id FROM candidates WHERE status = 'submitted' AND (grading_claim IS NULL OR grading_claimed_at IS NULL OR grading_claimed_at < datetime('now','-3 minutes')) LIMIT ?)"
     ).bind(token, batchSize).run();
     const rows = await env.DB.prepare('SELECT * FROM candidates WHERE grading_claim = ?').bind(token).all<Candidate>();
     const batch = rows.results ?? [];
@@ -1149,11 +1197,13 @@ export async function handleAdminRoute(
     const results = await mapPool(batch, conc, async (c) => {
       try {
         await gradeAny(env, c.id);
-        await env.DB.prepare("UPDATE candidates SET status = 'evaluated', grading_claim = NULL WHERE id = ?").bind(c.id).run();
+        // Only if this call still holds the claim: a Resume or Retake meanwhile drops
+        // it, and the candidate's new attempt must not be marked graded.
+        await env.DB.prepare("UPDATE candidates SET status = 'evaluated', grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(c.id, token).run();
         return { id: c.id, name: c.name, ok: true as const };
       } catch (err) {
         // Release the claim so a later call retries this candidate.
-        await env.DB.prepare("UPDATE candidates SET status = 'submitted', grading_claim = NULL WHERE id = ?").bind(c.id).run().catch(() => {});
+        await env.DB.prepare("UPDATE candidates SET status = 'submitted', grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(c.id, token).run().catch(() => {});
         return { id: c.id, name: c.name, ok: false as const, error: err instanceof Error ? err.message : String(err) };
       }
     });
@@ -1167,8 +1217,26 @@ export async function handleAdminRoute(
   const gradeOneMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/grade$/);
   if (gradeOneMatch && request.method === 'POST') {
     const id = gradeOneMatch[1];
-    await gradeAny(env, id);
-    await env.DB.prepare("UPDATE candidates SET status = 'evaluated' WHERE id = ? AND status NOT IN ('shortlisted','rejected')").bind(id).run();
+    await ensureGradingClaimCols(env);
+    // Only a finished test is graded (the writers site checks both parts before this).
+    if (!isDocs(env)) {
+      const at = await env.DB.prepare('SELECT part1_submitted_at FROM attempts WHERE candidate_id = ?').bind(id).first<{ part1_submitted_at: string | null }>();
+      if (!at?.part1_submitted_at) return json({ error: "This candidate hasn't finished the test yet, so there is nothing final to grade." }, { status: 409 });
+    }
+    // Claim the candidate, as Analyze does, so a double-click or a running Analyze
+    // can't grade (and pay for) the same candidate twice.
+    const token = newId('grade');
+    const claim = await env.DB.prepare(
+      "UPDATE candidates SET grading_claim = ?, grading_claimed_at = datetime('now') WHERE id = ? AND (grading_claim IS NULL OR grading_claimed_at IS NULL OR grading_claimed_at < datetime('now','-3 minutes'))"
+    ).bind(token, id).run();
+    if (!claim.meta?.changes) return json({ error: 'This candidate is being graded right now. Try again in a minute.' }, { status: 409 });
+    try {
+      await gradeAny(env, id);
+      await env.DB.prepare("UPDATE candidates SET status = CASE WHEN status IN ('shortlisted','rejected') THEN status ELSE 'evaluated' END, grading_claim = NULL WHERE id = ? AND grading_claim = ?").bind(id, token).run();
+    } catch (err) {
+      await env.DB.prepare('UPDATE candidates SET grading_claim = NULL WHERE id = ? AND grading_claim = ?').bind(id, token).run().catch(() => {});
+      throw err;
+    }
     await audit(env, 'grade', id);
     return json({ ok: true });
   }
@@ -1178,7 +1246,7 @@ export async function handleAdminRoute(
   const manualMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/manual$/);
   if (manualMatch && request.method === 'POST') {
     const id = manualMatch[1];
-    const b = await request.json<{ email?: string; name?: string }>();
+    const b = await request.json<{ email?: string; name?: string }>().catch(() => ({} as { email?: string; name?: string }));
     const email = (b.email || '').trim().toLowerCase();
     if (!email || !email.includes('@')) return json({ error: 'A valid email is required' }, { status: 400 });
     const clash = await env.DB.prepare('SELECT id FROM candidates WHERE email = ? AND id != ?').bind(email, id).first();
@@ -1209,10 +1277,13 @@ export async function handleAdminRoute(
   if (retakeMatch && request.method === 'POST') {
     const id = retakeMatch[1];
     await ensurePart3Schema(env);
+    await ensureDocsAttemptCols(env);
+    await ensureGradingClaimCols(env);
     await env.DB.batch([
       env.DB.prepare(
-        `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0, part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL, part3_started_at=NULL, part3_remaining_seconds=NULL, part3_last_heartbeat_at=NULL, part3_submitted_at=NULL, part3_tab_switch_count=0, part3_tab_switch_log=NULL WHERE candidate_id = ?`
-      ).bind(id),
+        `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0, part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL, part3_started_at=NULL, part3_remaining_seconds=NULL, part3_last_heartbeat_at=NULL, part3_submitted_at=NULL, part3_tab_switch_count=0, part3_tab_switch_log=NULL,
+         part1_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0 WHERE candidate_id = ?`
+      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
@@ -1223,7 +1294,7 @@ export async function handleAdminRoute(
       env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(id),
       // Granting a retake also restores access, so a candidate who was revoked
       // (e.g. earlier on the assessment day) can sit the test again.
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'retake', id);
     return json({ ok: true });
@@ -1237,14 +1308,18 @@ export async function handleAdminRoute(
   const resumeAttemptMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/resume$/);
   if (resumeAttemptMatch && request.method === 'POST') {
     const id = resumeAttemptMatch[1];
+    await ensureDocsAttemptCols(env);
+    await ensureGradingClaimCols(env);
     await env.DB.batch([
-      // Re-open part 1: un-submit and reset the clock so startPart gives a fresh
-      // timer. part1_assignments and part1_answers are deliberately NOT touched.
+      // Re-open part 1: un-submit and reset the clock (and its hard end time) so
+      // startPart gives a fresh timer. part1_assignments and part1_answers are
+      // deliberately NOT touched. The candidate may start within 3 hours even if the
+      // test is closed.
       env.DB.prepare(
-        'UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL WHERE candidate_id = ?'
-      ).bind(id),
-      // Allow login again and restore access; keep retake_granted so the re-login is permitted.
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
+        'UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0 WHERE candidate_id = ?'
+      ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), id),
+      // Allow login again and restore access; drop any grading claim in flight.
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'resume', id);
     return json({ ok: true });
@@ -1259,14 +1334,20 @@ export async function handleAdminRoute(
       // part submitted (preserving whatever answers were saved), and move the
       // candidate to 'submitted' so their work is graded like everyone else.
       await ensurePart3Schema(env);
+      // A candidate who never started is only blocked: nothing is stamped closed, so
+      // Restore access later lets them start normally. (On the writers site a started
+      // test is finalized as a whole: both parts are closed.)
+      const started = await env.DB.prepare('SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_started_at IS NOT NULL').bind(cid).first();
       await env.DB.batch([
         env.DB.prepare('UPDATE candidates SET access_revoked = 1 WHERE id = ?').bind(cid),
-        env.DB.prepare(
-          "UPDATE attempts SET part1_submitted_at = COALESCE(part1_submitted_at, ?), part2_submitted_at = COALESCE(part2_submitted_at, ?), part3_submitted_at = COALESCE(part3_submitted_at, ?) WHERE candidate_id = ?"
-        ).bind(now, now, now, cid),
-        env.DB.prepare(
-          "UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')"
-        ).bind(cid),
+        ...(started ? [
+          env.DB.prepare(
+            "UPDATE attempts SET part1_submitted_at = COALESCE(part1_submitted_at, ?), part2_submitted_at = COALESCE(part2_submitted_at, ?), part3_submitted_at = COALESCE(part3_submitted_at, ?) WHERE candidate_id = ?"
+          ).bind(now, now, now, cid),
+          env.DB.prepare(
+            "UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')"
+          ).bind(cid),
+        ] : []),
       ]);
     } else {
       await env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(cid).run();

@@ -60,32 +60,33 @@ export default {
 };
 
 export async function purgeExpiredCandidates(env: Env): Promise<void> {
-  const retentionDays = Number(env.DATA_RETENTION_DAYS);
-  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+  // Set-based, like the writers site's purge: a fixed number of queries however many
+  // candidates expire. Compared in SQLite's own date format (the stored one), so
+  // nobody is deleted early on the cutoff day.
+  const days = Math.max(1, Math.round(Number(env.DATA_RETENTION_DAYS) || 15));
+  const age = `-${days} days`;
 
   // Make sure the Part 3 tables exist before deleting from them — otherwise, on a
   // DB where migration 0008 wasn't applied, the DELETE would throw and abort the
   // whole purge (leaving ALL expired candidate data in place).
   await ensurePart3Schema(env);
 
-  const expired = await env.DB.prepare('SELECT id, resume_r2_key FROM candidates WHERE created_at < ?')
-    .bind(cutoff)
-    .all<{ id: string; resume_r2_key: string }>();
-
-  for (const candidate of expired.results ?? []) {
-    await env.RESUMES.delete(candidate.resume_r2_key).catch(() => {});
-    // Delete EVERY table that holds this candidate's data, including Part 3, so
-    // nothing lingers past DATA_RETENTION_DAYS (retention contract).
-    await env.DB.batch([
-      env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part3_answers WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part3_assignments WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part2_questions WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM attempts WHERE candidate_id = ?').bind(candidate.id),
-      env.DB.prepare('DELETE FROM candidates WHERE id = ?').bind(candidate.id),
-    ]);
+  const expired = (await env.DB.prepare("SELECT resume_r2_key FROM candidates WHERE created_at < datetime('now', ?)")
+    .bind(age).all<{ resume_r2_key: string | null }>()).results ?? [];
+  const keys = expired.map((r) => r.resume_r2_key).filter((k): k is string => !!k);
+  for (let i = 0; i < keys.length; i += 1000) {
+    await env.RESUMES.delete(keys.slice(i, i + 1000)).catch(() => {});
   }
+  // Every table that holds a candidate's data, so nothing lingers past
+  // DATA_RETENTION_DAYS (retention contract). One batch = one transaction.
+  const sub = "SELECT id FROM candidates WHERE created_at < datetime('now', ?)";
+  const tables = ['interview_questions', 'part3_answers', 'part2_answers', 'part1_answers', 'part3_assignments', 'part2_questions', 'part1_assignments', 'part1_seen', 'attempts'];
+  await env.DB.batch([
+    ...tables.map((t) => env.DB.prepare(`DELETE FROM ${t} WHERE candidate_id IN (${sub})`).bind(age)),
+    env.DB.prepare("DELETE FROM candidates WHERE created_at < datetime('now', ?)").bind(age),
+    env.DB.prepare("DELETE FROM admin_sessions WHERE expires_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"),
+    // The activity log keeps snapshots of deleted candidates (name, email, scores);
+    // it follows the same retention period.
+    env.DB.prepare("DELETE FROM admin_audit WHERE created_at < datetime('now', ?)").bind(age),
+  ]);
 }

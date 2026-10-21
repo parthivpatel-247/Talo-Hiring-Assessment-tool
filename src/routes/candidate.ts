@@ -1,11 +1,11 @@
 import type { Env, Candidate } from '../types';
-import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
+import { createCandidateSession, getCandidateIdFromRequest, json, withCookie, clearCandidateSessionCookie } from '../lib/auth';
 import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, ensureQuestionHintCol, ensureQuestionDeletedCol } from '../lib/db';
-import { assignPart1Questions, assignPart3Questions } from '../lib/randomize';
+import { assignPart1Questions } from '../lib/randomize';
 import { startPart, heartbeat, markSubmitted, logTabSwitch, durationSeconds } from '../lib/timer';
 import { isDocs } from '../lib/team';
-import { handleDocsCandidateRoute } from './candidate-docs';
+import { handleDocsCandidateRoute, ensureDocsAttemptCols, maxPauseSeconds, testIsOpen, candidateStage } from './candidate-docs';
 
 /**
  * CANDIDATE API — privacy rule: this endpoint set NEVER returns marks, scores,
@@ -25,27 +25,6 @@ async function requireCandidate(env: Env, request: Request): Promise<Candidate |
   const candidate = (await getCandidateById(env, id)) as Candidate | null;
   if (!candidate || candidate.access_revoked) return null;
   return candidate;
-}
-
-/**
- * Part 3 questions for the candidate — prompt, kind, title and the broken code
- * snippet only. NEVER returns reference_answer, rubric or marks.
- */
-async function getPart3Questions(env: Env, candidateId: string) {
-  const rows = await env.DB.prepare(
-    `SELECT p3.id, p3.kind, p3.title, p3.prompt, p3.code_snippet
-     FROM part3_assignments pa JOIN part3_questions p3 ON p3.id = pa.question_id
-     WHERE pa.candidate_id = ? ORDER BY pa.position`
-  )
-    .bind(candidateId)
-    .all<{ id: string; kind: string; title: string | null; prompt: string; code_snippet: string | null }>();
-  return (rows.results ?? []).map((q) => ({
-    id: q.id,
-    kind: q.kind,
-    title: q.title,
-    prompt: q.prompt,
-    codeSnippet: q.code_snippet,
-  }));
 }
 
 export async function handleCandidateRoute(
@@ -78,10 +57,6 @@ export async function handleCandidateRoute(
     }
 
     await ensureAttempt(env, candidate.id);
-    // Record the login attempt (count + timestamps) so the admin always has the trail.
-    await env.DB.prepare(
-      "UPDATE attempts SET login_count = login_count + 1, first_login_at = COALESCE(first_login_at, datetime('now')), last_login_at = datetime('now') WHERE candidate_id = ?"
-    ).bind(candidate.id).run();
 
     // ONE test per email: once the assessment has STARTED on this account, a NEW
     // login (a second person with the shared link, or a re-entry after the session
@@ -94,15 +69,29 @@ export async function handleCandidateRoute(
       const count = Number(at?.login_count ?? 0);
       // Record every blocked attempt — the admin portal's Flags panel surfaces these.
       try {
+        // At most one row per candidate per minute, so repeated attempts can't flood
+        // the activity log (or the daily write allowance).
         await env.DB.prepare(
-          "INSERT INTO admin_audit (id, action, candidate_id, detail) VALUES (?, 'duplicate_login_blocked', ?, ?)"
-        ).bind(newId('aud'), candidate.id, `Blocked a repeat login for ${candidate.email} (attempt #${count}) — the test was already started on this account.`).run();
+          `INSERT INTO admin_audit (id, action, candidate_id, detail)
+           SELECT ?, 'duplicate_login_blocked', ?, ?
+           WHERE NOT EXISTS (SELECT 1 FROM admin_audit WHERE action = 'duplicate_login_blocked' AND candidate_id = ? AND created_at > datetime('now', '-1 minute'))`
+        ).bind(newId('aud'), candidate.id, `Blocked a repeat sign-in for ${candidate.email} (after ${count} sign-in(s)) — the test was already started on this account.`, candidate.id).run();
       } catch { /* audit is best-effort */ }
       return json({ error: 'This assessment has already been started on this account and can only be taken once. If you believe this is a mistake, contact your coordinator.' }, { status: 403 });
     }
 
+    // Counted only when a sign-in actually succeeds, so repeated refused attempts
+    // can't make an honest candidate look like they signed in many times.
+    await env.DB.prepare(
+      "UPDATE attempts SET login_count = login_count + 1, first_login_at = COALESCE(first_login_at, datetime('now')), last_login_at = datetime('now') WHERE candidate_id = ?"
+    ).bind(candidate.id).run();
     const cookie = await createCandidateSession(env, candidate.id);
     return withCookie(json({ ok: true, name: candidate.name }), cookie);
+  }
+
+  // Sign out (no session needed): used by the end screen's "different candidate" button.
+  if (path === '/api/candidate/logout' && request.method === 'POST') {
+    return withCookie(json({ ok: true }), clearCandidateSessionCookie());
   }
 
   // Public, pre-login config so the intro page can show the live assessment
@@ -117,17 +106,28 @@ export async function handleCandidateRoute(
   if (path === '/api/candidate/me' && request.method === 'GET') {
     const attempt = await getAttempt(env, candidate.id);
     // attempt carries timers + tab-switch counts only — no scores.
-    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidate.status }, attempt });
+    // Stage only (not started / in progress / submitted): never the hiring outcome.
+    return json({ candidate: { name: candidate.name, email: candidate.email, status: candidateStage(candidate.status) }, attempt });
   }
 
-  // --- Part 1: closed-book, timed, written answers ---
-  // Prepare = assign the question set and return it WITHOUT starting the timer.
-  // The client calls this on the intro screen so questions are ready to render
-  // the instant the candidate begins (no perceived load delay).
-  if (path === '/api/candidate/part1/prepare' && request.method === 'POST') {
-    await ensureQuestionHintCol(env);
-    await ensureQuestionDeletedCol(env);
-    await assignPart1Questions(env, candidate.id);
+  // --- The test: one closed-book, timed part (Part 1) ---
+  // The server enforces the rules the page shows: questions only once the clock is
+  // running, answers only while the part is open and before its hard end time, and
+  // nothing after submit. (Same model as the writers site, candidate-docs.ts.)
+  await ensureDocsAttemptCols(env); // part1_deadline_at + part1_reopen_until (shared columns)
+  const at = (await getAttempt(env, candidate.id)) as Record<string, unknown> | null;
+  const started = !!at?.part1_started_at;
+  const closed = !!at?.part1_submitted_at;
+  const pastDeadline = () => !!at?.part1_deadline_at && Date.now() > Date.parse(String(at.part1_deadline_at));
+  const finish = async () => {
+    await markSubmitted(env, candidate.id, 'part1');
+    // Single-part test: closing Part 1 finalizes the whole assessment. Guarded so a
+    // late or duplicate close can't revert an admin-set status.
+    await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')").bind(candidate.id).run();
+  };
+  // Only prompt, category, sample data and hint go to the browser — never the
+  // reference answer, expected output, rubric, checkpoints or marks.
+  const questionsFor = async () => {
     const rows = await env.DB.prepare(
       `SELECT qb.id, qb.category, qb.prompt, qb.sample_data, qb.hint, pa2.answer_text AS answer
        FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
@@ -136,247 +136,101 @@ export async function handleCandidateRoute(
     )
       .bind(candidate.id)
       .all<{ id: string; category: string; prompt: string; sample_data: string | null; hint: string | null; answer: string | null }>();
-    const questions = (rows.results ?? []).map((q) => ({ id: q.id, category: q.category, prompt: q.prompt, sampleData: q.sample_data, hint: q.hint, answer: q.answer ?? '' }));
-    return json({ questions });
+    return (rows.results ?? []).map((q) => ({ id: q.id, category: q.category, prompt: q.prompt, sampleData: q.sample_data, hint: q.hint, answer: q.answer ?? '' }));
+  };
+
+  // Prepare = assign the question set without starting the clock. It never returns
+  // the questions: they are sent only once the clock is running (start).
+  if (path === '/api/candidate/part1/prepare' && request.method === 'POST') {
+    if (closed) return json({ error: 'Your assessment has been submitted.', closed: true }, { status: 409 });
+    await ensureQuestionHintCol(env);
+    await ensureQuestionDeletedCol(env);
+    await assignPart1Questions(env, candidate.id);
+    return json({ questions: [], ready: true });
   }
 
   if (path === '/api/candidate/part1/start' && request.method === 'POST') {
+    if (closed) return json({ error: 'Your assessment has been submitted.', closed: true }, { status: 409 });
+    // A manager can close the test so nobody new can start (open by default on this
+    // site). A candidate given Resume or Retake may start within 3 hours of that.
+    const reopened = !!at?.part1_reopen_until && Date.parse(String(at.part1_reopen_until)) > Date.now();
+    if (!started && !reopened && !(await testIsOpen(env))) {
+      return json({ error: 'The assessment has not opened yet. Please wait for the invigilator to open it.', notOpen: true }, { status: 409 });
+    }
     await ensureQuestionHintCol(env);
     await ensureQuestionDeletedCol(env);
     await assignPart1Questions(env, candidate.id);
     await startPart(env, candidate.id, 'part1');
-    await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'")
-      .bind(candidate.id)
-      .run();
-    // Return the assigned questions in the same response so the client needs
-    // only ONE round-trip before rendering (no separate /questions fetch).
-    const rows = await env.DB.prepare(
-      `SELECT qb.id, qb.category, qb.prompt, qb.sample_data, qb.hint, pa2.answer_text AS answer
-       FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
-       LEFT JOIN part1_answers pa2 ON pa2.candidate_id = pa.candidate_id AND pa2.question_id = qb.id
-       WHERE pa.candidate_id = ? ORDER BY pa.position`
-    )
-      .bind(candidate.id)
-      .all<{ id: string; category: string; prompt: string; sample_data: string | null; hint: string | null; answer: string | null }>();
-    const questions = (rows.results ?? []).map((q) => ({ id: q.id, category: q.category, prompt: q.prompt, sampleData: q.sample_data, hint: q.hint, answer: q.answer ?? '' }));
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions });
+    const seconds = await durationSeconds(env, 'part1');
+    // Hard end time: the test's minutes plus an allowance for connection drops. After
+    // it, nothing more is saved, even if the page stopped syncing the clock.
+    await env.DB.batch([
+      env.DB.prepare('UPDATE attempts SET part1_deadline_at = ? WHERE candidate_id = ? AND part1_deadline_at IS NULL')
+        .bind(new Date(Date.now() + (seconds + maxPauseSeconds(env)) * 1000).toISOString(), candidate.id),
+      env.DB.prepare('UPDATE attempts SET part1_reopen_until = NULL WHERE candidate_id = ?').bind(candidate.id),
+      env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id),
+    ]);
+    return json({ ok: true, durationSeconds: seconds, questions: await questionsFor() });
   }
 
   if (path === '/api/candidate/part1/questions' && request.method === 'GET') {
+    if (!started) return json({ error: 'The assessment has not started.' }, { status: 409 });
     await ensureQuestionHintCol(env);
     await ensureQuestionDeletedCol(env);
-    // Only prompt, category and sample_data go to the browser — never
-    // reference_answer, rubric or marks.
-    const rows = await env.DB.prepare(
-      `SELECT qb.id, qb.category, qb.prompt, qb.sample_data, qb.hint, pa2.answer_text AS answer
-       FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
-       LEFT JOIN part1_answers pa2 ON pa2.candidate_id = pa.candidate_id AND pa2.question_id = qb.id
-       WHERE pa.candidate_id = ? ORDER BY pa.position`
-    )
-      .bind(candidate.id)
-      .all<{ id: string; category: string; prompt: string; sample_data: string | null; hint: string | null; answer: string | null }>();
-    const questions = (rows.results ?? []).map((q) => ({
-      id: q.id,
-      category: q.category,
-      prompt: q.prompt,
-      sampleData: q.sample_data,
-      hint: q.hint,
-      answer: q.answer ?? '',
-    }));
-    return json({ questions });
+    return json({ questions: await questionsFor() });
   }
 
   if (path === '/api/candidate/part1/answer' && request.method === 'POST') {
-    const { questionId, answerText } = await request.json<{ questionId: string; answerText: string }>();
-    if (typeof questionId !== 'string' || !questionId) return json({ error: 'questionId required' }, { status: 400 });
+    const body = await request.json<{ questionId?: unknown; answerText?: unknown }>().catch(() => ({} as { questionId?: unknown; answerText?: unknown }));
+    const questionId = body.questionId;
+    if (typeof questionId !== 'string' || !questionId || questionId.length > 64) return json({ error: 'questionId required' }, { status: 400 });
     // Ownership: the question must actually be assigned to this candidate.
     const owned = await env.DB.prepare('SELECT 1 FROM part1_assignments WHERE candidate_id = ? AND question_id = ?')
       .bind(candidate.id, questionId)
       .first();
     if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
-    const text = String(answerText ?? '').slice(0, MAX_ANSWER_CHARS); // hard server cap
-    await env.DB.prepare(
+    if (started && !closed && pastDeadline()) { await finish(); return json({ error: 'Time is up. Your assessment has been submitted.', closed: true }, { status: 409 }); }
+    const text = String(body.answerText ?? '').slice(0, MAX_ANSWER_CHARS); // hard server cap
+    // Saved only if, at the moment of writing, the test is running and before its end
+    // time. The condition is inside the INSERT, so a request already in flight when
+    // the test closed can't slip in.
+    const r = await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text)
-       VALUES (?, ?, ?)
+       SELECT ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_started_at IS NOT NULL AND part1_submitted_at IS NULL
+           AND (part1_deadline_at IS NULL OR part1_deadline_at > ?))
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
     )
-      .bind(candidate.id, questionId, text)
+      .bind(candidate.id, questionId, text, candidate.id, new Date().toISOString())
       .run();
+    if (!r.meta?.changes) return json({ error: 'Your assessment is not running, so this answer was not saved.', closed: true }, { status: 409 });
     return json({ ok: true }); // no correctness, ever
   }
 
   if (path === '/api/candidate/part1/heartbeat' && request.method === 'POST') {
+    if (started && !closed && pastDeadline()) { await finish(); return json({ remainingSeconds: 0, closed: true }); }
     const remaining = await heartbeat(env, candidate.id, 'part1');
-    if (remaining <= 0) {
-      await markSubmitted(env, candidate.id, 'part1');
-      // Single-part test: the clock running out finalizes the whole assessment.
-      await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')").bind(candidate.id).run();
-    }
+    if (remaining <= 0 && started) await finish();
     return json({ remainingSeconds: remaining });
   }
 
   if (path === '/api/candidate/part1/tab-switch' && request.method === 'POST') {
-    const { type } = await request.json<{ type: string }>().catch(() => ({ type: 'unknown' }));
-    await logTabSwitch(env, candidate.id, 'part1', type);
+    // Counted only while the test is running.
+    if (!started || closed) return json({ ok: true });
+    await logTabSwitch(env, candidate.id, 'part1', 'tab-switch');
     return json({ ok: true });
   }
 
   if (path === '/api/candidate/part1/submit' && request.method === 'POST') {
-    await markSubmitted(env, candidate.id, 'part1');
-    // Single-part assessment: submitting finalizes the whole test. Guard the
-    // transition so a late/duplicate submit can't revert an admin-set status.
-    await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')").bind(candidate.id).run();
-    return json({ ok: true });
+    if (!started) return json({ error: 'The assessment has not started.' }, { status: 409 });
+    await finish();
+    // The test is over: sign this browser out, so a shared lab PC is ready for the
+    // next candidate and this session can't be reused.
+    return withCookie(json({ ok: true }), clearCandidateSessionCookie());
   }
 
-  // --- Part 2: closed-book, personalized, written answers (locked down like Part 1) ---
-  if (path === '/api/candidate/part2/prepare' && request.method === 'POST') {
-    const rows = await env.DB.prepare(
-      'SELECT id, prompt, based_on_skill FROM part2_questions WHERE candidate_id = ? ORDER BY position'
-    )
-      .bind(candidate.id)
-      .all();
-    return json({ questions: rows.results ?? [] });
-  }
-
-  if (path === '/api/candidate/part2/start' && request.method === 'POST') {
-    await startPart(env, candidate.id, 'part2');
-    const rows = await env.DB.prepare(
-      'SELECT id, prompt, based_on_skill FROM part2_questions WHERE candidate_id = ? ORDER BY position'
-    )
-      .bind(candidate.id)
-      .all();
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part2'), questions: rows.results ?? [] });
-  }
-
-  if (path === '/api/candidate/part2/questions' && request.method === 'GET') {
-    // prompt + based_on_skill only — never rubric or marks.
-    const rows = await env.DB.prepare(
-      'SELECT id, prompt, based_on_skill FROM part2_questions WHERE candidate_id = ? ORDER BY position'
-    )
-      .bind(candidate.id)
-      .all();
-    return json({ questions: rows.results ?? [] });
-  }
-
-  if (path === '/api/candidate/part2/answer' && request.method === 'POST') {
-    const { questionId, answerText } = await request.json<{ questionId: string; answerText: string }>();
-    if (typeof questionId !== 'string' || !questionId) return json({ error: 'questionId required' }, { status: 400 });
-    const owned = await env.DB.prepare('SELECT 1 FROM part2_questions WHERE candidate_id = ? AND id = ?')
-      .bind(candidate.id, questionId)
-      .first();
-    if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
-    const text = String(answerText ?? '').slice(0, MAX_ANSWER_CHARS);
-    await env.DB.prepare(
-      `INSERT INTO part2_answers (candidate_id, question_id, answer_text)
-       VALUES (?, ?, ?)
-       ON CONFLICT (candidate_id, question_id)
-       DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
-    )
-      .bind(candidate.id, questionId, text)
-      .run();
-    return json({ ok: true });
-  }
-
-  if (path === '/api/candidate/part2/heartbeat' && request.method === 'POST') {
-    const remaining = await heartbeat(env, candidate.id, 'part2');
-    if (remaining <= 0) {
-      await markSubmitted(env, candidate.id, 'part2');
-      await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')")
-        .bind(candidate.id)
-        .run();
-    }
-    return json({ remainingSeconds: remaining });
-  }
-
-  if (path === '/api/candidate/part2/tab-switch' && request.method === 'POST') {
-    type SwitchBody = { type: string; chars?: number; questionId?: string; typed?: number; pasted?: number; pastes?: number; ms?: number };
-    const body = await request.json<SwitchBody>().catch(() => ({ type: 'unknown' } as SwitchBody));
-    const type = typeof body.type === 'string' ? body.type : 'unknown';
-    // Paste + 'metrics' events carry authenticity signals (how much was pasted vs
-    // typed, and time spent) per question — inputs for grading. Part 2 requires
-    // the candidate's own words; these are never a verdict on their own.
-    const clampN = (v: unknown, max: number) => (Number.isFinite(v) ? Math.min(max, Math.max(0, Math.round(Number(v)))) : undefined);
-    const questionId = typeof body.questionId === 'string' ? body.questionId.slice(0, 64) : undefined;
-    await logTabSwitch(env, candidate.id, 'part2', type, {
-      chars: clampN(body.chars, 20000),
-      questionId,
-      typed: clampN(body.typed, 100000),
-      pasted: clampN(body.pasted, 100000),
-      pastes: clampN(body.pastes, 1000),
-      ms: clampN(body.ms, 24 * 60 * 60 * 1000),
-    }); // logged only — Part 2 never blocks
-    return json({ ok: true });
-  }
-
-  if (path === '/api/candidate/part2/submit' && request.method === 'POST') {
-    await markSubmitted(env, candidate.id, 'part2');
-    // Part 2 is the final part — this finalizes the assessment. Guard the status
-    // transition so a late/duplicate submit can't revert an admin-set status.
-    await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')").bind(candidate.id).run();
-    return json({ ok: true });
-  }
-
-  // --- Part 3: closed-book, timed, debugging / break-fix (locked down like Part 1) ---
-  if (path === '/api/candidate/part3/prepare' && request.method === 'POST') {
-    await assignPart3Questions(env, candidate.id);
-    return json({ questions: await getPart3Questions(env, candidate.id) });
-  }
-
-  if (path === '/api/candidate/part3/start' && request.method === 'POST') {
-    await assignPart3Questions(env, candidate.id);
-    await startPart(env, candidate.id, 'part3');
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part3'), questions: await getPart3Questions(env, candidate.id) });
-  }
-
-  if (path === '/api/candidate/part3/questions' && request.method === 'GET') {
-    return json({ questions: await getPart3Questions(env, candidate.id) });
-  }
-
-  if (path === '/api/candidate/part3/answer' && request.method === 'POST') {
-    const { questionId, answerText } = await request.json<{ questionId: string; answerText: string }>();
-    if (typeof questionId !== 'string' || !questionId) return json({ error: 'questionId required' }, { status: 400 });
-    const owned = await env.DB.prepare('SELECT 1 FROM part3_assignments WHERE candidate_id = ? AND question_id = ?')
-      .bind(candidate.id, questionId)
-      .first();
-    if (!owned) return json({ error: 'This question is not part of your assessment.' }, { status: 403 });
-    const text = String(answerText ?? '').slice(0, MAX_ANSWER_CHARS);
-    await env.DB.prepare(
-      `INSERT INTO part3_answers (candidate_id, question_id, answer_text)
-       VALUES (?, ?, ?)
-       ON CONFLICT (candidate_id, question_id)
-       DO UPDATE SET answer_text = excluded.answer_text, updated_at = datetime('now')`
-    )
-      .bind(candidate.id, questionId, text)
-      .run();
-    return json({ ok: true });
-  }
-
-  if (path === '/api/candidate/part3/heartbeat' && request.method === 'POST') {
-    const remaining = await heartbeat(env, candidate.id, 'part3');
-    if (remaining <= 0) {
-      await markSubmitted(env, candidate.id, 'part3');
-      await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')")
-        .bind(candidate.id)
-        .run();
-    }
-    return json({ remainingSeconds: remaining });
-  }
-
-  if (path === '/api/candidate/part3/tab-switch' && request.method === 'POST') {
-    const { type } = await request.json<{ type: string }>().catch(() => ({ type: 'unknown' }));
-    await logTabSwitch(env, candidate.id, 'part3', type);
-    return json({ ok: true });
-  }
-
-  if (path === '/api/candidate/part3/submit' && request.method === 'POST') {
-    await markSubmitted(env, candidate.id, 'part3');
-    // Part 3 is the last part — this finalizes the assessment. Guard the
-    // transition so a late/duplicate submit can't revert an admin-set status.
-    await env.DB.prepare("UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress')").bind(candidate.id).run();
-    return json({ ok: true });
-  }
-
+  // Parts 2 and 3 are retired on this site: their candidate routes are switched off,
+  // so nobody can add them to their own test.
   return json({ error: 'Not found' }, { status: 404 });
 }

@@ -68,10 +68,13 @@ describe('candidate Part 1 — privacy + flow', () => {
     expect(res.status).toBe(401);
   });
 
-  it('prepare assigns 2 SQL + 1 Python + 1 DSA + 1 Scenario and leaks no grading data', async () => {
+  it('prepare assigns the set but reveals no question before the clock starts; start returns 2 SQL + 1 Python + 1 DSA + 1 Scenario with no grading data', async () => {
     const res = await req('/api/candidate/part1/prepare', { method: 'POST', headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
-    const text = await res.text();
+    expect(await res.json<any>()).toEqual({ questions: [], ready: true });
+    expect((await req('/api/candidate/part1/questions', { headers: { Cookie: cookie } })).status).toBe(409);
+    const st = await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } });
+    const text = await st.text();
     assertNoLeak(text);
     const body = JSON.parse(text);
     expect(body.questions).toHaveLength(5);

@@ -187,11 +187,11 @@ describe('member/access management', () => {
 
   it('manager creates a member; that member can log in and gets the right role', async () => {
     const mgr = await adminCookie();
-    const create = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Priya', email: 'priya@company.com', password: 'secret1', role: 'member' }) });
+    const create = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Priya', email: 'priya@company.com', password: 'secret-pass-1', role: 'member' }) });
     expect(create.status).toBe(200);
 
     // priya logs in with email + password
-    const login = await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'priya@company.com', password: 'secret1' }) });
+    const login = await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'priya@company.com', password: 'secret-pass-1' }) });
     expect(login.status).toBe(200);
     expect((await login.json<any>()).role).toBe('member');
 
@@ -200,15 +200,15 @@ describe('member/access management', () => {
     expect(bad.status).toBe(401);
 
     // a member without a valid email is rejected
-    const noEmail = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'NoEmail', password: 'secret1', role: 'member' }) });
+    const noEmail = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'NoEmail', password: 'secret-pass-1', role: 'member' }) });
     expect(noEmail.status).toBe(400);
-    const badEmail = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'BadEmail', email: 'not-an-email', password: 'secret1', role: 'member' }) });
+    const badEmail = await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'BadEmail', email: 'not-an-email', password: 'secret-pass-1', role: 'member' }) });
     expect(badEmail.status).toBe(400);
   });
 
   it('role change + disable take effect on login; members list never leaks hashes', async () => {
     const mgr = await adminCookie();
-    await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Sam', email: 'sam@company.com', password: 'secret1', role: 'member' }) });
+    await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Sam', email: 'sam@company.com', password: 'secret-pass-1', role: 'member' }) });
     const list = await (await req('/api/admin/members', { headers: { Cookie: mgr } })).json<any>();
     const sam = list.members.find((m: any) => m.email === 'sam@company.com');
     expect(sam).toBeTruthy();
@@ -218,21 +218,21 @@ describe('member/access management', () => {
 
     // promote to manager
     expect((await req(`/api/admin/members/${sam.id}`, { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ role: 'manager' }) })).status).toBe(200);
-    const login1 = await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'sam@company.com', password: 'secret1' }) });
+    const login1 = await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'sam@company.com', password: 'secret-pass-1' }) });
     expect((await login1.json<any>()).role).toBe('manager');
 
     // disable → login blocked
     expect((await req(`/api/admin/members/${sam.id}`, { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ active: false }) })).status).toBe(200);
-    expect((await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'sam@company.com', password: 'secret1' }) })).status).toBe(401);
+    expect((await req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'sam@company.com', password: 'secret-pass-1' }) })).status).toBe(401);
   });
 
   it('a member cannot manage members; duplicate email rejected', async () => {
     const mgr = await adminCookie();
-    await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Dup', email: 'dup@company.com', password: 'secret1', role: 'member' }) });
-    expect((await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Dup Two', email: 'dup@company.com', password: 'secret1' }) })).status).toBe(409);
+    await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Dup', email: 'dup@company.com', password: 'secret-pass-1', role: 'member' }) });
+    expect((await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(mgr), body: JSON.stringify({ name: 'Dup Two', email: 'dup@company.com', password: 'secret-pass-1' }) })).status).toBe(409);
     const pan = await panelCookie();
     expect((await req('/api/admin/members', { headers: { Cookie: pan } })).status).toBe(403);
-    expect((await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(pan), body: JSON.stringify({ name: 'X', email: 'x@company.com', password: 'secret1' }) })).status).toBe(403);
+    expect((await req('/api/admin/members', { method: 'POST', headers: jsonHeaders(pan), body: JSON.stringify({ name: 'X', email: 'x@company.com', password: 'secret-pass-1' }) })).status).toBe(403);
   });
 });
 

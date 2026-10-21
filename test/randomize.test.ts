@@ -12,7 +12,7 @@ describe('randomization — no repeats across a retake', () => {
   });
 
   async function assignedByCat(cookie: string): Promise<Record<string, string>> {
-    const res = await req('/api/candidate/part1/prepare', { method: 'POST', headers: { Cookie: cookie } });
+    const res = await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } });
     expect(res.status).toBe(200);
     const body = await res.json<any>();
     const byCat: Record<string, string> = {};
@@ -80,8 +80,8 @@ describe('resume keeps the same questions and restores answers', () => {
     expect(at.part1_submitted_at).toBeNull();
     expect(at.part1_started_at).toBeNull();
 
-    // same questions, and the saved answer is returned to the candidate
-    const q2 = (await (await req('/api/candidate/part1/questions', { headers: { Cookie: cookie } })).json<any>()).questions;
+    // same questions, and the saved answer is returned to the candidate when they start again
+    const q2 = (await (await req('/api/candidate/part1/start', { method: 'POST', headers: { Cookie: cookie } })).json<any>()).questions;
     expect(q2.map((x: any) => x.id).sort()).toEqual(ids1);
     expect(q2.find((x: any) => x.id === q1[0].id).answer).toBe('MY SAVED ANSWER');
   });

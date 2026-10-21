@@ -14,7 +14,8 @@ export async function part1Summary(env: Env, candidateId: string) {
   const answers = rows.results ?? [];
   const scored = answers.filter((a) => a.scored_at);
   const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
-  const max = answers.reduce((s, a) => s + (a.max_marks ?? 0), 0);
+  // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
+  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
   return { awarded, max, graded: scored.length, total: answers.length };
 }
 
@@ -27,7 +28,8 @@ export async function part2Summary(env: Env, candidateId: string) {
   const answers = rows.results ?? [];
   const scored = answers.filter((a) => a.scored_at);
   const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
-  const max = answers.reduce((s, a) => s + (a.max_marks ?? 0), 0);
+  // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
+  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
   return { awarded, max, graded: scored.length, total: answers.length };
 }
 
@@ -43,7 +45,8 @@ export async function part3Summary(env: Env, candidateId: string) {
     const answers = rows.results ?? [];
     const scored = answers.filter((a) => a.scored_at);
     const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
-    const max = answers.reduce((s, a) => s + (a.max_marks ?? 0), 0);
+    // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
+  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
     return { awarded, max, graded: scored.length, total: answers.length };
   } catch {
     return { awarded: 0, max: 0, graded: 0, total: 0 };
@@ -67,7 +70,7 @@ async function aggregateTable(env: Env, table: 'part1_answers' | 'part2_answers'
     const rows = await env.DB.prepare(
       `SELECT candidate_id AS cid,
          COALESCE(SUM(CASE WHEN scored_at IS NOT NULL THEN ai_score ELSE 0 END), 0) AS awarded,
-         COALESCE(SUM(max_marks), 0) AS max,
+         COALESCE(SUM(CASE WHEN scored_at IS NOT NULL THEN max_marks ELSE 0 END), 0) AS max,
          SUM(CASE WHEN scored_at IS NOT NULL THEN 1 ELSE 0 END) AS graded,
          COUNT(*) AS total
        FROM ${table}

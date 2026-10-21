@@ -52,8 +52,12 @@ const inFullscreen = (page) => page.evaluate(() => !!document.fullscreenElement)
   await page.evaluate(() => document.exitFullscreen());
   await page.waitForTimeout(11500);
   check('not returning within 10 s submits and closes the assessment', await page.isVisible('#done-section:not(.hidden)'), (await page.textContent('#done-section p')).slice(0, 70) + '…');
-  const me = await page.evaluate(() => fetch('/api/candidate/me', { cache: 'no-store' }).then((r) => r.json()));
-  check('…both parts are closed on the server', !!(me.attempt?.part1_submitted_at && me.attempt?.part2_submitted_at) && me.candidate.status === 'submitted', `${me.attempt?.part1_tab_switch_count} leave events recorded`);
+  // The end of the test signs the browser out, and the closed test can't be re-entered.
+  const after = await page.evaluate(async (email) => ({
+    me: (await fetch('/api/candidate/me', { cache: 'no-store' })).status,
+    relogin: (await fetch('/api/candidate/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) })).status,
+  }), LOCK);
+  check('…the test is closed on the server and this browser is signed out', after.me === 401 && after.relogin === 403, JSON.stringify(after));
   await ctx.close();
 }
 

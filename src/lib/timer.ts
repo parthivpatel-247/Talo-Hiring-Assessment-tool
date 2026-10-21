@@ -98,7 +98,8 @@ export async function heartbeat(env: Env, candidateId: string, part: Part): Prom
 
 export async function markSubmitted(env: Env, candidateId: string, part: Part) {
   const submittedCol = `${part}_submitted_at`;
-  await env.DB.prepare(`UPDATE attempts SET ${submittedCol} = ? WHERE candidate_id = ?`)
+  // COALESCE keeps the first close time: a late or duplicate submit can't move it.
+  await env.DB.prepare(`UPDATE attempts SET ${submittedCol} = COALESCE(${submittedCol}, ?) WHERE candidate_id = ?`)
     .bind(nowIso(), candidateId)
     .run();
 }

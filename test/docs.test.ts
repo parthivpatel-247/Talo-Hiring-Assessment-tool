@@ -531,7 +531,7 @@ describe('writers site — security fixes (audit 2026-10-21)', () => {
     expect(same.status).toBe(200);
   });
 
-  it('accepts only real PDFs and serves resumes sandboxed', async () => {
+  it('accepts only real PDFs and serves resumes as PDFs framed only by the admin page', async () => {
     const admin = await adminLogin();
     const form = new FormData();
     form.append('files', new File(['<html><script>alert(1)</script></html>'], 'fake.pdf', { type: 'application/pdf' }));
@@ -545,7 +545,8 @@ describe('writers site — security fixes (audit 2026-10-21)', () => {
     const body = await view.arrayBuffer();
     expect(new TextDecoder().decode(body.slice(0, 5))).toBe('%PDF-');
     expect(view.headers.get('X-Content-Type-Options')).toBe('nosniff');
-    expect(view.headers.get('Content-Security-Policy')).toMatch(/sandbox/);
+    expect(view.headers.get('Content-Security-Policy')).toBe("frame-ancestors 'self'");
+    expect(view.headers.get('X-Frame-Options')).toBe('SAMEORIGIN');
     expect(view.headers.get('Content-Disposition')).toBe('inline; filename="real _cv_.pdf"');
   });
 

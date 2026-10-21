@@ -3,8 +3,8 @@
  * or leak them. Answers are limited to 1000 words and autosaved. */
 
 const $ = (id) => document.getElementById(id);
-const show = (id) => $(id).classList.remove('hidden');
-const hide = (id) => $(id).classList.add('hidden');
+const show = (id) => { const el = $(id); if (el) el.classList.remove('hidden'); };
+const hide = (id) => { const el = $(id); if (el) el.classList.add('hidden'); };
 const WORD_LIMIT = 1000;
 // Which site this page belongs to. The writers' site (two-part writing test) serves
 // a page with <body data-team="docs">; the support test's page has no team attribute.
@@ -341,17 +341,31 @@ function makePart(part) {
   }
 
   const lastSaved = {};
+  const inFlight = {}; // questionId -> the save request currently being sent
   // Snapshot the current answer to the server. Overwrites the same row, so only
   // the latest version is ever kept. Called on a 15s timer, on question switch,
-  // and before submit.
+  // and before submit. One save per question at a time: a newer save waits for the
+  // older one, so an old version can never land after a newer one. Resolves to
+  // true if the latest text is saved.
   function saveCurrent() {
-    const q = current(); if (!q) return Promise.resolve();
-    const val = state.answers[q.id] || '';
-    if (lastSaved[q.id] === val) return Promise.resolve(); // unchanged since last snapshot
-    lastSaved[q.id] = val;
-    return api(`/api/candidate/${part}/answer`, { method: 'POST', body: JSON.stringify({ questionId: q.id, answerText: val }) })
-      .then(() => { savedTag.classList.add('show'); setTimeout(() => savedTag.classList.remove('show'), 1400); })
-      .catch(() => { lastSaved[q.id] = undefined; });
+    const q = current(); if (!q) return Promise.resolve(true);
+    return saveQuestion(q.id);
+  }
+  function saveQuestion(qid) {
+    const run = async () => {
+      const val = state.answers[qid] || '';
+      if (lastSaved[qid] === val) return true; // unchanged since the last good save
+      try {
+        // noRetry: never resend a stale copy later; the next autosave sends the latest.
+        await api(`/api/candidate/${part}/answer`, { method: 'POST', noRetry: true, body: JSON.stringify({ questionId: qid, answerText: val }) });
+        lastSaved[qid] = val;
+        savedTag.classList.add('show'); setTimeout(() => savedTag.classList.remove('show'), 1400);
+        return true;
+      } catch { return false; }
+    };
+    const p = (inFlight[qid] || Promise.resolve()).then(run, run);
+    inFlight[qid] = p;
+    return p;
   }
   answer.addEventListener('input', (e) => {
     const clamped = clampWords(answer.value, limitFor(current()));
@@ -537,9 +551,9 @@ function makePart(part) {
         updateTimer(remainingSeconds);
         if (remainingSeconds <= 0) { stop(); onExpire(); }
       } catch (err) {
-        // Writers' site: a 401 means the session was ended (access revoked by the
-        // invigilator), not a network problem — say so instead of "connection lost".
-        if (IS_DOCS && err && err.status === 401) { stop(); sessionEnded(); return; }
+        // A 401 means the session was ended (access revoked by the invigilator), not a
+        // network problem — say so instead of "connection lost".
+        if (err && err.status === 401) { stop(); sessionEnded(); return; }
         // 429 = the server is up but asked us to slow down for a few seconds: skip
         // this sync (the local clock keeps running) rather than treat it as offline.
         if (err && err.status === 429) {
@@ -640,9 +654,9 @@ async function beginPart(part, resuming) {
       currentPart = { ctrl: P1, onExpire: finishPart1 };
       P1.startHeartbeat(() => finishPart1());
     } catch (err) {
-      if (IS_DOCS) {
-        // Writers' site: go back to the start screen with the reason (for example
-        // "the assessment has not opened yet"), out of full screen, so they can retry.
+      {
+        // Go back to the start screen with the reason (for example "the assessment
+        // has not opened yet"), out of full screen, so they can retry.
         hide('part1-work'); show('part1-fullscreen-gate');
         document.body.classList.remove('assessment');
         if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
@@ -652,8 +666,6 @@ async function beginPart(part, resuming) {
         $('part1-fullscreen-btn').textContent = 'Try again';
         return;
       }
-      $('part1-qpanel').innerHTML = `<div class="notice warn">Could not start Part 1: ${escapeHtml(err.message)}. Please contact the coordinator.</div>`;
-      $('part1-work').classList.remove('hidden');
     }
   }
 }
@@ -670,7 +682,7 @@ async function submitPart1Clicked() {
   await finishPart1();
 }
 $('part1-submit-btn').addEventListener('click', submitPart1Clicked);
-$('part1-save').addEventListener('click', async () => { await P1.saveCurrent(); flashSavedTag('part1'); });
+$('part1-save').addEventListener('click', async () => { if (await P1.saveCurrent()) flashSavedTag('part1'); else flashWarning('Not saved yet. Check your connection; it will be saved automatically when it can.', false); });
 async function finishPart1() {
   if (P1.state.submitted) return; // guard against double submit (e.g. timer + auto-submit)
   currentPart = null; offline = false; removeOfflineOverlay();
@@ -1003,7 +1015,7 @@ async function finishPart2() {
 if (IS_DOCS) {
   $('start-part2-btn').addEventListener('click', beginPart2);
   $('part2-submit-btn').addEventListener('click', submitPart2Clicked);
-  $('part2-save').addEventListener('click', async () => { await P2.saveCurrent(); flashSavedTag('part2'); });
+  $('part2-save').addEventListener('click', async () => { if (await P2.saveCurrent()) flashSavedTag('part2'); else flashWarning('Not saved yet. Check your connection; it will be saved automatically when it can.', false); });
   // Part 2 is open book: leaving the tab is allowed, never blocked, and recorded.
   const part2Running = () => P2 && !P2.state.submitted && !$('part2-section').classList.contains('hidden') && currentPart && currentPart.ctrl === P2;
   document.addEventListener('visibilitychange', () => {
@@ -1022,3 +1034,9 @@ if (IS_DOCS) {
 
 // Resume on refresh
 (async () => { try { await routeToStage(); } catch {} })();
+
+// End screen: sign this browser out so the next candidate can sign in (shared lab PCs).
+if ($('switch-user-btn')) $('switch-user-btn').addEventListener('click', async () => {
+  try { await api('/api/candidate/logout', { method: 'POST' }); } catch {}
+  location.reload();
+});

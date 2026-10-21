@@ -1,10 +1,10 @@
 import type { Env, Candidate } from '../types';
-import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } from '../lib/auth';
+import { createCandidateSession, getCandidateIdFromRequest, json, withCookie, clearCandidateSessionCookie } from '../lib/auth';
 import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce, addColumn } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
 import { startPart, durationSeconds } from '../lib/timer';
-import { getDocsConfig, DocsPoolTooSmall, type DocsConfig } from '../lib/team';
+import { getDocsConfig, DocsPoolTooSmall, isDocs, type DocsConfig } from '../lib/team';
 
 /**
  * CANDIDATE API for the writers site (TEAM = "docs").
@@ -36,7 +36,7 @@ const HEARTBEAT_CAP_SECONDS = 45;
  * start + its minutes + this allowance for genuine connection drops. After the
  * deadline nothing more is saved for that part. A longer outage needs an admin Resume.
  */
-function maxPauseSeconds(env: Env): number {
+export function maxPauseSeconds(env: Env): number {
   const m = Number(env.DOCS_MAX_PAUSE_MINUTES);
   return (Number.isFinite(m) && m >= 0 ? Math.min(60, m) : 10) * 60;
 }
@@ -54,6 +54,8 @@ export async function ensureDocsAttemptCols(env: Env): Promise<void> {
     // Set by an admin Resume or Retake of Part 1: until this time the candidate may
     // start Part 1 even while the test is closed. Cleared when they start.
     if (!have.has('part1_reopen_until')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN part1_reopen_until TEXT');
+    // When an admin last used Resume or Retake (the stale sweep measures from it).
+    if (!have.has('resumed_at')) await addColumn(env, 'ALTER TABLE attempts ADD COLUMN resumed_at TEXT');
   });
 }
 
@@ -62,14 +64,25 @@ export const REOPEN_SECONDS = 3 * 60 * 60;
 
 /** Is the test open for candidates to START Part 1? (Admin switch; closed by default.) */
 export async function docsStartOpen(env: Env): Promise<boolean> {
+  return testIsOpen(env);
+}
+
+/** The settings key and default of the "test is open" switch on each site: the
+ *  writers site starts CLOSED (a manager opens it on the day); the support site
+ *  starts OPEN, as it always worked, and a manager can close it. */
+export function openSetting(env: Env): { key: string; defaultOpen: boolean } {
+  return isDocs(env) ? { key: 'docs_start_open', defaultOpen: false } : { key: 'start_open', defaultOpen: true };
+}
+export async function testIsOpen(env: Env): Promise<boolean> {
+  const { key, defaultOpen } = openSetting(env);
   try {
-    const row = await env.DB.prepare("SELECT value FROM settings WHERE key = 'docs_start_open'").first<{ value: string }>();
-    return row?.value === '1';
-  } catch { return false; }
+    const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind(key).first<{ value: string }>();
+    return row ? row.value === '1' : defaultOpen;
+  } catch { return defaultOpen; }
 }
 
 /** What the candidate's own page may know about their status (never the hiring outcome). */
-function candidateStage(status: string): string {
+export function candidateStage(status: string): string {
   if (status === 'part2_ready') return 'ready';
   if (status === 'in_progress') return 'in_progress';
   if (['submitted', 'grading', 'evaluated', 'shortlisted', 'rejected'].includes(status)) return 'submitted';
@@ -199,9 +212,6 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       return json({ error: 'Your assessment is not ready yet. Please try again shortly or contact the admin.' }, { status: 409 });
     }
     await ensureAttempt(env, candidate.id);
-    await env.DB.prepare(
-      "UPDATE attempts SET login_count = login_count + 1, first_login_at = COALESCE(first_login_at, datetime('now')), last_login_at = datetime('now') WHERE candidate_id = ?"
-    ).bind(candidate.id).run();
 
     // One sitting per email. A new sign-in is refused while a part is running or
     // after the test is over. The only gap where signing in again is allowed is
@@ -223,8 +233,16 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
       } catch { /* best effort */ }
       return json({ error: 'This assessment has already been started on this account and can only be taken once. If you believe this is a mistake, contact your coordinator.' }, { status: 403 });
     }
+    // Counted only when a sign-in actually succeeds (see the support route).
+    await env.DB.prepare(
+      "UPDATE attempts SET login_count = login_count + 1, first_login_at = COALESCE(first_login_at, datetime('now')), last_login_at = datetime('now') WHERE candidate_id = ?"
+    ).bind(candidate.id).run();
     const cookie = await createCandidateSession(env, candidate.id);
     return withCookie(json({ ok: true, name: candidate.name }), cookie);
+  }
+
+  if (path === '/api/candidate/logout' && request.method === 'POST') {
+    return withCookie(json({ ok: true }), clearCandidateSessionCookie());
   }
 
   // Public, pre-login: the test's shape, so the intro page shows the live numbers.
@@ -414,7 +432,8 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
   // leaving full screen in Part 1 closes the assessment early.
   if (path === '/api/candidate/part2/submit' && request.method === 'POST') {
     await finishAssessment(env, candidate.id);
-    return json({ ok: true });
+    // The test is over: sign this browser out (shared lab PCs, no reuse of the session).
+    return withCookie(json({ ok: true }), clearCandidateSessionCookie());
   }
 
   return json({ error: 'Not found' }, { status: 404 });

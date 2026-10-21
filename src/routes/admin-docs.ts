@@ -1,7 +1,7 @@
 import type { Env, Candidate } from '../types';
 import type { AdminRole } from '../lib/auth';
 import { json } from '../lib/auth';
-import { newId, nowIso } from '../lib/db';
+import { newId, nowIso, ensureGradingClaimCols } from '../lib/db';
 import { gradeWritingAnswer } from '../lib/openai';
 import { getDocsConfig, docsPoolCounts, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
 import { ensureDocsAttemptCols, docsStartOpen, REOPEN_SECONDS } from './candidate-docs';
@@ -81,18 +81,9 @@ export async function docsAdminConfig(env: Env) {
 
 export async function handleDocsAdminRoute(request: Request, env: Env, path: string, role: AdminRole): Promise<Response | null> {
   await ensureDocsAttemptCols(env);
+  await ensureGradingClaimCols(env); // Resume and Retake drop any grading claim in flight
 
   // ---- Open / close the test: candidates can start Part 1 only while it is open ----
-  if (path === '/api/admin/start-open' && request.method === 'POST') {
-    const denied = managerOnly(role); if (denied) return denied;
-    const b = await request.json<{ open?: unknown }>().catch(() => ({} as { open?: unknown }));
-    if (typeof b.open !== 'boolean') return json({ error: 'Send open: true or false.' }, { status: 400 });
-    await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('docs_start_open', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
-      .bind(b.open ? '1' : '0').run();
-    await audit(env, b.open ? 'test_opened' : 'test_closed', null, b.open ? 'Candidates can start Part 1' : 'Starting Part 1 is closed');
-    return json({ ok: true, startOpen: b.open });
-  }
-
   // ---- Grade one candidate: only once both parts are finished ----
   const gradeOne = path.match(/^\/api\/admin\/candidates\/([^/]+)\/grade$/);
   if (gradeOne && request.method === 'POST') {
@@ -220,15 +211,15 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare(
         `UPDATE attempts SET part1_started_at=NULL, part1_remaining_seconds=NULL, part1_last_heartbeat_at=NULL, part1_submitted_at=NULL, part1_tab_switch_count=0,
          part2_started_at=NULL, part2_remaining_seconds=NULL, part2_last_heartbeat_at=NULL, part2_submitted_at=NULL, part2_tab_switch_count=0, part2_tab_switch_log=NULL,
-         part1_deadline_at=NULL, part2_deadline_at=NULL, part1_reopen_until=?
+         part1_deadline_at=NULL, part2_deadline_at=NULL, part1_reopen_until=?, resumed_at=?, login_count=0
          WHERE candidate_id = ?`
-      ).bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), id),
+      ).bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), new Date().toISOString(), id),
       env.DB.prepare('DELETE FROM part1_assignments WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part1_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_questions WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM attempt_events WHERE candidate_id = ?').bind(id),
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'retake', id);
     return json({ ok: true });
@@ -240,25 +231,52 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const denied = managerOnly(role); if (denied) return denied;
     const id = resumeMatch[1];
     const at = await env.DB.prepare('SELECT * FROM attempts WHERE candidate_id = ?').bind(id).first<any>();
-    if (!at || !at.part1_started_at) return json({ ok: true, reopened: null, message: 'This candidate has not started yet. They can sign in as usual.' });
+    const nowIsoStr = new Date().toISOString();
+    const reopenUntil = new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString();
+    const ms = (t: string | null | undefined) => (t ? Date.parse(String(t).includes('T') ? String(t) : String(t).replace(' ', 'T') + 'Z') : NaN);
+    // Common to every branch: access back, any grading claim dropped (a grading run
+    // already in flight then can't mark this candidate graded), the reopen time noted
+    // (so the stale sweep measures from now), and the sign-in count reset.
+    const restore = (status: string | null) => env.DB.prepare(
+      `UPDATE candidates SET ${status ? 'status = ?, ' : ''}retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?`
+    ).bind(...(status ? [status, id] : [id]));
+    if (!at || !at.part1_started_at) {
+      // Never started. If a revoke or force-submit stamped it closed, clear that so
+      // they can start normally.
+      await env.DB.batch([
+        env.DB.prepare('UPDATE attempts SET part1_submitted_at = NULL, part2_submitted_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        restore("part2_ready"),
+      ]);
+      await audit(env, 'resume', id, 'not started — can sign in as usual');
+      return json({ ok: true, reopened: null, message: 'This candidate has not started yet. They can sign in as usual.' });
+    }
     let reopened: DocsPart | null;
+    // Part 1 closed on its own, before the test as a whole was closed: the candidate
+    // was between the parts (or in Part 2). Closed together = cut off during Part 1.
+    const p1Closed = ms(at.part1_submitted_at), allClosed = ms(at.part2_submitted_at);
+    const closedBetween = !!at.part1_submitted_at && !at.part2_started_at && (!at.part2_submitted_at || (Number.isFinite(p1Closed) && Number.isFinite(allClosed) && allClosed - p1Closed >= 1000));
     if (at.part2_started_at) {
       // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed.
       reopened = 'part2';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL WHERE candidate_id = ?').bind(id),
-        env.DB.prepare("UPDATE candidates SET status = 'in_progress', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
+        env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        restore('in_progress'),
       ]);
-    } else if (at.part1_submitted_at && !at.part2_submitted_at) {
-      // Between the parts: nothing to reopen. They can sign in again and start Part 2.
+    } else if (closedBetween) {
+      // Between the parts: nothing to reopen except the final close, if one happened.
+      // They sign in again and start Part 2.
       reopened = null;
-      await env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(id).run();
+      await env.DB.batch([
+        env.DB.prepare('UPDATE attempts SET part2_submitted_at = NULL, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(nowIsoStr, id),
+        restore('in_progress'),
+      ]);
     } else {
-      // Cut off during Part 1 (or the test was closed while in Part 1): reopen Part 1.
+      // Cut off during Part 1: reopen Part 1 (it may be started while the test is
+      // closed, for the next 3 hours).
       reopened = 'part1';
       await env.DB.batch([
-        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL, part1_reopen_until = ? WHERE candidate_id = ?').bind(new Date(Date.now() + REOPEN_SECONDS * 1000).toISOString(), id),
-        env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0 WHERE id = ?").bind(id),
+        env.DB.prepare('UPDATE attempts SET part1_started_at = NULL, part1_remaining_seconds = NULL, part1_last_heartbeat_at = NULL, part1_submitted_at = NULL, part1_deadline_at = NULL, part2_submitted_at = NULL, part1_reopen_until = ?, resumed_at = ?, login_count = 0 WHERE candidate_id = ?').bind(reopenUntil, nowIsoStr, id),
+        restore('part2_ready'),
       ]);
     }
     await audit(env, 'resume', id, reopened ? `reopened ${partLabel(reopened)}` : 'between parts — can sign in again');
@@ -400,7 +418,7 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
   const p1Cut = cfg.part1.minutes * 60 + grace;
   const p2Cut = cfg.part2.minutes * 60 + grace;
   const rows = await env.DB.prepare(
-    `SELECT candidate_id, part1_started_at, part1_submitted_at, part2_started_at, part2_submitted_at FROM attempts
+    `SELECT candidate_id, part1_started_at, part1_submitted_at, part2_started_at, part2_submitted_at, resumed_at FROM attempts
      WHERE part2_submitted_at IS NULL AND part1_started_at IS NOT NULL`
   ).all<Record<string, string | null>>();
   // Each close is 3 queries; at most 10 per request keeps this call inside the
@@ -412,7 +430,9 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
   for (const a of rows.results ?? []) {
     const p1Stale = !a.part1_submitted_at && age(a.part1_started_at) > p1Cut;
     const p2Stale = !!a.part2_started_at && age(a.part2_started_at) > p2Cut;
-    const betweenStale = !!a.part1_submitted_at && !a.part2_started_at && age(a.part1_submitted_at) > p2Cut;
+    // Between the parts, measured from Part 1's close or an admin Resume, whichever is
+    // later, so a Resume isn't undone by this sweep a minute later.
+    const betweenStale = !!a.part1_submitted_at && !a.part2_started_at && Math.min(age(a.part1_submitted_at), a.resumed_at ? age(a.resumed_at) : Infinity) > p2Cut;
     if (!p1Stale && !p2Stale && !betweenStale) continue;
     if (closed >= MAX_CLOSE_PER_CALL) break;
     const cid = a.candidate_id as string;
@@ -471,7 +491,8 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
   const g1 = group(p1), g2 = group(p2);
   const sum = (rows: any[] = []) => ({
     awarded: rows.reduce((s, r) => s + (r.ai_score != null ? Number(r.ai_score) : 0), 0),
-    max: rows.reduce((s, r) => s + Number(r.max_marks ?? r.marks ?? 0), 0),
+    // Before grading, an answer row holds max_marks' column default, so use the question's marks.
+    max: rows.reduce((s, r) => s + Number((r.ai_score != null ? r.max_marks : null) ?? r.marks ?? 0), 0),
     graded: rows.some((r) => r.ai_score != null),
   });
   const pasteRows = (await env.DB.prepare(
@@ -501,7 +522,7 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
       const base = [csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), s1.awarded + s2.awarded, s1.max + s2.max];
       const row = (part: string, q: any, i: number) => [
         ...base, part, i + 1, csvEsc(q.prompt), csvEsc(q.answer_text || ''), words(q.answer_text), q.word_limit || cfg.wordLimit,
-        q.ai_score ?? '', q.max_marks ?? q.marks ?? '', csvEsc(q.ai_reasoning || ''), csvEsc(fmtDed(q.deductions)),
+        q.ai_score ?? '', (q.ai_score != null ? q.max_marks : null) ?? q.marks ?? '', csvEsc(q.ai_reasoning || ''), csvEsc(fmtDed(q.deductions)),
         q.ai_content_pct != null ? Math.round(q.ai_content_pct) : '',
       ].join(',');
       r1.forEach((q, i) => lines.push(row('Part 1', q, i)));

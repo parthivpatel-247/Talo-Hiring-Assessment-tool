@@ -95,6 +95,11 @@ export async function createCandidateSession(env: Env, candidateId: string): Pro
   return setCookieHeader(CANDIDATE_COOKIE, token, CANDIDATE_SESSION_SECONDS);
 }
 
+/** Set-Cookie that signs the candidate out of this browser. */
+export function clearCandidateSessionCookie(): string {
+  return clearCookieHeader(CANDIDATE_COOKIE);
+}
+
 export async function getCandidateIdFromRequest(env: Env, request: Request): Promise<string | null> {
   const token = readCookie(request, CANDIDATE_COOKIE);
   const payload = await verify<{ cid: string; iat?: number }>(env.SESSION_SECRET, token);
@@ -203,6 +208,7 @@ export function json(data: unknown, init: ResponseInit = {}): Response {
       // like /api/admin/candidates can be served stale after a delete/update, so the
       // change "doesn't reflect" until a hard refresh. no-store forces a fresh fetch.
       'Cache-Control': 'no-store, no-cache, must-revalidate',
+      'X-Content-Type-Options': 'nosniff',
       ...(init.headers || {}),
     },
   });

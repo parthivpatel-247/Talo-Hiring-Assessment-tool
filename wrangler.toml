@@ -11,6 +11,11 @@ compatibility_flags = ["nodejs_compat"]
 directory = "./public"
 binding = "ASSETS"
 
+# Before every support deploy: check the security headers (public/_headers) still
+# match the pages' inline scripts. A mismatch stops the deploy.
+[build]
+command = "node scripts/check-headers.mjs"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "campus-hiring-assessment-db"

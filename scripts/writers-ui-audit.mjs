@@ -47,6 +47,9 @@ async function nav(page, view) { await page.click(`.nav-item[data-view="${view}"
 async function rowFor(page, text) { return page.locator('#candidate-table tbody tr', { hasText: text }).first(); }
 async function kebab(page, text, action) {
   const row = await rowFor(page, text);
+  // Scroll first: the menu closes on scroll (it is fixed-positioned), and the browser's
+  // own scroll-into-view would otherwise land just after the click.
+  await row.scrollIntoViewIfNeeded(); await settle(page, 300);
   await row.locator('[data-kebab]').click();
   await settle(page, 200);
   await page.locator(`.menu:not([hidden]) [data-${action}]`).click();
@@ -252,8 +255,17 @@ admin.dialogQueue.push(true); await kebab(admin, 'Asha', 'reject');
 check('Reject sets the status', /Rejected/i.test(await (await rowFor(admin, 'Asha')).textContent()));
 
 admin.lastDialog = '';
-await kebab(admin, 'Ravi', 'grade');
-check('Grade now refuses an unfinished candidate with a clear message', /finished both parts/i.test(admin.lastDialog), admin.lastDialog);
+{
+  const row = await rowFor(admin, 'Ravi');
+  await row.scrollIntoViewIfNeeded(); await settle(admin, 300);
+  await row.locator('[data-kebab]').click(); await settle(admin, 200);
+  check('Grade now is not offered for a candidate still taking the test', (await admin.locator('.menu:not([hidden]) [data-grade]').count()) === 0);
+  await admin.keyboard.press('Escape'); await settle(admin, 200);
+  if (await admin.locator('.menu:not([hidden])').count()) { await admin.mouse.click(5, 5); await settle(admin, 200); }
+  const r = await admin.evaluate(async (id) => (await fetch(`/api/admin/candidates/${id}/grade`, { method: 'POST' })).status,
+    await row.locator('[data-view]').getAttribute('data-view'));
+  check('…and the server refuses it too', r === 409, String(r));
+}
 admin.dialogQueue.push(true); await kebab(admin, 'Ravi', 'force');
 check('Force submit finishes the test', /Submitted/i.test(await (await rowFor(admin, 'Ravi')).textContent()));
 await running.p.waitForSelector('#done-section:not(.hidden)', { timeout: 45000 }).catch(() => {});

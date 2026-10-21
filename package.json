@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest run",
+    "test": "node scripts/check-headers.mjs && vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
     "migrate:apply": "wrangler d1 migrations apply campus-hiring-assessment-db --remote",
