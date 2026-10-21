@@ -1,6 +1,7 @@
 import type { Env, QuestionBankRow } from '../types';
 import { ensurePart3Schema, seedDefaultPart3 } from './part3bank';
-import { ensurePerfSchema } from './db';
+import { ensurePerfSchema, newId } from './db';
+import { getDocsConfig, DocsPoolTooSmall } from './team';
 
 /**
  * Assigns each candidate a Part 1 set (N SQL + M Python + DSA + Scenario) by a
@@ -102,7 +103,7 @@ export async function assignPart1Questions(env: Env, candidateId: string): Promi
  */
 async function pickLeastUsed(
   env: Env,
-  category: 'sql' | 'python' | 'dsa' | 'scenario',
+  category: 'sql' | 'python' | 'dsa' | 'scenario' | 'part1' | 'part2',
   count: number,
   exclude: Set<string> = new Set()
 ): Promise<string[]> {
@@ -181,6 +182,84 @@ export async function assignPart3Questions(env: Env, candidateId: string): Promi
     'INSERT OR IGNORE INTO part3_assignments (candidate_id, question_id, position) VALUES (?, ?, ?)'
   );
   await env.DB.batch(ordered.map((qId, i) => stmt.bind(candidateId, qId, i)));
+}
+
+/* ------------------------------------------------------------------ *
+ * Writers site (TEAM = "docs") — two parts, each drawn from its own bank.
+ * Part 1 questions live in category 'part1', Part 2 in 'part2'. Both use the
+ * same least-used rotation with a random tie-break as the support test, so
+ * the draw is random but spreads questions evenly across the cohort.
+ * ------------------------------------------------------------------ */
+
+/** Record what a candidate has seen (so a retake gets fresh questions) and bump usage. */
+async function recordSeen(env: Env, candidateId: string, chosen: string[], seen: Set<string>): Promise<void> {
+  try {
+    const fresh = chosen.filter((qId) => !seen.has(qId));
+    const seenStmt = env.DB.prepare('INSERT OR IGNORE INTO part1_seen (candidate_id, question_id) VALUES (?, ?)');
+    const usageStmt = env.DB.prepare(
+      'INSERT INTO question_usage (question_id, uses) VALUES (?, 1) ON CONFLICT(question_id) DO UPDATE SET uses = uses + 1'
+    );
+    await env.DB.batch([
+      ...chosen.map((qId) => seenStmt.bind(candidateId, qId)),
+      ...fresh.map((qId) => usageStmt.bind(qId)),
+    ]);
+  } catch { /* best effort */ }
+}
+
+/** Writers Part 1: N random questions from the Part 1 bank into part1_assignments. */
+export async function assignDocsPart1(env: Env, candidateId: string): Promise<void> {
+  const existing = await env.DB.prepare('SELECT 1 FROM part1_assignments WHERE candidate_id = ?').bind(candidateId).first();
+  if (existing) return; // idempotent — the same set survives reloads and Resume
+  await ensurePerfSchema(env);
+  const need = (await getDocsConfig(env)).part1.questions;
+  const seen = await seenQuestionIds(env, candidateId);
+  const ids = await pickLeastUsed(env, 'part1', need, seen);
+  if (ids.length < need) throw new DocsPoolTooSmall('part1', need, ids.length);
+  const ordered = shuffle(ids);
+  // Each row is inserted only if its position is still free, so two overlapping
+  // calls (prefetch + start) can't give one candidate two sets.
+  const stmt = env.DB.prepare(
+    `INSERT INTO part1_assignments (candidate_id, question_id, position)
+     SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ? AND position = ?)`
+  );
+  await env.DB.batch(ordered.map((qId, i) => stmt.bind(candidateId, qId, i, candidateId, i)));
+  const kept = await env.DB.prepare('SELECT question_id FROM part1_assignments WHERE candidate_id = ?').bind(candidateId).all<{ question_id: string }>();
+  await recordSeen(env, candidateId, (kept.results ?? []).map((r) => r.question_id), seen);
+}
+
+/**
+ * Writers Part 2: N random questions from the Part 2 bank, copied into this
+ * candidate's part2_questions (the table the Part 2 flow, grading and exports
+ * already use). Each copy keeps its source question id, marks and word limit.
+ */
+export async function assignDocsPart2(env: Env, candidateId: string): Promise<void> {
+  const existing = await env.DB.prepare('SELECT 1 FROM part2_questions WHERE candidate_id = ?').bind(candidateId).first();
+  if (existing) return; // idempotent
+  await ensurePerfSchema(env);
+  const need = (await getDocsConfig(env)).part2.questions;
+  const seen = await seenQuestionIds(env, candidateId);
+  const ids = await pickLeastUsed(env, 'part2', need, seen);
+  if (ids.length < need) throw new DocsPoolTooSmall('part2', need, ids.length);
+  const ordered = shuffle(ids);
+  const rows = await env.DB.prepare(
+    `SELECT id, prompt, marks, word_limit FROM question_bank WHERE id IN (${ordered.map(() => '?').join(',')})`
+  )
+    .bind(...ordered)
+    .all<{ id: string; prompt: string; marks: number; word_limit: number | null }>();
+  const byId = new Map((rows.results ?? []).map((r) => [r.id, r]));
+  const stmt = env.DB.prepare(
+    `INSERT INTO part2_questions (id, candidate_id, position, prompt, based_on_skill, rubric, marks, source_question_id, word_limit)
+     SELECT ?, ?, ?, ?, 'Part 2', '', ?, ?, ?
+     WHERE NOT EXISTS (SELECT 1 FROM part2_questions WHERE candidate_id = ? AND position = ?)`
+  );
+  await env.DB.batch(
+    ordered.map((qId, i) => {
+      const q = byId.get(qId)!;
+      return stmt.bind(newId('p2q'), candidateId, i, q.prompt, q.marks, q.id, q.word_limit ?? null, candidateId, i);
+    })
+  );
+  const kept = await env.DB.prepare('SELECT source_question_id AS id FROM part2_questions WHERE candidate_id = ?').bind(candidateId).all<{ id: string }>();
+  await recordSeen(env, candidateId, (kept.results ?? []).map((r) => r.id).filter(Boolean), seen);
 }
 
 function shuffle<T>(arr: T[]): T[] {

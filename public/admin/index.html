@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/admin/admin.css?v=10" />
+  <link rel="stylesheet" href="/admin/admin.css?v=11" />
 </head>
 <body>
   <!-- Login -->
@@ -42,6 +42,7 @@
         <span class="m"><svg viewBox="0 0 24 24" width="20" height="20" fill="none"><rect x="3.5" y="13" width="4" height="7.5" rx="2" fill="white" fill-opacity="0.7"/><rect x="10" y="8.5" width="4" height="12" rx="2" fill="white" fill-opacity="0.9"/><rect x="16.5" y="3.5" width="4" height="17" rx="2" fill="white"/></svg></span>
         <div><div class="nm">Talo</div><div class="by">by Hevo</div></div>
       </div>
+      <div class="team-tag docs-only">Writers hiring</div>
       <div class="nav-label">Console</div>
       <button class="nav-item on" data-view="overview" data-icon="grid">Overview</button>
       <button class="nav-item" data-view="questions" data-icon="list">Question bank <span class="badge-n" id="nav-q">0</span></button>
@@ -122,24 +123,28 @@
           <section class="card mgr-only">
             <div class="card-head"><h2>Add a question</h2></div>
             <div class="card-body">
-              <p class="muted" style="margin:0 0 14px">Write a question in plain language and paste the reference answer. On save, AI builds a sample-data table (for SQL) and a grading rubric — never shown to candidates.</p>
+              <p class="muted support-only" style="margin:0 0 14px">Write a question in plain language and paste the reference answer. On save, AI builds a sample-data table (for SQL) and a grading rubric — never shown to candidates.</p>
+              <p class="muted docs-only" style="margin:0 0 14px">Pick the part, write the question exactly as candidates should see it, and set its marks and word limit. There is no rubric: AI reads each answer as a whole and gives marks with a short reason.</p>
               <div class="qform-row">
                 <div><label class="field" for="q-category">Type</label><select id="q-category"><option value="sql">SQL</option><option value="python">Python</option><option value="dsa">DSA</option><option value="scenario">Scenario</option></select></div>
                 <div><label class="field" for="q-marks">Marks</label><input type="text" id="q-marks" placeholder="auto by type" /></div>
-                <div><label class="field" for="q-difficulty">Difficulty</label><select id="q-difficulty"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select></div>
+                <div class="docs-only"><label class="field" for="q-wordlimit">Word limit</label><input type="number" id="q-wordlimit" min="50" max="3000" step="50" placeholder="default" /></div>
+                <div class="support-only"><label class="field" for="q-difficulty">Difficulty</label><select id="q-difficulty"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select></div>
               </div>
               <label class="field" for="q-prompt">Question</label>
               <textarea id="q-prompt" placeholder="e.g. Table: orders (order_id, customer_id, amount, status). Write a query to…"></textarea>
+              <div class="support-only">
               <div style="height:12px"></div>
               <label class="field" for="q-answer">Reference answer (recommended)</label>
               <textarea id="q-answer" placeholder="Paste the model answer used for grading (never shown to candidates)."></textarea>
+              </div>
               <div class="btn-row">
                 <button id="q-add-btn" class="primary">Add question &amp; enrich with AI</button>
-                <button id="enrich-all-btn" class="secondary">Enrich all with AI</button>
+                <button id="enrich-all-btn" class="secondary support-only">Enrich all with AI</button>
               </div>
               <div id="qform-status" class="notice hidden"></div>
               <div id="enrich-all-status" class="notice hidden"></div>
-              <details style="margin-top:16px">
+              <details style="margin-top:16px" class="support-only">
                 <summary>Bulk import (JSON) — optional</summary>
                 <p class="muted" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file (easiest), or paste the JSON below. Then click "Enrich all with AI".</p>
                 <input type="file" id="bulk-json-file" accept=".json,application/json" style="margin-bottom:10px" />
@@ -166,8 +171,31 @@
         <!-- Resumes -->
         <section class="view hidden" id="view-resumes">
           <section class="card">
-            <div class="card-head"><h2>Assessment length</h2><div class="r muted" style="font-size:12.5px;align-self:center">The total time each candidate gets</div></div>
-            <div class="card-body">
+            <div class="card-head"><h2>Assessment length</h2><div class="r muted support-only" style="font-size:12.5px;align-self:center">The total time each candidate gets</div><div class="r muted docs-only" style="font-size:12.5px;align-self:center">Questions and time for each part</div></div>
+            <div class="card-body docs-only">
+              <p class="muted" style="margin:0 0 12px">Each candidate gets this many questions, drawn at random from that part's bank, and this much time for each part. Changes apply to candidates who <strong>start after you save</strong>; anyone already in a part keeps what they were given.</p>
+              <div class="table-wrap">
+                <table class="len-table">
+                  <thead><tr><th>Part</th><th>Questions</th><th>Minutes</th><th>In the bank</th></tr></thead>
+                  <tbody>
+                    <tr><td><strong>Part 1</strong> <span class="muted">closed book</span></td>
+                      <td><input type="number" id="docs-p1-q" min="1" max="20" step="1" aria-label="Part 1 questions" /></td>
+                      <td><input type="number" id="docs-p1-min" min="5" max="240" step="5" aria-label="Part 1 minutes" /></td>
+                      <td id="docs-p1-pool" class="muted">—</td></tr>
+                    <tr><td><strong>Part 2</strong> <span class="muted">open book</span></td>
+                      <td><input type="number" id="docs-p2-q" min="1" max="20" step="1" aria-label="Part 2 questions" /></td>
+                      <td><input type="number" id="docs-p2-min" min="5" max="240" step="5" aria-label="Part 2 minutes" /></td>
+                      <td id="docs-p2-pool" class="muted">—</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px">
+                <button id="docs-length-save-btn" class="primary">Save length</button>
+                <span class="muted" id="docs-length-total"></span>
+              </div>
+              <div id="docs-length-status" class="notice hidden"></div>
+            </div>
+            <div class="card-body support-only">
               <p class="muted" style="margin:0 0 12px">Set how long the assessment runs. This takes effect for every candidate who <strong>starts after you save</strong>; anyone already mid-assessment keeps the time they were given. Allowed range is 5–240 minutes.</p>
               <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
                 <div><label class="field" for="duration-input">Minutes</label><input type="number" id="duration-input" min="5" max="240" step="5" style="max-width:140px" /></div>
@@ -191,7 +219,8 @@
           <section class="card">
             <div class="card-head"><h2>Resumes</h2></div>
             <div class="card-body">
-              <p class="muted" style="margin:0 0 14px">Upload up to 100 PDF resumes. Emails are extracted automatically and become the assessment allowlist. Every student takes the same single-part assessment (5 questions) drawn from the question bank.</p>
+              <p class="muted support-only" style="margin:0 0 14px">Upload up to 100 PDF resumes. Emails are extracted automatically and become the assessment allowlist. Every student takes the same single-part assessment (5 questions) drawn from the question bank.</p>
+              <p class="muted docs-only" style="margin:0 0 14px">Upload up to 100 PDF resumes. Emails are extracted automatically and become the assessment allowlist. Every student takes the two-part writing assessment, with questions drawn at random from the Part 1 and Part 2 banks.</p>
               <label class="field" for="upload-college">College for this batch <span class="muted" style="font-weight:400">(optional)</span></label>
               <select id="upload-college" style="max-width:320px;margin-bottom:12px"></select>
               <input type="file" id="resume-files" multiple accept="application/pdf" />
@@ -256,6 +285,6 @@
     </div>
   </div>
 
-  <script src="/admin/admin.js?v=49"></script>
+  <script src="/admin/admin.js?v=50"></script>
 </body>
 </html>

@@ -75,3 +75,79 @@ STALE_GRACE_MINUTES = "30"
 #   SESSION_SECRET   — random string used to sign candidate and admin
 #                       session cookies. Generate with e.g.
 #                       `openssl rand -hex 32`.
+
+
+# =====================================================================
+# Writers / documentation team hiring — a SEPARATE site from the same code.
+#   Deploy:  npx wrangler deploy --env docs
+#   URL:     https://talo-docs.<your-subdomain>.workers.dev
+# It has its own database, file storage, admin accounts and secrets, so nothing
+# is shared with the support site above. Nothing in wrangler.toml is inherited
+# by an environment except the code itself, so every binding is listed again.
+# See docs/WRITERS-SITE.md for the one-time setup.
+# =====================================================================
+[env.docs]
+name = "talo-docs"
+
+# The writers' site serves its own candidate page. `wrangler deploy --env docs` first
+# runs the build below, which copies public/ into dist-docs/ and puts the writers'
+# page (writers/index.html) in place of the support one. So each site only ever
+# ships its own candidate page.
+[env.docs.build]
+command = "node scripts/build-writers-assets.mjs"
+
+[env.docs.assets]
+directory = "./dist-docs"
+binding = "ASSETS"
+
+[[env.docs.d1_databases]]
+binding = "DB"
+database_name = "talo-docs-db"
+# Paste the id printed by `npx wrangler d1 create talo-docs-db` here.
+database_id = "REPLACE_WITH_TALO_DOCS_DB_ID"
+migrations_dir = "migrations-docs"
+
+[[env.docs.r2_buckets]]
+binding = "RESUMES"
+bucket_name = "talo-docs-resumes"
+
+[env.docs.triggers]
+crons = ["0 3 * * *"]
+
+[env.docs.vars]
+TEAM = "docs"
+OPENAI_MODEL = "gpt-4o-mini"
+# First manager for the writers' admin panel (paired with the ADMIN_PASSWORD secret
+# you set with --env docs). They add the rest of the writers' panel under Access.
+ADMIN_EMAIL = "parthiv.patel@hevodata.com"
+# No shared panel login on the writers site: everyone gets a named account.
+PANEL_EMAIL = ""
+# Two parts, each with its own clock. The manager can change minutes and question
+# counts under Resumes -> Assessment length; these are the starting values.
+PART1_DURATION_MINUTES = "30"
+PART2_DURATION_MINUTES = "45"
+DOCS_PART1_QUESTIONS = "4"
+DOCS_PART2_QUESTIONS = "2"
+# Default marks for a new question in each part, and the default word limit per answer.
+DOCS_PART1_MARKS = "5"
+DOCS_PART2_MARKS = "10"
+DOCS_WORD_LIMIT = "1000"
+DATA_RETENTION_DAYS = "15"
+COLLEGES = "College Name 1"
+STALE_GRACE_MINUTES = "30"
+ANALYSIS_BATCH_SIZE = "4"
+# Support-test settings the shared code still reads; not used by the writers' test.
+PART3_DURATION_MINUTES = "15"
+PART3_BUGGY_PER_STUDENT = "0"
+PART3_SCENARIO_PER_STUDENT = "0"
+SQL_QUESTIONS_PER_STUDENT = "0"
+PYTHON_QUESTIONS_PER_STUDENT = "0"
+DSA_QUESTIONS_PER_STUDENT = "0"
+SCENARIO_QUESTIONS_PER_STUDENT = "0"
+PART2_QUESTIONS_PER_STUDENT = "0"
+SQL_MARKS = "3"
+PYTHON_MARKS = "4"
+DSA_MARKS = "5"
+SCENARIO_MARKS = "5"
+PART2_MARKS = "10"
+PART3_MARKS = "5"

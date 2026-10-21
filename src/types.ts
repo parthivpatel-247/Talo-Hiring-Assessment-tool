@@ -39,6 +39,17 @@ export interface Env {
   RESUME_PARSE_CONCURRENCY?: string;
   // How many resume files to upload to R2 concurrently per batch (default 10).
   RESUME_UPLOAD_CONCURRENCY?: string;
+
+  // Which hiring team this deployment serves: unset/"support" = support hiring,
+  // "docs" = documentation/writers hiring (two-part writing test). See src/lib/team.ts.
+  TEAM?: string;
+  // Writers site only: questions per candidate in each part, default marks for a new
+  // question in each part, and the default word limit per answer.
+  DOCS_PART1_QUESTIONS?: string;
+  DOCS_PART2_QUESTIONS?: string;
+  DOCS_PART1_MARKS?: string;
+  DOCS_PART2_MARKS?: string;
+  DOCS_WORD_LIMIT?: string;
 }
 
 export interface Candidate {
@@ -77,8 +88,9 @@ export interface ParsedResume {
 
 export interface QuestionBankRow {
   id: string;
-  category: 'sql' | 'python' | 'dsa' | 'scenario';
+  category: 'sql' | 'python' | 'dsa' | 'scenario' | 'part1' | 'part2'; // part1/part2: writers site only
   prompt: string;
+  word_limit?: number | null; // writers site only
   reference_answer: string | null;
   sample_data: string | null;
   expected_output: string | null; // the correct result the reference produces on sample_data — grading matches against THIS, not query text

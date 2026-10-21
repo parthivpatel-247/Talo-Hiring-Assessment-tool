@@ -1,10 +1,11 @@
 node_modules/
 .venv/
 .wrangler/
-.dev.vars
+.dev.vars*
 *.log
 test-results/
 e2e-results/
 _to_delete/
 .DS_Store
 __pycache__/
+dist-docs/

@@ -1,5 +1,6 @@
 import type { Env } from '../types';
 import { getAttempt, nowIso } from './db';
+import { isDocs, getDocsConfig } from './team';
 
 /**
  * Server-truth timer with pause-on-disconnect / resume-on-reconnect.
@@ -47,6 +48,10 @@ export async function getAssessmentMinutes(env: Env): Promise<number> {
 }
 
 export async function durationSeconds(env: Env, part: Part): Promise<number> {
+  // Writers site: each part has its own clock, set in admin (defaults 30 / 45 min).
+  if (isDocs(env) && (part === 'part1' || part === 'part2')) {
+    return (await getDocsConfig(env))[part].minutes * 60;
+  }
   if (part === 'part1') return (await getAssessmentMinutes(env)) * 60;
   const minutes = part === 'part2' ? Number(env.PART2_DURATION_MINUTES) : Number(env.PART3_DURATION_MINUTES ?? 15);
   return minutes * 60;

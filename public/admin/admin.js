@@ -178,6 +178,11 @@ let filterCollege = 'all';
 let filterStatus = 'all';
 let sortBy = 'total';
 let ASSESSMENT_MINUTES = 60;
+// Writers site (TEAM = "docs"): two-part writing test. Set from /config.
+let IS_DOCS = false;
+let DOCS = null; // { part1: {questions, minutes, marks}, part2: {...}, wordLimit, pool: {part1, part2}, limits }
+const PART_LABELS = { part1: 'Part 1', part2: 'Part 2' };
+function categoryLabel(cat) { return IS_DOCS ? (PART_LABELS[cat] || cat) : String(cat || '').toUpperCase(); }
 
 // True if the manager has unsaved edits in the college editor (renamed/added/
 // removed a row but not yet clicked Save). A background refresh must not wipe them.
@@ -200,10 +205,25 @@ async function loadConfig({ preserveEdits = false } = {}) {
     COLLEGES = Array.isArray(cfg.colleges) ? cfg.colleges : [];
     if (Array.isArray(cfg.questionCategories) && cfg.questionCategories.length) CATEGORIES = cfg.questionCategories;
     if (cfg.assessmentMinutes) ASSESSMENT_MINUTES = cfg.assessmentMinutes;
+    IS_DOCS = cfg.team === 'docs';
+    DOCS = IS_DOCS ? cfg.docs : null;
   } catch { ROLE = 'manager'; COLLEGES = []; }
   IS_MANAGER = ROLE === 'manager';
   document.body.classList.toggle('member', !IS_MANAGER);
-  $('page-sub').textContent = IS_MANAGER ? 'Campus drive · Batch 2026 · Manager' : 'Campus drive · Batch 2026 · Panel member';
+  document.body.classList.toggle('team-docs', IS_DOCS);
+  const driveName = IS_DOCS ? 'Writers drive' : 'Campus drive';
+  $('page-sub').textContent = IS_MANAGER ? `${driveName} · Batch 2026 · Manager` : `${driveName} · Batch 2026 · Panel member`;
+  if (IS_DOCS) {
+    document.title = 'Talo Admin — Writers hiring';
+    VIEWS.overview.sub = 'Writers drive · Batch 2026';
+    VIEWS.questions.sub = 'Writing questions for Part 1 and Part 2';
+    const qp = $('q-prompt'); if (qp) qp.placeholder = 'e.g. Rewrite this error message so a first-time user understands what went wrong and what to do next: …';
+    renderDocsLength(preserveEdits);
+    const addBtn = $('q-add-btn'); if (addBtn && !addBtn.disabled) addBtn.textContent = 'Add question';
+    const note = $('analysis-note');
+    if (note && !analyzing && note.dataset.docsDefault !== '1') { note.dataset.docsDefault = '1'; note.textContent = 'AI reads each submitted answer as a whole and gives marks with a short reason. Export the results to CSV to review them.'; }
+    const th = document.querySelector('#question-table thead th:nth-child(4)'); if (th) th.textContent = 'Word limit';
+  }
   const who = document.querySelector('.who'); if (who) who.textContent = IS_MANAGER ? 'Manager' : 'Panel member';
   populateCollegeControls();
   if (!(preserveEdits && isCollegeEditorDirty())) renderCollegeEditor();
@@ -327,6 +347,34 @@ if ($('duration-save-btn')) $('duration-save-btn').addEventListener('click', asy
     $('duration-input').value = ASSESSMENT_MINUTES;
     setNotice('duration-status', `Saved — the assessment is now ${ASSESSMENT_MINUTES} minutes. Candidates who start from now get this length.`, 'ok');
   } catch (e) { setNotice('duration-status', `Error: ${e.message}`, 'warn'); }
+});
+
+// ---- Writers site: questions + minutes for each part (manager only) ----
+function renderDocsLength(preserveEdits) {
+  if (!DOCS) return;
+  const fields = [['docs-p1-q', DOCS.part1.questions], ['docs-p1-min', DOCS.part1.minutes], ['docs-p2-q', DOCS.part2.questions], ['docs-p2-min', DOCS.part2.minutes]];
+  const busy = preserveEdits && fields.some(([id, v]) => { const el = $(id); return el && (el === document.activeElement || Number(el.value) !== v) && el.value !== ''; });
+  if (!busy) fields.forEach(([id, v]) => { const el = $(id); if (el) el.value = v; });
+  for (const p of ['part1', 'part2']) {
+    const cell = $(p === 'part1' ? 'docs-p1-pool' : 'docs-p2-pool'); if (!cell) continue;
+    const have = (DOCS.pool && DOCS.pool[p]) || 0, need = DOCS[p].questions;
+    cell.innerHTML = have >= need
+      ? `<span class="pool-ok">${have} active</span>`
+      : `<span class="pool-low">${have} active · needs at least ${need}</span>`;
+  }
+  const tot = $('docs-length-total');
+  if (tot) tot.textContent = `Total time per candidate: ${DOCS.part1.minutes + DOCS.part2.minutes} min`;
+  ['docs-p1-q', 'docs-p1-min', 'docs-p2-q', 'docs-p2-min'].forEach((id) => { const el = $(id); if (el) el.disabled = !IS_MANAGER; });
+  const btn = $('docs-length-save-btn'); if (btn) btn.disabled = !IS_MANAGER;
+}
+if ($('docs-length-save-btn')) $('docs-length-save-btn').addEventListener('click', async () => {
+  const v = (id) => Math.round(Number($(id).value));
+  const body = { part1: { questions: v('docs-p1-q'), minutes: v('docs-p1-min') }, part2: { questions: v('docs-p2-q'), minutes: v('docs-p2-min') } };
+  try {
+    const r = await api('/api/admin/assessment-length', { method: 'POST', body: JSON.stringify(body) });
+    DOCS = r.docs; renderDocsLength(false);
+    setNotice('docs-length-status', `Saved. Part 1: ${DOCS.part1.questions} questions in ${DOCS.part1.minutes} min. Part 2: ${DOCS.part2.questions} questions in ${DOCS.part2.minutes} min. Candidates who start from now get this.`, 'ok');
+  } catch (e) { setNotice('docs-length-status', e.message, 'warn'); }
 });
 
 /* ---- Members / access (manager) ---- */
@@ -533,16 +581,20 @@ $('q-add-btn').addEventListener('click', async () => {
   const referenceAnswer = $('q-answer').value.trim();
   const marksRaw = $('q-marks').value.trim();
   if (!prompt) { setNotice('qform-status', 'Enter the question text.', 'warn'); return; }
-  const btn = $('q-add-btn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Enriching…';
+  const btn = $('q-add-btn'); btn.disabled = true; btn.innerHTML = IS_DOCS ? '<span class="spinner"></span> Adding…' : '<span class="spinner"></span> Enriching…';
   try {
-    const body = { category, prompt, referenceAnswer, difficulty: $('q-difficulty').value };
+    const body = IS_DOCS ? { category, prompt } : { category, prompt, referenceAnswer, difficulty: $('q-difficulty').value };
     if (marksRaw) body.marks = Number(marksRaw);
+    if (IS_DOCS && $('q-wordlimit').value.trim()) body.wordLimit = Number($('q-wordlimit').value.trim());
     const r = await api('/api/admin/questions', { method: 'POST', body: JSON.stringify(body) });
-    setNotice('qform-status', r.enrichError ? `Added, but AI enrichment failed (${r.enrichError}).` : 'Added and enriched.', r.enrichError ? 'warn' : 'ok');
+    if (IS_DOCS) setNotice('qform-status', `Added to ${categoryLabel(category)}.`, 'ok');
+    else setNotice('qform-status', r.enrichError ? `Added, but AI enrichment failed (${r.enrichError}).` : 'Added and enriched.', r.enrichError ? 'warn' : 'ok');
     $('q-prompt').value = ''; $('q-answer').value = ''; $('q-marks').value = '';
+    if ($('q-wordlimit')) $('q-wordlimit').value = '';
     await refreshQuestions();
+    if (IS_DOCS) loadConfig({ preserveEdits: true }); // refresh the "In the bank" counts
   } catch (err) { setNotice('qform-status', `Error: ${err.message}`, 'warn'); }
-  finally { btn.disabled = false; btn.textContent = 'Add question & enrich with AI'; }
+  finally { btn.disabled = false; btn.textContent = IS_DOCS ? 'Add question' : 'Add question & enrich with AI'; }
 });
 let enrichingAll = false;
 $('enrich-all-btn').addEventListener('click', async () => {
@@ -652,10 +704,10 @@ async function refreshQuestions() {
   if (showingDeletedQuestions) {
     // Deleted bin: show when it was removed, with a Restore action.
     tbody.innerHTML = questions.map((q) => `<tr class="deleted-row">
-        <td><span class="badge muted">${q.category}</span></td>
+        <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span></td>
         <td>${escapeHtml(q.prompt).slice(0, 96)}${q.prompt.length > 96 ? '…' : ''}</td>
         <td class="tnum">${q.marks}</td>
-        <td>${q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—'}</td>
+        <td>${questionExtraCell(q)}</td>
         <td><span class="pill muted">deleted</span></td>
         <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button><button class="primary sm" data-qrestore="${q.id}">Restore</button></div></td>
       </tr>`).join('');
@@ -669,19 +721,19 @@ async function refreshQuestions() {
   }
 
   tbody.innerHTML = questions.map((q) => `<tr>
-      <td><span class="badge muted">${q.category}</span></td>
+      <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span></td>
       <td>${escapeHtml(q.prompt).slice(0, 96)}${q.prompt.length > 96 ? '…' : ''}</td>
       <td class="tnum">${q.marks}</td>
-      <td>${q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—'}</td>
+      <td>${questionExtraCell(q)}</td>
       <td>${q.active ? '<span class="pill ok">active</span>' : '<span class="pill muted">off</span>'}</td>
       <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button><button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
     </tr>`).join('');
-  tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); }));
+  tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); if (IS_DOCS) loadConfig({ preserveEdits: true }); }));
   wireQuestionDetail(tbody, questions);
   tbody.querySelectorAll('[data-qdel]').forEach((b) => b.addEventListener('click', async () => {
     const q = questions.find((x) => x.id === b.dataset.qdel);
     const preview = (q?.prompt || '').replace(/\s+/g, ' ').slice(0, 90);
-    if (!confirm(`Delete this ${q?.category?.toUpperCase() || ''} question?\n\n"${preview}…"\n\nIt moves to the deleted bin and is no longer assigned to candidates. You can restore it anytime from "View deleted".`)) return;
+    if (!confirm(`Delete this ${q ? categoryLabel(q.category) : ''} question?\n\n"${preview}…"\n\nIt moves to the deleted bin and is no longer assigned to candidates. You can restore it anytime from "View deleted".`)) return;
     try { await api(`/api/admin/questions/${b.dataset.qdel}`, { method: 'DELETE' }); await refreshQuestions(); }
     catch (e) { alert('Delete failed: ' + e.message); }
   }));
@@ -757,7 +809,18 @@ if (part3SeedBtn) part3SeedBtn.addEventListener('click', async () => {
 
 // Detail markup for a question, shown inline (expanded row) right under the
 // question in the Question bank — not on the Overview page.
+// 4th column of the question table: sample data (support) or word limit (writers).
+function questionExtraCell(q) {
+  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${q.word_limit}</span>` : `<span class="muted">default (${DOCS ? DOCS.wordLimit : 1000})</span>`;
+  return q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—';
+}
 function questionDetailHtml(q) {
+  if (IS_DOCS) {
+    return `<div class="qdetail">
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${q.marks} marks · word limit ${q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default')}</h3>
+    <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
+  </div>`;
+  }
   return `<div class="qdetail">
     <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(q.category.toUpperCase())} · ${q.marks} marks</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
@@ -867,8 +930,10 @@ function renderCandidateTable() {
       <td><div class="cand"><span class="avatar" style="background:${avColor(c.id)}">${escapeHtml(initials(c.name, c.email))}</span><div><div class="nm">${escapeHtml(nm)}</div><div class="em">${escapeHtml(em)}</div></div></div></td>
       <td>${collegeCell(c)}</td>
       <td><span class="pill ${statusPill(c.status)}">${escapeHtml(statusLabel(c.status))}</span>${flags}</td>
-      <td>${c.part1.graded ? `<span class="score">${c.part1.awarded}<small>/${c.part1.max}</small></span>` : '<span class="muted">—</span>'}</td>
-      <td>${c.part1.graded ? `<span class="score">${c.totalAwarded}<small>/${c.totalMax}</small></span>` : '<span class="muted">—</span>'}</td>
+      <td>${IS_DOCS
+        ? (c.part1.graded || c.part2.graded ? `<span class="score" title="Part 1">${c.part1.awarded}<small>/${c.part1.max}</small></span> <span class="score" title="Part 2">${c.part2.awarded}<small>/${c.part2.max}</small></span>` : '<span class="muted">—</span>')
+        : (c.part1.graded ? `<span class="score">${c.part1.awarded}<small>/${c.part1.max}</small></span>` : '<span class="muted">—</span>')}</td>
+      <td>${c.part1.graded || (IS_DOCS && c.part2.graded) ? `<span class="score">${c.totalAwarded}<small>/${c.totalMax}</small></span>` : '<span class="muted">—</span>'}</td>
       <td>
         <div class="rowmenu">
           <button class="secondary sm" data-view="${c.id}">${svg('eye', 14)} View</button>
@@ -917,7 +982,7 @@ function wireCandidateRows(tb) {
     catch (e) { alert(e.message); }
   }));
   tb.querySelectorAll('[data-retake]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Reset this candidate to retake? Their answers will be cleared and questions reshuffled.')) return; await api(`/api/admin/candidates/${b.dataset.retake}/retake`, { method: 'POST' }); await refreshCandidates(); }));
-  tb.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Re-open this candidate\'s test? They keep the SAME questions, and every answer they already typed is restored. Use this when a connection drop submitted them early.')) return; await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); await refreshCandidates(); }));
+  tb.querySelectorAll('[data-resume]').forEach((b) => b.addEventListener('click', async () => { if (!confirm(IS_DOCS ? 'Re-open the part this candidate was cut off in? They keep the SAME questions and every saved answer, with a fresh clock for that part.' : 'Re-open this candidate\'s test? They keep the SAME questions, and every answer they already typed is restored. Use this when a connection drop submitted them early.')) return; const r = await api(`/api/admin/candidates/${b.dataset.resume}/resume`, { method: 'POST' }); if (IS_DOCS && r && r.message) alert(r.message); await refreshCandidates(); }));
   tb.querySelectorAll('[data-toggle-access]').forEach((b) => b.addEventListener('click', async () => { const c = allCandidates.find((x) => x.id === b.dataset.toggleAccess); await api(`/api/admin/candidates/${b.dataset.toggleAccess}/${c.accessRevoked ? 'unrevoke' : 'revoke'}`, { method: 'POST' }); await refreshCandidates(); }));
   tb.querySelectorAll('[data-shortlist]').forEach((b) => b.addEventListener('click', async () => { b.innerHTML = '<span class="spinner"></span> Shortlisting…'; await api(`/api/admin/candidates/${b.dataset.shortlist}/shortlist`, { method: 'POST' }); await refreshCandidates(); }));
   tb.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => { if (!confirm('Reject this candidate?')) return; await api(`/api/admin/candidates/${b.dataset.reject}/reject`, { method: 'POST' }); await refreshCandidates(); }));
@@ -1048,6 +1113,19 @@ const STATUS_LABELS = {
 };
 function statusLabel(s) { return STATUS_LABELS[s] || (s || '').replace(/_/g, ' '); }
 
+function countWordsAdmin(t) { const w = (t || '').trim(); return w ? w.split(/\s+/).length : 0; }
+// Writers site: Part 1 and Part 2 answers, each with its integrity notes.
+function docsAnswerSections(data, answerBlock, pasteCount, pasteMax) {
+  const at = data.attempt || {};
+  const sum = (rows) => rows.reduce((s, a) => s + (a.ai_score != null ? Number(a.ai_score) : 0), 0);
+  const max = (rows) => rows.reduce((s, a) => s + (Number(a.max_marks) || 0), 0);
+  const head = (label, rows) => rows.some((a) => a.ai_score != null) ? `${label} <span class="pill ok" style="margin-left:6px">${sum(rows)}/${max(rows)}</span>` : label;
+  return `<div class="detail-block"><h3>${head('Part 1 — closed book', data.part1Answers)}</h3>${data.part1Answers.map(answerBlock).join('') || '<p class="muted">Not started yet.</p>'}
+      <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${at.part1_tab_switch_count ?? 0}</strong></p></div>
+    <div class="detail-block"><h3>${head('Part 2 — open book', data.part2Answers)}</h3>${data.part2Answers.map(answerBlock).join('') || '<p class="muted">Not started yet.</p>'}
+      <p class="muted" style="margin-top:4px">Tab switches: <strong>${at.part2_tab_switch_count ?? 0}</strong> · Pastes: <strong>${pasteCount}</strong>${pasteCount ? ` (largest ${pasteMax} characters)` : ''} — allowed in Part 2, shown for context.</p></div>`;
+}
+
 async function showDetail(id) {
   const data = await api(`/api/admin/candidates/${id}`);
   showView('overview');
@@ -1068,7 +1146,7 @@ async function showDetail(id) {
   };
   const answerBlock = (a, i) => `
     <div class="question">
-      <div class="qhead"><span class="qnum">Q${i + 1}</span>${a.category ? `<span class="badge muted">${escapeHtml(a.category)}</span>` : ''}${a.based_on_skill ? `<span class="badge">${escapeHtml(a.based_on_skill)}</span>` : ''}
+      <div class="qhead"><span class="qnum">Q${i + 1}</span>${IS_DOCS ? `<span class="badge muted">${countWordsAdmin(a.answer_text)} words</span>` : `${a.category ? `<span class="badge muted">${escapeHtml(a.category)}</span>` : ''}${a.based_on_skill ? `<span class="badge">${escapeHtml(a.based_on_skill)}</span>` : ''}`}
         <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${a.ai_score}/${a.max_marks}` : 'not graded'}</span></div>
       <p class="qprompt"><strong>${escapeHtml(a.prompt)}</strong></p>
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
@@ -1100,9 +1178,9 @@ async function showDetail(id) {
         <div class="kv"><span class="k">Status</span><span><span class="pill ${statusPill(c.status)}">${escapeHtml(statusLabel(c.status))}</span></span></div>
         <div class="kv"><span class="k">Skills</span><span>${(c.skills || []).map(escapeHtml).join(', ') || '—'}</span></div>
         <div class="kv"><span class="k">Projects</span><span>${(c.projects || []).map((p) => escapeHtml(p.name)).join(', ') || '—'}</span></div>
-        <div class="detail-block"><h3>Assessment answers — closed book</h3>${data.part1Answers.map(answerBlock).join('') || '<p class="muted">No answers yet (latest attempt).</p>'}
-          <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${data.attempt?.part1_tab_switch_count ?? 0}</strong></p></div>
-        <div class="detail-block">
+        ${IS_DOCS ? docsAnswerSections(data, answerBlock, pasteCount, pasteMax) : `<div class="detail-block"><h3>Assessment answers — closed book</h3>${data.part1Answers.map(answerBlock).join('') || '<p class="muted">No answers yet (latest attempt).</p>'}
+          <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${data.attempt?.part1_tab_switch_count ?? 0}</strong></p></div>`}
+        <div class="detail-block support-only">
           <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Interview guide <button class="secondary sm" id="gen-interview-btn">${data.interviewQuestions.length ? 'Regenerate' : 'Generate'}</button></h3>
           <p class="muted" style="margin:0 0 12px;font-size:12.5px">Personalised questions from this candidate's own projects &amp; skills — why they made a choice and what would work better — each with a model answer so the interviewer has clarity. Built from the latest attempt.</p>
           ${data.interviewQuestions.length ? data.interviewQuestions.map((q, i) => `

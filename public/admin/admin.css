@@ -315,3 +315,16 @@ tbody tr { transition: background-color .15s ease, opacity .15s ease; }
 .cand-preview .ex-label { flex: 0 0 auto; min-width: 92px; font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding-top: 2px; }
 .cand-preview .ex-val { font-family: var(--mono, monospace); font-size: .82rem; background: var(--code-bg, #0b1220); color: var(--code-ink, #e2e8f0); padding: 2px 8px; border-radius: 6px; word-break: break-word; }
 .cand-preview .ex-exp { color: var(--ink-soft, var(--ink)); line-height: 1.55; }
+
+/* ---- Writers site (TEAM = "docs") ---- */
+/* The same admin page serves both sites; body.team-docs (set from /config) picks
+   which controls show. Support never sees .docs-only, writers never see .support-only. */
+body:not(.team-docs) .docs-only { display: none !important; }
+body.team-docs .support-only { display: none !important; }
+.team-tag { margin: -6px 8px 6px; padding: 5px 10px; border-radius: 8px; font-size: 11.5px; font-weight: 600; text-align: center;
+  background: color-mix(in srgb, var(--ok) 14%, transparent); color: var(--ok); }
+.len-table input { max-width: 110px; }
+.len-table td { vertical-align: middle; }
+.pool-ok { color: var(--ok); font-weight: 600; }
+.pool-low { color: var(--danger); font-weight: 600; }
+body.team-docs .badge { white-space: nowrap; }

@@ -377,3 +377,6 @@ button:active:not(:disabled) { transform: translateY(1px); }
 .consent:hover { border-color: var(--accent, #6366f1); }
 .consent input[type="checkbox"] { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; cursor: pointer; accent-color: var(--accent, #6366f1); }
 .consent span { flex: 1; }
+
+/* Writers' site (body data-team="docs"): answers are prose, so use the reading font. */
+body[data-team="docs"] .answerbox { font-family: inherit; font-size: 0.95rem; line-height: 1.6; }

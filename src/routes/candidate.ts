@@ -3,6 +3,8 @@ import { createCandidateSession, getCandidateIdFromRequest, json, withCookie } f
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, ensureQuestionHintCol, ensureQuestionDeletedCol } from '../lib/db';
 import { assignPart1Questions, assignPart3Questions } from '../lib/randomize';
 import { startPart, heartbeat, markSubmitted, logTabSwitch, durationSeconds } from '../lib/timer';
+import { isDocs } from '../lib/team';
+import { handleDocsCandidateRoute } from './candidate-docs';
 
 /**
  * CANDIDATE API — privacy rule: this endpoint set NEVER returns marks, scores,
@@ -51,6 +53,9 @@ export async function handleCandidateRoute(
   ctx: ExecutionContext,
   path: string
 ): Promise<Response> {
+  // The writers site (TEAM = "docs") has its own two-part flow; the support test below is unchanged.
+  if (isDocs(env)) return handleDocsCandidateRoute(request, env, ctx, path);
+
   // --- Login: email must be on the allowlist (built from uploaded resumes). No OTP, by design. ---
   if (path === '/api/candidate/login' && request.method === 'POST') {
     const { email } = await request.json<{ email: string }>();

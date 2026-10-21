@@ -11,6 +11,8 @@ import {
 import { part1Summary, part2Summary, part3Summary, cohortSummaries, EMPTY_SUMMARY } from '../lib/scoring';
 import { ensurePart3Schema, seedDefaultPart3 } from '../lib/part3bank';
 import { getAssessmentMinutes } from '../lib/timer';
+import { isDocs } from '../lib/team';
+import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
 
 const PROCESS_BATCH_LIMIT = 20;
 
@@ -246,8 +248,18 @@ export async function handleAdminRoute(
   // Indexes + rotation tables (runs once per Worker instance, then is a no-op).
   await ensurePerfSchema(env);
 
+  // Writers site (TEAM = "docs"): the routes that differ for its two-part writing
+  // test are handled in admin-docs.ts; everything else below is shared.
+  if (isDocs(env)) {
+    const docsRes = await handleDocsAdminRoute(request, env, path, role);
+    if (docsRes) return docsRes;
+  }
+
   // Who am I + college list — used by the frontend to tailor the UI (both roles).
   if (path === '/api/admin/config' && request.method === 'GET') {
+    if (isDocs(env)) {
+      return json({ role, colleges: await getColleges(env), ...(await docsAdminConfig(env)) });
+    }
     return json({
       role,
       colleges: await getColleges(env),
@@ -642,7 +654,7 @@ export async function handleAdminRoute(
     const q = (await env.DB.prepare('SELECT * FROM question_bank WHERE id = ?').bind(enrichMatch[1]).first()) as QuestionBankRow | null;
     if (!q) return json({ error: 'Not found' }, { status: 404 });
     try {
-      const e = await enrichQuestion(env, q.category, q.prompt, q.reference_answer);
+      const e = await enrichQuestion(env, q.category as 'sql' | 'python' | 'dsa' | 'scenario', q.prompt, q.reference_answer);
       await env.DB.prepare('UPDATE question_bank SET sample_data = ?, expected_output = ?, rubric = ?, hint = ?, checkpoints = ? WHERE id = ?')
         .bind(e.sample_data, e.expected_output, e.rubric, e.hint, e.checkpoints, q.id)
         .run();
@@ -671,7 +683,7 @@ export async function handleAdminRoute(
     const results: { id: string; ok: boolean; error?: string }[] = [];
     for (const q of batch) {
       try {
-        const e = await enrichQuestion(env, q.category, q.prompt, q.reference_answer);
+        const e = await enrichQuestion(env, q.category as 'sql' | 'python' | 'dsa' | 'scenario', q.prompt, q.reference_answer);
         await env.DB.prepare('UPDATE question_bank SET sample_data = ?, expected_output = ?, rubric = ?, hint = ?, checkpoints = ? WHERE id = ?')
           .bind(e.sample_data, e.expected_output, e.rubric, e.hint, e.checkpoints, q.id)
           .run();
@@ -999,7 +1011,7 @@ export async function handleAdminRoute(
 
   // ---- Batch analysis: grade every submitted candidate, a few per call ----
   if (path === '/api/admin/analysis/status' && request.method === 'GET') {
-    const autoClosed = await closeTimedOutAttempts(env); // self-heal abandoned attempts so grading isn't blocked
+    const autoClosed = await closeTimedOut(env); // self-heal abandoned attempts so grading isn't blocked
     const counts = await env.DB.prepare(
       `SELECT
          COUNT(*) as total,
@@ -1023,7 +1035,7 @@ export async function handleAdminRoute(
   }
 
   if (path === '/api/admin/analysis/run' && request.method === 'POST') {
-    await closeTimedOutAttempts(env);
+    await closeTimedOut(env);
     await ensureGradingClaimCols(env);
     // Grading is parallel on THREE levels for speed on a 100-student cohort:
     //  1) each candidate grades its 5 questions concurrently (in gradeCandidate),
@@ -1049,7 +1061,7 @@ export async function handleAdminRoute(
 
     const results = await mapPool(batch, conc, async (c) => {
       try {
-        await gradeCandidate(env, c.id);
+        await gradeAny(env, c.id);
         await env.DB.prepare("UPDATE candidates SET status = 'evaluated', grading_claim = NULL WHERE id = ?").bind(c.id).run();
         return { id: c.id, name: c.name, ok: true as const };
       } catch (err) {
@@ -1068,7 +1080,7 @@ export async function handleAdminRoute(
   const gradeOneMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/grade$/);
   if (gradeOneMatch && request.method === 'POST') {
     const id = gradeOneMatch[1];
-    await gradeCandidate(env, id);
+    await gradeAny(env, id);
     await env.DB.prepare("UPDATE candidates SET status = 'evaluated' WHERE id = ? AND status NOT IN ('shortlisted','rejected')").bind(id).run();
     await audit(env, 'grade', id);
     return json({ ok: true });
@@ -1225,6 +1237,15 @@ export async function handleAdminRoute(
   }
 
   return json({ error: 'Not found' }, { status: 404 });
+}
+
+/** Grade one candidate with the grader for this site's test (writers or support). */
+async function gradeAny(env: Env, candidateId: string): Promise<void> {
+  return isDocs(env) ? gradeDocsCandidate(env, candidateId) : gradeCandidate(env, candidateId);
+}
+/** Close abandoned attempts using the rules for this site's test (writers or support). */
+async function closeTimedOut(env: Env): Promise<number> {
+  return isDocs(env) ? closeTimedOutDocs(env) : closeTimedOutAttempts(env);
 }
 
 /** Grade all of one candidate's Part 1 and Part 2 answers with partial credit + deduction reasons. */

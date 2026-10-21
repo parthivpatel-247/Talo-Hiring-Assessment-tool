@@ -6,6 +6,12 @@ const $ = (id) => document.getElementById(id);
 const show = (id) => $(id).classList.remove('hidden');
 const hide = (id) => $(id).classList.add('hidden');
 const WORD_LIMIT = 1000;
+// Which site this page belongs to. The writers' site (two-part writing test) serves
+// a page with <body data-team="docs">; the support test's page has no team attribute.
+const TEAM = document.body && document.body.dataset.team === 'docs' ? 'docs' : 'support';
+const IS_DOCS = TEAM === 'docs';
+// Per-question word limit (writers' questions carry their own); support uses WORD_LIMIT.
+function limitFor(q) { return (q && Number(q.wordLimit) > 0) ? Number(q.wordLimit) : WORD_LIMIT; }
 
 // Theme toggle
 (function initTheme() {
@@ -30,7 +36,14 @@ const WORD_LIMIT = 1000;
     setAll('js-grace', RETURN_GRACE_SECONDS);
     fetch('/api/candidate/config', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((cfg) => { if (cfg && cfg.assessmentMinutes) setAll('js-min', cfg.assessmentMinutes); })
+      .then((cfg) => {
+        if (cfg && cfg.assessmentMinutes) setAll('js-min', cfg.assessmentMinutes);
+        if (IS_DOCS && cfg && cfg.parts) {
+          setAll('js-p1q', cfg.parts.part1.questions); setAll('js-p1min', cfg.parts.part1.minutes);
+          setAll('js-p2q', cfg.parts.part2.questions); setAll('js-p2min', cfg.parts.part2.minutes);
+          setAll('js-total', cfg.parts.part1.minutes + cfg.parts.part2.minutes);
+        }
+      })
       .catch(() => {});
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', run);
@@ -208,6 +221,7 @@ async function doLogin() {
 async function routeToStage(name) {
   const { attempt } = await api('/api/candidate/me');
   hide('login-section');
+  if (IS_DOCS) return routeDocs(attempt, name);
   // Single-part assessment. Fully done → terminal screen.
   if (attempt?.part1_submitted_at) { show('done-section'); return; }
   // Anti-cheat: a fresh page load while the timed test is running ends it — a
@@ -274,7 +288,7 @@ function makePart(part) {
     // Part 1 shows SQL/Python (useful context); Part 2 is theory — no language label;
     // Part 3 shows the question kind (buggy-code fix vs break-fix scenario).
     let badge = '';
-    if (part === 'part1') {
+    if (part === 'part1' && !IS_DOCS) {
       badge = `<span class="badge muted">${escapeHtml((q.category || '').toUpperCase())}</span>`;
     } else if (part === 'part3') {
       badge = `<span class="badge">${q.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'}</span>`;
@@ -298,9 +312,10 @@ function makePart(part) {
 
   function updateWordCount() {
     const n = countWords(answer.value);
-    wc.textContent = `${n} / ${WORD_LIMIT} words`;
-    wc.classList.toggle('near', n >= WORD_LIMIT - 30 && n < WORD_LIMIT);
-    wc.classList.toggle('at', n >= WORD_LIMIT);
+    const limit = limitFor(current());
+    wc.textContent = `${n} / ${limit} words`;
+    wc.classList.toggle('near', n >= limit - 30 && n < limit);
+    wc.classList.toggle('at', n >= limit);
   }
 
   function goTo(i) {
@@ -323,7 +338,7 @@ function makePart(part) {
       .catch(() => { lastSaved[q.id] = undefined; });
   }
   answer.addEventListener('input', (e) => {
-    const clamped = clampWords(answer.value, WORD_LIMIT);
+    const clamped = clampWords(answer.value, limitFor(current()));
     if (clamped !== answer.value) answer.value = clamped;
     const q = current();
     state.answers[q.id] = answer.value;
@@ -347,7 +362,7 @@ function makePart(part) {
   // Code-friendly editing for Part 1 (SQL/Python) and Part 3 (may include code
   // in a fix): Tab inserts spaces, Enter keeps indentation, a line ending in ':'
   // adds one more level.
-  if (part === 'part1' || part === 'part3') {
+  if ((part === 'part1' || part === 'part3') && !IS_DOCS) {
     answer.addEventListener('keydown', (e) => {
       if (e.key === 'Tab' && !e.shiftKey) {
         // Plain Tab indents; Shift+Tab is left alone so keyboard users can move
@@ -372,7 +387,20 @@ function makePart(part) {
   // Part 2: pasting (and drag-drop) is BLOCKED — candidates must type their
   // answer in their own words. Every blocked attempt is recorded for the admin,
   // but nothing is inserted into the answer, so no pasted text can enter.
-  if (part === 'part2') {
+  if (part === 'part2' && IS_DOCS) {
+    // Writers' Part 2 is open book: pasting is ALLOWED. Each paste is recorded (size
+    // and question) for the hiring team, and counted in the answer's metrics.
+    answer.addEventListener('paste', (e) => {
+      let len = 0;
+      try { len = ((e.clipboardData || window.clipboardData).getData('text') || '').length; } catch (_) {}
+      const q = current();
+      if (!q) return;
+      const m = met(q.id);
+      touchTime(m);
+      m.pasted += len; m.pastes += 1; m.maxPaste = Math.max(m.maxPaste, len);
+      logSwitch('part2', 'paste', { chars: len, questionId: q.id });
+    });
+  } else if (part === 'part2') {
     answer.addEventListener('paste', (e) => {
       e.preventDefault();
       let len = 0;
@@ -481,6 +509,8 @@ function makePart(part) {
 }
 
 const P1 = makePart('part1');
+// Writers' site only: the open-book Part 2 (its elements exist only on that page).
+const P2 = IS_DOCS ? makePart('part2') : null;
 
 // The single closed-book, locked-down part on screen right now, or null.
 function activeLockedPart() {
@@ -556,10 +586,12 @@ $('part1-fullscreen-btn').addEventListener('click', () => beginPart('part1', fal
 async function submitPart1Clicked() {
   const answered = Object.values(P1.state.answers).filter((a) => a && a.trim()).length;
   lockdownArmed = false; // the confirm dialog blurs the window — don't count it as a violation
-  if (answered < P1.state.questions.length && !confirm(`You've answered ${answered} of ${P1.state.questions.length}. Submit your assessment anyway?`)) {
+  if (answered < P1.state.questions.length && !confirm(`You've answered ${answered} of ${P1.state.questions.length}. Submit ${IS_DOCS ? 'Part 1' : 'your assessment'} anyway?`)) {
     lockdownArmed = true; return;
   }
-  if (!confirm('Submit your assessment? You will not be able to change your answers after this.')) { lockdownArmed = true; return; }
+  if (!confirm(IS_DOCS
+    ? 'Submit Part 1? You will not be able to change your Part 1 answers after this. Part 2 starts when you are ready.'
+    : 'Submit your assessment? You will not be able to change your answers after this.')) { lockdownArmed = true; return; }
   await finishPart1();
 }
 $('part1-submit-btn').addEventListener('click', submitPart1Clicked);
@@ -573,9 +605,11 @@ async function finishPart1() {
   P1.stop();
   await api('/api/candidate/part1/submit', { method: 'POST' }).catch(() => {});
   document.body.classList.remove('assessment');
-  hide('part1-section'); show('done-section');
+  hide('part1-section');
   $('timer').classList.add('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  if (IS_DOCS) { showBetween(P1.state.remaining != null && P1.state.remaining <= 0); return; }
+  show('done-section');
 }
 
 // (Part 2 and Part 3 are retired — the assessment is a single locked-down part.)
@@ -705,10 +739,17 @@ async function closeAssessment(message) {
   P1.state.submitted = true;
   try { await P1.saveCurrent(); } catch {}
   P1.stop();
-  await api('/api/candidate/part1/submit', { method: 'POST' }).catch(() => {});
+  if (IS_DOCS) {
+    // Writers' test: closing early ends BOTH parts (saved answers are kept).
+    if (P2) { P2.state.submitted = true; try { await P2.saveCurrent(); } catch {} P2.stop(); }
+    await api('/api/candidate/part2/submit', { method: 'POST' }).catch(() => {});
+  } else {
+    await api('/api/candidate/part1/submit', { method: 'POST' }).catch(() => {});
+  }
   document.body.classList.remove('assessment');
   removeOverlay();
   ['overview-section', 'part1-section'].forEach(hide);
+  if (IS_DOCS) ['between-section', 'part2-section'].forEach(hide);
   $('timer').classList.add('hidden');
   if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   const p = document.querySelector('#done-section p');
@@ -787,6 +828,85 @@ function showAwayCountdown(seconds) {
 function updateAwayCountdown(seconds) {
   const el = document.getElementById('away-count');
   if (el) el.textContent = seconds;
+}
+
+// ---- Writers' site: two parts (Part 1 closes, then Part 2 opens) ----
+// Where to put a signed-in writer on page load.
+async function routeDocs(attempt, name) {
+  const a = attempt || {};
+  if (a.part2_submitted_at) { show('done-section'); return; }
+  // A fresh page load while a part is running ends the assessment (same rule as
+  // the support test). Between the parts nothing is running, so a reload is fine.
+  if ((a.part1_started_at && !a.part1_submitted_at) || a.part2_started_at) {
+    await closeAssessment('Your assessment was closed because the page was reloaded while a timed part was in progress. Any answers you had saved have been submitted. If you believe this was a mistake, contact the assessment coordinator.');
+    return;
+  }
+  if (a.part1_submitted_at) { showBetween(false); return; }
+  $('overview-name').textContent = name ? `, ${name.split(' ')[0]}` : '';
+  show('overview-section');
+  P1.prefetch();
+}
+
+function showBetween(timeUp) {
+  ['overview-section', 'part1-section', 'part2-section'].forEach(hide);
+  if (timeUp) {
+    $('between-title').textContent = "Time's up for Part 1";
+    $('between-note').textContent = 'Your saved Part 1 answers have been submitted and can no longer be changed.';
+  }
+  show('between-section');
+}
+
+let p2Starting = false;
+async function beginPart2() {
+  if (p2Starting || !P2) return;
+  p2Starting = true;
+  const btn = $('start-part2-btn'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+  $('between-error').textContent = '';
+  try {
+    const { durationSeconds, questions } = await api('/api/candidate/part2/start', { method: 'POST' });
+    hide('between-section'); show('part2-section');
+    document.body.classList.add('assessment'); // wide two-column layout, as in Part 1
+    P2.state.remaining = durationSeconds;
+    updateTimer(durationSeconds);
+    await P2.load(questions);
+    P2.startAutosave();
+    currentPart = { ctrl: P2, onExpire: finishPart2 };
+    P2.startHeartbeat(() => finishPart2());
+  } catch (err) {
+    $('between-error').textContent = `Could not start Part 2: ${err.message}. Please tell the invigilator.`;
+    btn.disabled = false; btn.textContent = 'Start Part 2';
+  } finally { p2Starting = false; }
+}
+
+async function submitPart2Clicked() {
+  const answered = Object.values(P2.state.answers).filter((a) => a && a.trim()).length;
+  if (answered < P2.state.questions.length && !confirm(`You've answered ${answered} of ${P2.state.questions.length} Part 2 questions. Submit your assessment anyway?`)) return;
+  if (!confirm('Submit your assessment? You will not be able to change your answers after this.')) return;
+  await finishPart2();
+}
+
+async function finishPart2() {
+  if (!P2 || P2.state.submitted) return;
+  currentPart = null; offline = false; removeOfflineOverlay();
+  P2.state.submitted = true;
+  await P2.saveCurrent();
+  P2.flushMetrics();
+  P2.stop();
+  await api('/api/candidate/part2/submit', { method: 'POST' }).catch(() => {});
+  document.body.classList.remove('assessment');
+  hide('part2-section'); show('done-section');
+  $('timer').classList.add('hidden');
+}
+
+if (IS_DOCS) {
+  $('start-part2-btn').addEventListener('click', beginPart2);
+  $('part2-submit-btn').addEventListener('click', submitPart2Clicked);
+  $('part2-save').addEventListener('click', async () => { await P2.saveCurrent(); flashSavedTag('part2'); });
+  // Part 2 is open book: leaving the tab is allowed, never blocked, and recorded.
+  const part2Running = () => P2 && !P2.state.submitted && !$('part2-section').classList.contains('hidden') && currentPart && currentPart.ctrl === P2;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && part2Running() && !offline) logSwitch('part2', 'tab_hidden');
+  });
 }
 
 // Resume on refresh
