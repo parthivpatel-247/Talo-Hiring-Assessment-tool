@@ -60,7 +60,7 @@ const docsEnv: any = {
   DB: meteredDB,
   TEAM: 'docs',
   PART1_DURATION_MINUTES: '30', PART2_DURATION_MINUTES: '45',
-  DOCS_PART1_QUESTIONS: '4', DOCS_PART2_QUESTIONS: '2', DOCS_PART1_MARKS: '5', DOCS_PART2_MARKS: '10', DOCS_WORD_LIMIT: '1000',
+  DOCS_PART1_QUESTIONS: '22', DOCS_PART2_QUESTIONS: '1', DOCS_PART1_MARKS: '5', DOCS_PART2_MARKS: '10', DOCS_WORD_LIMIT: '1000',
   GRADING_BATCH_SIZE: '1', GRADING_CONCURRENCY: '1', RESUME_PROCESS_BATCH: '2', RESUME_PARSE_CONCURRENCY: '2', MAX_UPLOAD_FILES: '10',
 };
 
@@ -175,7 +175,7 @@ describe('writers site stays inside Cloudflare Workers Free limits', () => {
     expect(left).toBe(0);
     await step('admin: export summary', '/api/admin/export.csv?format=summary');
     await step('admin: export full', '/api/admin/export.csv?format=full');
-    await step('admin: save assessment length', '/api/admin/assessment-length', post(admin, { part1: { questions: 4, minutes: 30 }, part2: { questions: 2, minutes: 45 } }));
+    await step('admin: save assessment length', '/api/admin/assessment-length', post(admin, { part1: { questions: 22, minutes: 30 }, part2: { questions: 1, minutes: 45 } }));
     await step('admin: add question', '/api/admin/questions', post(admin, { category: 'part1', prompt: 'New question', marks: 5 }));
     await step('admin: import 30 questions', '/api/admin/questions/bulk-import', post(admin, { questions: Array.from({ length: 30 }, (_, i) => ({ part: 1 + (i % 2), prompt: `Imported question ${i}` })) }));
     await step('admin: resume (reopen part)', '/api/admin/candidates/c7/resume', post(admin));

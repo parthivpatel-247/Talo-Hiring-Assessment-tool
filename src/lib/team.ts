@@ -31,7 +31,7 @@ export const DOCS_LIMITS = {
   minMinutes: 5,
   maxMinutes: 240,
   minQuestions: 1,
-  maxQuestions: 20,
+  maxQuestions: 40,
   minWords: 50,
   maxWords: 3000,
 };

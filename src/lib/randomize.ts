@@ -206,14 +206,18 @@ export async function assignPart3Questions(env: Env, candidateId: string): Promi
 async function recordSeen(env: Env, candidateId: string, chosen: string[], seen: Set<string>): Promise<void> {
   try {
     const fresh = chosen.filter((qId) => !seen.has(qId));
-    const seenStmt = env.DB.prepare('INSERT OR IGNORE INTO part1_seen (candidate_id, question_id) VALUES (?, ?)');
-    const usageStmt = env.DB.prepare(
-      'INSERT INTO question_usage (question_id, uses) VALUES (?, 1) ON CONFLICT(question_id) DO UPDATE SET uses = uses + 1'
-    );
-    await env.DB.batch([
-      ...chosen.map((qId) => seenStmt.bind(candidateId, qId)),
-      ...fresh.map((qId) => usageStmt.bind(qId)),
-    ]);
+    // Two set-based statements however many questions there are (a part can hold
+    // 20+ short items), instead of one statement per question.
+    const stmts = [
+      env.DB.prepare('INSERT OR IGNORE INTO part1_seen (candidate_id, question_id) SELECT ?, value FROM json_each(?)')
+        .bind(candidateId, JSON.stringify(chosen)),
+    ];
+    if (fresh.length) {
+      stmts.push(env.DB.prepare(
+        'INSERT INTO question_usage (question_id, uses) SELECT value, 1 FROM json_each(?) WHERE true ON CONFLICT(question_id) DO UPDATE SET uses = uses + 1'
+      ).bind(JSON.stringify(fresh)));
+    }
+    await env.DB.batch(stmts);
   } catch { /* best effort */ }
 }
 
@@ -227,13 +231,15 @@ export async function assignDocsPart1(env: Env, candidateId: string): Promise<vo
   const ids = await pickLeastUsed(env, 'part1', need, seen);
   if (ids.length < need) throw new DocsPoolTooSmall('part1', need, ids.length);
   const ordered = shuffle(ids);
-  // Each row is inserted only if its position is still free, so two overlapping
-  // calls (prefetch + start) can't give one candidate two sets.
-  const stmt = env.DB.prepare(
-    `INSERT INTO part1_assignments (candidate_id, question_id, position)
-     SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ? AND position = ?)`
-  );
-  await env.DB.batch(ordered.map((qId, i) => stmt.bind(candidateId, qId, i, candidateId, i)));
+  // The whole set goes in as ONE statement, and only if the candidate has no set yet,
+  // so two overlapping calls (prefetch + start) can't give one candidate two sets.
+  // json_each keeps the shuffled order: key 0 is position 0. (UNIQUE(candidate_id,
+  // position) backs this up.)
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO part1_assignments (candidate_id, question_id, position)
+     SELECT ?, j.value, CAST(j.key AS INTEGER) FROM json_each(?) AS j
+     WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ?)`
+  ).bind(candidateId, JSON.stringify(ordered), candidateId).run();
   const kept = await env.DB.prepare('SELECT question_id FROM part1_assignments WHERE candidate_id = ?').bind(candidateId).all<{ question_id: string }>();
   await recordSeen(env, candidateId, (kept.results ?? []).map((r) => r.question_id), seen);
 }

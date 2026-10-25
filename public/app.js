@@ -46,7 +46,12 @@ function limitFor(q) { return (q && Number(q.wordLimit) > 0) ? Number(q.wordLimi
         if (IS_DOCS && cfg && cfg.parts) {
           setAll('js-p1q', cfg.parts.part1.questions); setAll('js-p1min', cfg.parts.part1.minutes);
           setAll('js-p2q', cfg.parts.part2.questions); setAll('js-p2min', cfg.parts.part2.minutes);
+          setAll('js-p1q-s', cfg.parts.part1.questions === 1 ? '' : 's'); setAll('js-p2q-s', cfg.parts.part2.questions === 1 ? '' : 's');
           setAll('js-total', cfg.parts.part1.minutes + cfg.parts.part2.minutes);
+          // "1 Hour 15 Minutes": both parts together, following Assessment length in admin.
+          const total = cfg.parts.part1.minutes + cfg.parts.part2.minutes;
+          const h = Math.floor(total / 60), m = total % 60;
+          setAll('js-duration', [h ? `${h} Hour${h === 1 ? '' : 's'}` : '', m ? `${m} Minute${m === 1 ? '' : 's'}` : ''].filter(Boolean).join(' '));
         }
       })
       .catch(() => {});
@@ -124,7 +129,13 @@ function renderInline(s) {
   let h = escapeHtml(s);
   h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/\[u\]([\s\S]*?)\[\/u\]/g, '<u>$1</u>');
   return h;
+}
+// A table cell: inline formatting, and "<br>" as a line break (the only tag allowed;
+// it is matched after escaping, so nothing else in the cell can become markup).
+function renderCell(s) {
+  return renderInline(s).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/&amp;nbsp;/g, '&nbsp;');
 }
 
 // Rich renderer for question prompts and example boxes. Supports:
@@ -165,8 +176,8 @@ function renderRich(md) {
         if (cells[0] === '') cells.shift(); if (cells[cells.length - 1] === '') cells.pop();
         rows.push(cells); i++;
       }
-      html += '<table class="mini"><thead><tr>' + head.map((h) => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>' +
-        rows.map((r) => '<tr>' + r.map((c) => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+      html += '<table class="mini"><thead><tr>' + head.map((h) => `<th>${renderCell(h)}</th>`).join('') + '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => `<td>${renderCell(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
       continue;
     }
 
@@ -200,11 +211,16 @@ function renderRich(md) {
 
     if (/^[-*]\s+/.test(t)) {
       closeEx(); html += '<ul>';
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) { html += `<li>${renderInline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`; i++; }
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        const sub = /^\s{2,}/.test(lines[i]) ? ' class="li-sub"' : '';
+        html += `<li${sub}>${renderInline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`; i++;
+      }
       html += '</ul>'; continue;
     }
     if (/^\d+\.\s+/.test(t)) {
-      closeEx(); html += '<ol>';
+      closeEx();
+      const startAt = parseInt(t, 10);
+      html += startAt > 1 ? `<ol start="${startAt}">` : '<ol>';
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) { html += `<li>${renderInline(lines[i].trim().replace(/^\d+\.\s+/, ''))}</li>`; i++; }
       html += '</ol>'; continue;
     }

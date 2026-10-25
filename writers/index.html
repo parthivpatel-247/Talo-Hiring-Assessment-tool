@@ -10,7 +10,7 @@
     try { document.documentElement.dataset.theme = localStorage.getItem('talo-theme') || 'light'; }
     catch (e) { document.documentElement.dataset.theme = 'light'; }
   </script>
-  <link rel="stylesheet" href="/styles.css?v=16" />
+  <link rel="stylesheet" href="/styles.css?v=17" />
 </head>
 <body data-team="docs">
   <div id="timer" class="timer hidden"></div>
@@ -67,21 +67,26 @@
         <div class="brand-text"><span class="brand-name">Talo</span><span class="brand-by">by Hevo</span></div>
       </div>
       <h1>Welcome<span id="overview-name"></span></h1>
+      <!-- The writing team's own introduction, word for word. -->
+      <div class="detail-block" style="border:0;padding:0;margin:0 0 12px">
+        <p>Welcome to the writing test. There are three questions that you need to attempt to help us evaluate your editing and writing skills.</p>
+        <p style="margin-top:8px">Duration: <span class="js-duration">1 Hour</span><br>Marks: 50</p>
+      </div>
       <p class="muted">Please read the instructions below before you begin. Each part has its own timer, and Part 1's timer starts only when you select <em>Begin Part 1</em>.</p>
       <div class="steps">
-        <div class="step active">Part 1 · <span class="js-p1q">4</span> questions · <span class="js-p1min">30</span> min</div>
-        <div class="step">Part 2 · <span class="js-p2q">2</span> questions · <span class="js-p2min">45</span> min</div>
+        <div class="step active">Part 1 · <span class="js-p1q">4</span> question<span class="js-p1q-s">s</span> · <span class="js-p1min">30</span> min</div>
+        <div class="step">Part 2 · <span class="js-p2q">2</span> question<span class="js-p2q-s">s</span> · <span class="js-p2min">45</span> min</div>
       </div>
       <div class="detail-block" style="border:0;padding:0;margin:0">
         <h3>About this assessment</h3>
         <p>This is a writing assessment in <strong>two timed parts</strong>. Write your own answer to each question. Each question shows its word limit. Write clearly and keep to the point.</p>
-        <p style="margin-top:12px"><strong>Part 1</strong> (<span class="js-p1q">4</span> questions, <span class="js-p1min">30</span> minutes) is closed book:</p>
+        <p style="margin-top:12px"><strong>Part 1</strong> (<span class="js-p1q">4</span> question<span class="js-p1q-s">s</span>, <span class="js-p1min">30</span> minutes) is closed book:</p>
         <ul style="margin:8px 0 0;padding-left:20px;line-height:1.75">
           <li><strong>Stay in full screen.</strong> If you switch tabs, windows or apps, you have <strong><span class="js-grace">10</span> seconds to return</strong> before your assessment is submitted automatically.</li>
           <li><strong>Copying and pasting are turned off.</strong> Type your answers in your own words.</li>
           <li><strong>When Part 1 ends, it is locked.</strong> Once you submit Part 1, or its time runs out, you can't change those answers.</li>
         </ul>
-        <p style="margin-top:12px"><strong>Part 2</strong> (<span class="js-p2q">2</span> questions, <span class="js-p2min">45</span> minutes) is open book:</p>
+        <p style="margin-top:12px"><strong>Part 2</strong> (<span class="js-p2q">2</span> question<span class="js-p2q-s">s</span>, <span class="js-p2min">45</span> minutes) is open book:</p>
         <ul style="margin:8px 0 0;padding-left:20px;line-height:1.75">
           <li>You may switch tabs to look things up, and you may copy and paste.</li>
           <li>Tab switches and pastes are recorded for the hiring team. The writing must be your own.</li>
@@ -138,7 +143,7 @@
       <h1 id="between-title">Part 1 submitted</h1>
       <p class="muted" id="between-note">Your Part 1 answers are saved and can no longer be changed.</p>
       <div class="detail-block" style="border:0;padding:0;margin:16px 0 0">
-        <h3>Part 2: <span class="js-p2q">2</span> questions, <span class="js-p2min">45</span> minutes</h3>
+        <h3>Part 2: <span class="js-p2q">2</span> question<span class="js-p2q-s">s</span>, <span class="js-p2min">45</span> minutes</h3>
         <ul style="margin:8px 0 0;padding-left:20px;line-height:1.75">
           <li>Open book: you may switch tabs to look things up, and you may copy and paste.</li>
           <li>Tab switches and pastes are recorded. The writing must be your own.</li>
@@ -190,6 +195,6 @@
     <p class="footnote">Talo by Hevo · Your responses are confidential and used only for this hiring process.</p>
   </div>
 
-  <script src="/app.js?v=30"></script>
+  <script src="/app.js?v=31"></script>
 </body>
 </html>

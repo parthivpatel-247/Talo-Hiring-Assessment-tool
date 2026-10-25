@@ -68,7 +68,13 @@ function renderInline(s) {
   let h = escapeHtml(s);
   h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  h = h.replace(/\[u\]([\s\S]*?)\[\/u\]/g, '<u>$1</u>');
   return h;
+}
+// A table cell: inline formatting, and "<br>" as a line break (the only tag allowed;
+// it is matched after escaping, so nothing else in the cell can become markup).
+function renderCell(s) {
+  return renderInline(s).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/&amp;nbsp;/g, '&nbsp;');
 }
 function renderRich(md) {
   if (!md) return '';
@@ -93,8 +99,8 @@ function renderRich(md) {
         if (cells[0] === '') cells.shift(); if (cells[cells.length - 1] === '') cells.pop();
         rows.push(cells); i++;
       }
-      html += '<table class="mini"><thead><tr>' + head.map((h) => `<th>${escapeHtml(h)}</th>`).join('') + '</tr></thead><tbody>' +
-        rows.map((r) => '<tr>' + r.map((c) => `<td>${escapeHtml(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
+      html += '<table class="mini"><thead><tr>' + head.map((h) => `<th>${renderCell(h)}</th>`).join('') + '</tr></thead><tbody>' +
+        rows.map((r) => '<tr>' + r.map((c) => `<td>${renderCell(c)}</td>`).join('') + '</tr>').join('') + '</tbody></table>';
       continue;
     }
     if (/^##\s+/.test(t)) { closeEx(); html += `<div class="q-title">${renderInline(t.replace(/^##\s+/, ''))}</div>`; i++; continue; }
@@ -119,11 +125,16 @@ function renderRich(md) {
     }
     if (/^[-*]\s+/.test(t)) {
       closeEx(); html += '<ul>';
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) { html += `<li>${renderInline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`; i++; }
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        const sub = /^\s{2,}/.test(lines[i]) ? ' class="li-sub"' : '';
+        html += `<li${sub}>${renderInline(lines[i].trim().replace(/^[-*]\s+/, ''))}</li>`; i++;
+      }
       html += '</ul>'; continue;
     }
     if (/^\d+\.\s+/.test(t)) {
-      closeEx(); html += '<ol>';
+      closeEx();
+      const startAt = parseInt(t, 10);
+      html += startAt > 1 ? `<ol start="${startAt}">` : '<ol>';
       while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) { html += `<li>${renderInline(lines[i].trim().replace(/^\d+\.\s+/, ''))}</li>`; i++; }
       html += '</ol>'; continue;
     }

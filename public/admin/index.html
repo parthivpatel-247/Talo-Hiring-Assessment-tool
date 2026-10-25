@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/admin/admin.css?v=11" />
+  <link rel="stylesheet" href="/admin/admin.css?v=12" />
 </head>
 <body>
   <!-- Login -->
@@ -198,11 +198,11 @@
                   <thead><tr><th>Part</th><th>Questions</th><th>Minutes</th><th>In the bank</th></tr></thead>
                   <tbody>
                     <tr><td><strong>Part 1</strong> <span class="muted">closed book</span></td>
-                      <td><input type="number" id="docs-p1-q" min="1" max="20" step="1" aria-label="Part 1 questions" /></td>
+                      <td><input type="number" id="docs-p1-q" min="1" max="40" step="1" aria-label="Part 1 questions" /></td>
                       <td><input type="number" id="docs-p1-min" min="5" max="240" step="5" aria-label="Part 1 minutes" /></td>
                       <td id="docs-p1-pool" class="muted">—</td></tr>
                     <tr><td><strong>Part 2</strong> <span class="muted">open book</span></td>
-                      <td><input type="number" id="docs-p2-q" min="1" max="20" step="1" aria-label="Part 2 questions" /></td>
+                      <td><input type="number" id="docs-p2-q" min="1" max="40" step="1" aria-label="Part 2 questions" /></td>
                       <td><input type="number" id="docs-p2-min" min="5" max="240" step="5" aria-label="Part 2 minutes" /></td>
                       <td id="docs-p2-pool" class="muted">—</td></tr>
                   </tbody>
@@ -304,6 +304,6 @@
     </div>
   </div>
 
-  <script src="/admin/admin.js?v=50"></script>
+  <script src="/admin/admin.js?v=51"></script>
 </body>
 </html>

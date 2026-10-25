@@ -310,6 +310,9 @@ tbody tr:hover { background: var(--line-soft); }
 table.mini { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.82rem; }
 table.mini th, table.mini td { border: 1px solid var(--line); padding: 6px 9px; text-align: left; }
 table.mini th { background: var(--line-soft); color: var(--ink-soft); font-weight: 600; }
+table.mini td { vertical-align: top; }
+/* A nested list item (indented two or more spaces in the question text). */
+li.li-sub { margin-left: 1.4em; list-style-type: circle; }
 .apanel { display: flex; flex-direction: column; }
 .answerbox { flex: 1; min-height: 60vh; max-height: 74vh; font-family: var(--mono); font-size: 0.9rem; line-height: 1.5; }
 .apanel-foot { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 12px; }

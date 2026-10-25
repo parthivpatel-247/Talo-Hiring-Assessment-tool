@@ -328,3 +328,7 @@ body.team-docs .support-only { display: none !important; }
 .pool-ok { color: var(--ok); font-weight: 600; }
 .pool-low { color: var(--danger); font-weight: 600; }
 body.team-docs .badge { white-space: nowrap; }
+
+/* Question text: nested list items and top-aligned table cells (same as the candidate page). */
+li.li-sub { margin-left: 1.4em; list-style-type: circle; }
+table.mini td { vertical-align: top; }

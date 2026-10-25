@@ -159,8 +159,9 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     return json({ ok: true });
   }
 
-  // Bulk import. The file format is still to be agreed with the writers team; this
-  // accepts JSON rows of { part: 1|2, prompt, marks?, wordLimit? } (or category: "part1"/"part2").
+  // Bulk import: JSON rows of { part: 1|2, prompt, marks?, wordLimit?, referenceAnswer?, guidance? }
+  // (or category: "part1"/"part2"). referenceAnswer and guidance are for the grader
+  // only: they are stored in reference_answer / rubric and never sent to candidates.
   if (path === '/api/admin/questions/bulk-import' && request.method === 'POST') {
     const denied = managerOnly(role); if (denied) return denied;
     const body = await request.json<any>().catch(() => ({}));
@@ -171,7 +172,8 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const cfg = await getDocsConfig(env);
     const norm = (p: string) => p.trim().toLowerCase().replace(/\s+/g, ' ');
     const existing = new Set(((await env.DB.prepare('SELECT prompt FROM question_bank WHERE deleted_at IS NULL').all<{ prompt: string }>()).results ?? []).map((r) => norm(r.prompt)));
-    const rows: { part: DocsPart; prompt: string; marks: number; wl: number | null }[] = [];
+    const rows: { part: DocsPart; prompt: string; marks: number; wl: number | null; ref: string | null; guide: string | null }[] = [];
+    const textOrNull = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 20000) : null);
     let skipped = 0, duplicates = 0;
     for (const q of list) {
       const part = partOf(q?.part ?? q?.category);
@@ -182,11 +184,11 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       const key = norm(prompt);
       if (existing.has(key)) { duplicates++; continue; }
       existing.add(key);
-      rows.push({ part, prompt, marks, wl: wl ?? null });
+      rows.push({ part, prompt, marks, wl: wl ?? null, ref: textOrNull(q?.referenceAnswer ?? q?.reference_answer), guide: textOrNull(q?.guidance ?? q?.rubric) });
     }
     if (rows.length) {
-      const stmt = env.DB.prepare(`INSERT INTO question_bank (id, category, prompt, marks, word_limit, difficulty, status, active) VALUES (?, ?, ?, ?, ?, 'medium', 'active', 1)`);
-      await env.DB.batch(rows.map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl)));
+      const stmt = env.DB.prepare(`INSERT INTO question_bank (id, category, prompt, marks, word_limit, reference_answer, rubric, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`);
+      await env.DB.batch(rows.map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl, r.ref, r.guide)));
       await audit(env, 'import_questions', null, `${rows.length} imported, ${duplicates} duplicates, ${skipped} skipped`);
     }
     return json({ ok: true, imported: rows.length, duplicates, skipped });
@@ -380,38 +382,49 @@ async function pasteSignals(env: Env, candidateId: string): Promise<Record<strin
   return out;
 }
 
+/** Run fn over items, at most `limit` at a time. */
+async function pool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const item = items[next++]; await fn(item); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}
+
 /** Grade every answer of one writers' candidate (both parts) and store marks + reasoning. */
 export async function gradeDocsCandidate(env: Env, candidateId: string, claim: string): Promise<void> {
   const cfg = await getDocsConfig(env);
   const p1 = await env.DB.prepare(
-    `SELECT qb.id AS question_id, qb.prompt, qb.marks, qb.word_limit, a.answer_text
+    `SELECT qb.id AS question_id, qb.prompt, qb.marks, qb.word_limit, qb.reference_answer, qb.rubric, a.answer_text
      FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
      LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
      WHERE pa.candidate_id = ?`
-  ).bind(candidateId).all<{ question_id: string; prompt: string; marks: number; word_limit: number | null; answer_text: string | null }>();
+  ).bind(candidateId).all<{ question_id: string; prompt: string; marks: number; word_limit: number | null; reference_answer: string | null; rubric: string | null; answer_text: string | null }>();
 
-  await Promise.all((p1.results ?? []).map(async (q) => {
-    const g = await gradeWritingAnswer(env, { part: 'part1', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '', wordLimit: q.word_limit || cfg.wordLimit });
+  // At most 6 answers are graded at once: a Part 1 can hold 20+ short items, and this
+  // keeps one request well inside the per-request limits.
+  await pool(p1.results ?? [], 6, async (q) => {
+    const g = await gradeWritingAnswer(env, { part: 'part1', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '', wordLimit: q.word_limit || cfg.wordLimit, referenceAnswer: q.reference_answer, guidance: q.rubric });
     await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, scored_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, scored_at = excluded.scored_at`
     ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, nowIso(), candidateId, claim).run();
-  }));
+  });
 
   const signals = await pasteSignals(env, candidateId);
   const p2 = await env.DB.prepare(
-    `SELECT pq.id AS question_id, pq.prompt, pq.marks, pq.word_limit, a.answer_text
+    `SELECT pq.id AS question_id, pq.prompt, pq.marks, pq.word_limit, qb.reference_answer, qb.rubric, a.answer_text
      FROM part2_questions pq
+     LEFT JOIN question_bank qb ON qb.id = pq.source_question_id
      LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
      WHERE pq.candidate_id = ?`
-  ).bind(candidateId).all<{ question_id: string; prompt: string; marks: number; word_limit: number | null; answer_text: string | null }>();
+  ).bind(candidateId).all<{ question_id: string; prompt: string; marks: number; word_limit: number | null; reference_answer: string | null; rubric: string | null; answer_text: string | null }>();
 
   await Promise.all((p2.results ?? []).map(async (q) => {
     const g = await gradeWritingAnswer(env, {
       part: 'part2', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '',
       wordLimit: q.word_limit || cfg.wordLimit, authSignals: signals[q.question_id],
+      referenceAnswer: q.reference_answer, guidance: q.rubric,
     });
     await env.DB.prepare(
       `INSERT INTO part2_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, ai_content_pct, scored_at)

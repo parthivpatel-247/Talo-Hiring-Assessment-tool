@@ -83,7 +83,7 @@ const inFullscreen = (page) => page.evaluate(() => !!document.fullscreenElement)
   check('a second sign-in during a running part is blocked', dup.status() === 403);
   await other.close();
   // Submit Part 1, reload between the parts: safe.
-  for (let i = 0; i < 10; i++) { if (await page.isVisible('#part1-submit-btn')) break; await page.click('#part1-next').catch(() => {}); }
+  for (let i = 0; i < 45; i++) { if (await page.isVisible('#part1-submit-btn')) break; await page.click('#part1-next').catch(() => {}); }
   await page.click('#part1-submit-btn');
   await page.waitForSelector('#between-section:not(.hidden)');
   await page.reload();
