@@ -383,3 +383,9 @@ button:active:not(:disabled) { transform: translateY(1px); }
 
 /* Writers' site (body data-team="docs"): answers are prose, so use the reading font. */
 body[data-team="docs"] .answerbox { font-family: inherit; font-size: 0.95rem; line-height: 1.6; }
+
+/* A section heading inside question text (#### …), kept in its own letter case. */
+.q-h4 { font-size: 1rem; font-weight: 700; line-height: 1.35; margin: 14px 0 6px; }
+/* Writers' test: table headings inside a question keep their own letter case, as the
+   question author wrote them (this is a language test). */
+body[data-team="docs"] .qprompt th { text-transform: none; letter-spacing: 0; font-size: 0.85rem; font-weight: 700; color: var(--ink); }

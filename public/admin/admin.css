@@ -332,3 +332,6 @@ body.team-docs .badge { white-space: nowrap; }
 /* Question text: nested list items and top-aligned table cells (same as the candidate page). */
 li.li-sub { margin-left: 1.4em; list-style-type: circle; }
 table.mini td { vertical-align: top; }
+
+/* A section heading inside question text (#### …), kept in its own letter case. */
+.q-h4 { font-size: 1rem; font-weight: 700; line-height: 1.35; margin: 14px 0 6px; }

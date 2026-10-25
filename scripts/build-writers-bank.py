@@ -1,7 +1,7 @@
 """Build the writers question bank from the team's Word file, word for word.
 
 Candidate-facing text (prompt) is copied exactly; only presentation markup is added
-(### headings, **bold** as in the file, [u]underline[/u] as in the file, lists, one table).
+(#### headings in their own case, **bold**, [u]underline[/u] and [i]italic[/i] as in the file, lists, tables).
 Model answers, acceptable variations, explanations and marking criteria go into
 referenceAnswer / guidance, which never reach the candidate's browser.
 Usage: python3 -I build_bank.py <docx> <out.json>
@@ -70,7 +70,7 @@ assert [c.text.strip() for c in gtab.rows[0].cells] == ['#', 'Sentence', 'Model 
 for row in gtab.rows[1:]:
     num, sentence, model, explanation = [c.text.strip() for c in row.cells]
     prompt = (
-        '### 1. Grammar & Language\n\n'
+        '#### 1. Grammar & Language\n\n'
         f'{grammar_intro}\n\n'
         f'**{grammar_note}**\n\n'
         '| Sentence |\n| --- |\n'
@@ -119,10 +119,11 @@ def join_paragraphs(lines):
     return '\n'.join(out)
 
 def note_line(p):
-    # The file shows this note in italics; the portal shows it as a "Note" row.
+    # Shown as an ordinary italic line, as in the file (not as a "Note" label row).
     t = p.text.strip()
     assert t.startswith('Note:'), t
-    return t
+    italic = all(r.italic for r in p.runs if r.text.strip())
+    return f'[i]{t}[/i]' if italic else t
 
 # Exercise I
 ex1 = block('Exercise I: Rewrite a tooltip', ['Model answer'])
@@ -138,7 +139,7 @@ TASK_NEW = ('**Task:** Using the context above, write the tooltip that appears w
 assert ex1_lines[0] == TITLE_OLD, ex1_lines[0]
 assert ex1_lines[2].startswith('**Task:**') and ex1_lines[3].startswith('**Tooltip text:**'), ex1_lines[2:4]
 ex1_lines = [TITLE_NEW, ex1_lines[1], TASK_NEW]
-prompt = '### 2. Editing\n\n' + '\n\n'.join(ex1_lines) + '\n\n' + ex1_note
+prompt = '#### 2. Editing\n\n' + '\n\n'.join(ex1_lines) + '\n\n' + ex1_note
 i = find('Model answer', find('Exercise I'))
 model1 = paras[i].text.replace('Model answer:', '').strip()
 i_var = find('Acceptable variations', i)
@@ -157,7 +158,7 @@ questions.append({
 ex2 = block('Exercise II: Write an alert message', ['Model answer'])
 ex2_lines = [runs(p).strip() for p in ex2 if p.text.strip() and not p.text.strip().startswith('Note:')]
 ex2_note = [note_line(p) for p in ex2 if p.text.strip().startswith('Note:')][0]
-prompt = '### 2. Editing\n\n' + '\n\n'.join(ex2_lines) + '\n\n' + ex2_note
+prompt = '#### 2. Editing\n\n' + '\n\n'.join(ex2_lines) + '\n\n' + ex2_note
 i = find('Model answer', find('Exercise II'))
 model2 = paras[i].text.replace('Model answer:', '').strip()
 guid2 = paras[find('Evaluation guidance', i)].text.strip()
@@ -174,7 +175,7 @@ i_prd = find('Alerts PRD', i_b)
 task = md_lines(paras[i_b + 1:i_prd])
 # "**3. Writing** (20 marks)" -> heading
 assert paras[i_b + 1].text.strip().startswith('3. Writing'), paras[i_b + 1].text
-task[0] = '### 3. Writing (20 marks)'
+task[0] = '#### 3. Writing (20 marks)'
 prd = ['## Alerts PRD']
 k = i_prd + 1
 num = 0
@@ -186,7 +187,7 @@ while k < len(paras):
     if not p.text.strip():
         k += 1; continue
     if style == 'Heading 2':
-        prd.append('### ' + p.text.strip())
+        prd.append('#### ' + p.text.strip())
         bg_mode = p.text.strip().startswith('Background')
     elif level(p) is not None:
         if bg_mode and level(p) == 0:

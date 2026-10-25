@@ -90,7 +90,7 @@ npx wrangler d1 migrations apply campus-hiring-assessment-db --remote
 
 ## The writing team's question bank (2026-10-25)
 
-The team's test comes from their Word file "Writing Assignment Campus Drive". `scripts/build-writers-bank.py` turns it into an import file, and `scripts/verify-writers-bank.py` checks that every line candidates see is copied word for word.
+The team's test comes from their Word file "Writing Assignment Campus Drive". `scripts/build-writers-bank.py` turns it into an import file, `scripts/verify-writers-bank.py` checks that every line candidates see is copied word for word, and `scripts/verify-writers-bank-style.py` checks that bold, underline and italic match.
 
 - **Part 1 (closed book):** 22 questions, 30 marks. They are the 20 grammar sentences (1 mark each) and the two editing exercises, Write a tooltip and Write an alert message (5 marks each). Every candidate gets all 22, each in their own random order.
 - **Part 2 (open book):** 1 question, the Alerts PRD outline (20 marks).
@@ -101,9 +101,10 @@ The team's test comes from their Word file "Writing Assignment Campus Drive". `s
   2. Under Resumes → Assessment length, set Part 1 to 22 questions and 30 minutes, and Part 2 to 1 question and 45 minutes.
   3. Check that both parts show green.
 - **Formatting in question text:**
-  - `### heading`;
+  - `#### heading` (a section heading, kept in its own letter case);
+  - `### heading` (small capitals, for the support site's style);
   - `**bold**`;
-  - `[u]underline[/u]`;
+  - `[u]underline[/u]` and `[i]italic[/i]`;
   - lists (indent two spaces for a nested item);
   - tables, in which `<br>` makes a line break inside a cell.
 - **Welcome screen:** shows the team's introduction, with the duration taken from Assessment length and Marks: 50.

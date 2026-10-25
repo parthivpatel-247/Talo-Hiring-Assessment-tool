@@ -6,7 +6,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 d = docx.Document(sys.argv[1]); qs = json.load(open(sys.argv[2]))['questions']
 def norm(s):
-    s = re.sub(r'\*\*|\[/?u\]', '', s); s = re.sub(r'<br>|&nbsp;|[•◦]|^#+\s*', ' ', s, flags=re.M)
+    s = re.sub(r'\*\*|\[/?u\]|\[/?i\]', '', s); s = re.sub(r'<br>|&nbsp;|[•◦]|^#+\s*', ' ', s, flags=re.M)
     s = re.sub(r'^\s*(- |\d+\. )', ' ', s, flags=re.M)
     s = s.replace('|', ' ').replace('---', ' ')
     return re.sub(r'\s+', ' ', s).strip()

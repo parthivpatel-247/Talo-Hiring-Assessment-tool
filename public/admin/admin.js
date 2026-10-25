@@ -69,6 +69,7 @@ function renderInline(s) {
   h = h.replace(/`([^`]+)`/g, '<code>$1</code>');
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   h = h.replace(/\[u\]([\s\S]*?)\[\/u\]/g, '<u>$1</u>');
+  h = h.replace(/\[i\]([\s\S]*?)\[\/i\]/g, '<em>$1</em>');
   return h;
 }
 // A table cell: inline formatting, and "<br>" as a line break (the only tag allowed;
@@ -104,6 +105,7 @@ function renderRich(md) {
       continue;
     }
     if (/^##\s+/.test(t)) { closeEx(); html += `<div class="q-title">${renderInline(t.replace(/^##\s+/, ''))}</div>`; i++; continue; }
+    if (/^####\s+/.test(t)) { closeEx(); html += `<div class="q-h4">${renderInline(t.replace(/^####\s+/, ''))}</div>`; i++; continue; }
     if (/^###\s+/.test(t)) { closeEx(); html += `<div class="q-subhead">${renderInline(t.replace(/^###\s+/, ''))}</div>`; i++; continue; }
     if (/^>\s+/.test(t)) {
       closeEx();
