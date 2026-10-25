@@ -176,12 +176,34 @@ describe('writers question bank: editing marks later', () => {
   });
 });
 
-describe('Access lists the config sign-ins', () => {
+describe('every admin sign-in is a real account in the database', () => {
   beforeEach(async () => { await migrate(); });
-  it('members API returns the manager config sign-in, read-only', async () => {
+
+  it('signing in with the config password creates and lists the account', async () => {
     const a = await admin();
     const r = await (await dreq('/api/admin/members', { headers: { Cookie: a } })).json<any>();
-    expect(r.config).toEqual([{ email: 'admin@test.local', role: 'manager' }, { email: 'panel@test.local', role: 'member' }]);
-    expect(r.members).toEqual([]);
+    expect(r.members.map((m: any) => ({ username: m.username, email: m.email, role: m.role, active: m.active })))
+      .toEqual([{ username: 'Admin', email: 'admin@test.local', role: 'manager', active: 1 }]);
+    const s = await env.DB.prepare('SELECT user_id FROM admin_sessions').all<any>();
+    expect(s.results!.every((x: any) => x.user_id)).toBe(true); // the session belongs to that account
+    await admin(); // a second sign-in reuses the same account
+    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM admin_users').first<any>()).n).toBe(1);
+  });
+
+  it('the config password still works and still recovers the account', async () => {
+    let a = await admin();
+    const id = (await env.DB.prepare("SELECT id FROM admin_users WHERE email = 'admin@test.local'").first<any>()).id;
+    await env.DB.prepare("UPDATE admin_users SET active = 0, role = 'member' WHERE id = ?").bind(id).run();
+    expect((await dreq('/api/admin/config', { headers: { Cookie: a } })).status).toBe(401); // disabled = signed out
+    a = await admin(); // the config password re-activates the main manager
+    expect((await (await dreq('/api/admin/config', { headers: { Cookie: a } })).json<any>()).role).toBe('manager');
+  });
+
+  it('after a manager sets a password on the account, that password works too', async () => {
+    const a = await admin();
+    const id = (await env.DB.prepare("SELECT id FROM admin_users WHERE email = 'admin@test.local'").first<any>()).id;
+    expect((await dreq(`/api/admin/members/${id}`, post(a, { password: 'my-own-password-1' }))).status).toBe(200);
+    const r = await dreq('/api/admin/login', post('', { email: 'admin@test.local', password: 'my-own-password-1' }));
+    expect(r.status).toBe(200);
   });
 });

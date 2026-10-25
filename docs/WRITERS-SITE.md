@@ -133,6 +133,7 @@ This works the same as the support site. Some points specific to the two parts:
 - After **Resume**, **Retake** or **Restore access**, every earlier sign-in for that candidate ends: **the candidate signs in again** to continue. (Restore access doesn't do this to a candidate who is in the middle of a part.)
 - **Shortlist and Reject** are offered only once a candidate has been graded.
 - Removing or demoting a panel member in **Access** takes effect on their very next click; they don't keep their old role until they sign out.
+- **Every admin login is an account in Access.** The first sign-in with `ADMIN_EMAIL` and the `ADMIN_PASSWORD` secret creates that manager's account (name taken from the email). From then on it is listed with everyone else. The secret keeps working as the recovery password: it re-activates the account and makes it a manager again, and changing the secret signs out sessions made with the old one. A manager can also give that account its own password with **Reset password**.
 
 ## Updating the writers site later
 

@@ -180,7 +180,7 @@ async function ensureSessionUserCol(env: Env): Promise<void> {
 /** Tests reset the database between cases. */
 export function resetAuthSchemaCache(): void { sessionUserColReady = false; }
 
-export async function createAdminSession(env: Env, role: AdminRole = 'manager', userId: string | null = null): Promise<{ cookie: string; token: string; role: AdminRole }> {
+export async function createAdminSession(env: Env, role: AdminRole = 'manager', userId: string | null = null, viaConfig: AdminRole | null = null): Promise<{ cookie: string; token: string; role: AdminRole }> {
   // Role is carried inside the HMAC-signed token, so it can't be tampered with
   // client-side. For a named account the session also records the account, so
   // deactivating, demoting or deleting the account takes effect at once.
@@ -189,10 +189,14 @@ export async function createAdminSession(env: Env, role: AdminRole = 'manager', 
   // bc: for a config (bootstrap) sign-in, a keyed tag of the credential that issued
   // it — changing ADMIN_EMAIL/ADMIN_PASSWORD (or the panel pair) ends those sessions.
   const payload: Record<string, unknown> = { admin: true, role, iat: Date.now(), n: crypto.randomUUID() };
-  if (!userId) {
-    const bc = await bootstrapTag(env, role);
+  // A sign-in made with the config password (ADMIN_PASSWORD / PANEL_PASSWORD) carries
+  // a tag of that credential, so changing the secret ends those sessions.
+  const configRole = viaConfig ?? (userId ? null : role);
+  if (configRole) {
+    const bc = await bootstrapTag(env, configRole);
     if (!bc) throw new Error('No config credential for this role');
     payload.bc = bc;
+    payload.bcr = configRole;
   }
   const token = await sign(env.SESSION_SECRET, payload);
   const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
@@ -222,7 +226,7 @@ export async function revokeUserSessions(env: Env, userId: string): Promise<void
 /** Returns the admin's role if the request carries a valid, unexpired admin session, else null. */
 export async function getAdminRole(env: Env, request: Request): Promise<AdminRole | null> {
   const token = readCookie(request, ADMIN_COOKIE);
-  const payload = await verify<{ admin: boolean; role?: AdminRole; bc?: string }>(env.SESSION_SECRET, token);
+  const payload = await verify<{ admin: boolean; role?: AdminRole; bc?: string; bcr?: AdminRole }>(env.SESSION_SECRET, token);
   if (!payload?.admin || !token) return null;
   // expires_at is stored as an ISO timestamp ("2026-10-21T20:00:00.000Z"), so compare
   // it with an ISO "now". (datetime('now') returns "2026-10-21 08:00:00", and the space
@@ -239,6 +243,11 @@ export async function getAdminRole(env: Env, request: Request): Promise<AdminRol
   if (row.user_id) {
     // Named account: its CURRENT role and status decide, not the role at sign-in.
     if (!row.user_active) return null;
+    // Signed in with the config password: only while that secret is unchanged.
+    if (typeof payload.bc === 'string') {
+      const tag = await bootstrapTag(env, payload.bcr === 'member' ? 'member' : 'manager');
+      if (!tag || !timingSafeEqual(tag, payload.bc)) return null;
+    }
     return row.user_role === 'manager' ? 'manager' : 'member';
   }
   // Config (bootstrap) sign-in: valid only while the credential that issued it is

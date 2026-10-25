@@ -130,6 +130,40 @@ async function ensureAuthSchema(env: Env): Promise<void> {
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** "parthiv.patel@x.com" -> "Parthiv Patel" */
+function nameFromEmail(email: string): string {
+  const local = email.split('@')[0] || email;
+  const name = local.split(/[._-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
+  return (name || email).slice(0, 64);
+}
+
+/**
+ * The admin_users row behind a config sign-in, created on first use. The main
+ * manager's row is kept active and a manager, so the config password can always get
+ * back in (it is the recovery login). The row's own password is random and unusable
+ * until a manager sets one with Reset password.
+ */
+async function ensureConfigAccount(env: Env, email: string, role: AdminRole): Promise<{ id: string; role: AdminRole }> {
+  const existing = await env.DB.prepare('SELECT id, role, active FROM admin_users WHERE email = ?').bind(email).first<{ id: string; role: string; active: number }>();
+  if (existing) {
+    if (role === 'manager' && (existing.role !== 'manager' || !existing.active)) {
+      await env.DB.prepare("UPDATE admin_users SET role = 'manager', active = 1 WHERE id = ?").bind(existing.id).run();
+      return { id: existing.id, role: 'manager' };
+    }
+    if (!existing.active) await env.DB.prepare('UPDATE admin_users SET active = 1 WHERE id = ?').bind(existing.id).run();
+    return { id: existing.id, role: existing.role === 'manager' ? 'manager' : 'member' };
+  }
+  const id = newId('usr');
+  const { salt, hash } = await hashPassword(crypto.randomUUID() + crypto.randomUUID()); // unusable
+  let name = nameFromEmail(email);
+  if (await env.DB.prepare('SELECT 1 FROM admin_users WHERE username = ?').bind(name).first()) name = `${name} (${email})`.slice(0, 64);
+  await env.DB.prepare('INSERT OR IGNORE INTO admin_users (id, username, email, pass_salt, pass_hash, role, active) VALUES (?,?,?,?,?,?,1)')
+    .bind(id, name, email, salt, hash, role).run();
+  const row = await env.DB.prepare('SELECT id, role FROM admin_users WHERE email = ?').bind(email).first<{ id: string; role: string }>();
+  await audit(env, 'member_add', null, `${name} <${email}> (${role}) — created at first sign-in with the config password`);
+  return { id: row!.id, role: row!.role === 'manager' ? 'manager' : 'member' };
+}
+
 /** Self-heal the Part 2 AI-content column (migration 0009) so grading can store it. */
 async function ensurePart2AiCol(env: Env): Promise<void> {
   try {
@@ -254,19 +288,32 @@ export async function handleAdminRoute(
     // continue during a pause and a burst of simultaneous guesses can't slip past.
     const adminEmailCfg = (env.ADMIN_EMAIL || '').trim().toLowerCase();
     const panelEmailCfg = (env.PANEL_EMAIL || '').trim().toLowerCase();
-    const account = row ? `u:${row.id}` : (loginEmail === adminEmailCfg || loginEmail === panelEmailCfg) && loginEmail ? `e:${loginEmail}` : null;
+    // The config emails keep one stable key (their account row is created at first
+    // sign-in, and the trusted-browser cookie must keep matching after that).
+    const isConfigEmail = !!loginEmail && (loginEmail === adminEmailCfg || loginEmail === panelEmailCfg);
+    const account = isConfigEmail ? `e:${loginEmail}` : row ? `u:${row.id}` : null;
     const begun = await adminSigninBegin(env, request, account);
     if ('refused' in begun) return begun.refused;
 
+    let viaConfig: AdminRole | null = null;
     if (row && (await verifyPassword(pass, row.pass_salt, row.pass_hash))) {
       loginRole = row.role === 'manager' ? 'manager' : 'member';
       loginUserId = row.id;
     } else {
-      // 2) Bootstrap logins from config — the email must match too (not just the password).
+      // 2) The config sign-in (ADMIN_EMAIL + the ADMIN_PASSWORD secret, or the panel
+      // pair): the email must match too, not just the password.
       const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
       const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
-      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && (await secretEqual(pass, env.ADMIN_PASSWORD))) loginRole = 'manager';
-      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && (await secretEqual(pass, env.PANEL_PASSWORD))) loginRole = 'member';
+      if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && (await secretEqual(pass, env.ADMIN_PASSWORD))) viaConfig = 'manager';
+      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && (await secretEqual(pass, env.PANEL_PASSWORD))) viaConfig = 'member';
+      if (viaConfig) {
+        // Every login is a real account: the config sign-in signs in to (and on first
+        // use creates) the admin_users row for that email, so it is listed in Access
+        // like everyone else. Its password stays the secret until a manager sets one.
+        const acct = await ensureConfigAccount(env, loginEmail, viaConfig);
+        loginRole = acct.role;
+        loginUserId = acct.id;
+      }
     }
     if (!loginRole) return adminSigninFailed(env, begun.state, loginEmail, newId);
     // A good sign-in gives its count back and marks this browser as trusted for the
@@ -275,7 +322,7 @@ export async function handleAdminRoute(
     // This browser's previous admin session (e.g. manager, now signing in as a panel
     // member on a shared laptop) ends here instead of living on until it expires.
     await clearAdminSession(env, request);
-    const { cookie } = await createAdminSession(env, loginRole, loginUserId);
+    const { cookie } = await createAdminSession(env, loginRole, loginUserId, viaConfig);
     return withCookie(withCookie(json({ ok: true, role: loginRole }), cookie), deviceCookie);
   }
 
@@ -447,15 +494,7 @@ export async function handleAdminRoute(
     if (role !== 'manager') return json({ error: 'Manager access required.' }, { status: 403 });
     await ensureAuthSchema(env);
     const rows = await env.DB.prepare('SELECT id, username, email, role, active, created_at FROM admin_users ORDER BY created_at').all();
-    // The config sign-ins (ADMIN_EMAIL / PANEL_EMAIL with their wrangler secrets) are
-    // not stored accounts, but they are logins too: list them, read-only, so the
-    // manager signed in with one sees it here.
-    const config: { email: string; role: AdminRole }[] = [];
-    const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
-    const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
-    if (adminEmail && env.ADMIN_PASSWORD) config.push({ email: adminEmail, role: 'manager' });
-    if (panelEmail && env.PANEL_PASSWORD) config.push({ email: panelEmail, role: 'member' });
-    return json({ members: rows.results ?? [], config });
+    return json({ members: rows.results ?? [] });
   }
   if (path === '/api/admin/members' && request.method === 'POST') {
     if (role !== 'manager') return json({ error: 'Manager access required.' }, { status: 403 });

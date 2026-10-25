@@ -460,27 +460,15 @@ if ($('docs-length-save-btn')) $('docs-length-save-btn').addEventListener('click
 async function loadMembers() {
   const tb = document.querySelector('#member-table tbody');
   try {
-    const { members, config } = await api('/api/admin/members');
-    renderMembers(members || [], config || []);
+    const { members } = await api('/api/admin/members');
+    renderMembers(members || []);
   } catch (e) { if (tb) tb.innerHTML = `<tr><td colspan="6" class="empty">Could not load members: ${escapeHtml(e.message)}</td></tr>`; }
 }
-function renderMembers(members, config = []) {
+function renderMembers(members) {
   const tb = document.querySelector('#member-table tbody');
   if (!tb) return;
-  // Config sign-ins (set with wrangler secrets): shown first, read-only.
-  const configRows = config.map((c) => `<tr>
-      <td><strong>${c.role === 'manager' ? 'Main manager' : 'Panel (shared)'}</strong> <span class="muted" style="font-size:12px">config sign-in</span></td>
-      <td style="font-size:12.5px;color:var(--faint)">${escapeHtml(c.email)}</td>
-      <td><span class="pill ${c.role === 'manager' ? 'ok' : 'info'}">${escapeHtml(c.role)}</span></td>
-      <td><span class="pill ok">active</span></td>
-      <td class="tnum" style="font-size:12px;color:var(--faint)">—</td>
-      <td><span class="muted" style="font-size:12px">Password set with <code>wrangler secret put</code></span></td>
-    </tr>`).join('');
-  if (!members.length) {
-    tb.innerHTML = configRows + '<tr><td colspan="6" class="empty">No named members yet — add one above.</td></tr>';
-    return;
-  }
-  tb.innerHTML = configRows + members.map((m) => `<tr>
+  if (!members.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No members yet — add one above.</td></tr>'; return; }
+  tb.innerHTML = members.map((m) => `<tr>
       <td><strong>${escapeHtml(m.username)}</strong></td>
       <td style="font-size:12.5px;color:var(--faint)">${escapeHtml(m.email || '—')}</td>
       <td><span class="pill ${m.role === 'manager' ? 'ok' : 'info'}">${escapeHtml(m.role)}</span></td>
