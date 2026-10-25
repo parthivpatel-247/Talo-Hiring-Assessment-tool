@@ -335,3 +335,7 @@ table.mini td { vertical-align: top; }
 
 /* A section heading inside question text (#### …), kept in its own letter case. */
 .q-h4 { font-size: 1rem; font-weight: 700; line-height: 1.35; margin: 14px 0 6px; }
+
+/* A tick box with its label on one line (e.g. "Every candidate · Always include"). */
+input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; padding: 0; margin: 0; flex: 0 0 auto; border-radius: 4px; box-shadow: none; accent-color: var(--accent); cursor: pointer; }
+.check-inline { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; white-space: nowrap; cursor: pointer; }
