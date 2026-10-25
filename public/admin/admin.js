@@ -432,9 +432,13 @@ function renderDocsLength(preserveEdits) {
   for (const p of ['part1', 'part2']) {
     const cell = $(p === 'part1' ? 'docs-p1-pool' : 'docs-p2-pool'); if (!cell) continue;
     const have = (DOCS.pool && DOCS.pool[p]) || 0, need = DOCS[p].questions;
-    cell.innerHTML = have >= need
-      ? `<span class="pool-ok">${have} active</span>`
-      : `<span class="pool-low">${have} active · needs at least ${need}</span>`;
+    const req = (DOCS.pool && DOCS.pool.required && DOCS.pool.required[p]) || 0;
+    const reqText = req ? ` · ${req} for every candidate, ${need - req > 0 ? `${need - req} drawn at random` : 'none drawn'}` : '';
+    cell.innerHTML = req > need
+      ? `<span class="pool-low">${have} active · ${req} must go to every candidate, so this part needs at least ${req} questions</span>`
+      : have >= need
+        ? `<span class="pool-ok">${have} active${reqText}</span>`
+        : `<span class="pool-low">${have} active · needs at least ${need}</span>`;
   }
   const tot = $('docs-length-total');
   if (tot) tot.textContent = `Total time per candidate: ${DOCS.part1.minutes + DOCS.part2.minutes} min`;
@@ -707,11 +711,13 @@ $('q-add-btn').addEventListener('click', async () => {
     const body = IS_DOCS ? { category, prompt } : { category, prompt, referenceAnswer, difficulty: $('q-difficulty').value };
     if (marksRaw) body.marks = Number(marksRaw);
     if (IS_DOCS && $('q-wordlimit').value.trim()) body.wordLimit = Number($('q-wordlimit').value.trim());
+    if (IS_DOCS && $('q-required')) body.required = $('q-required').checked;
     const r = await api('/api/admin/questions', { method: 'POST', body: JSON.stringify(body) });
     if (IS_DOCS) setNotice('qform-status', `Added to ${categoryLabel(category)}.`, 'ok');
     else setNotice('qform-status', r.enrichError ? `Added, but AI enrichment failed (${r.enrichError}).` : 'Added and enriched.', r.enrichError ? 'warn' : 'ok');
     $('q-prompt').value = ''; $('q-answer').value = ''; $('q-marks').value = '';
     if ($('q-wordlimit')) $('q-wordlimit').value = '';
+    if ($('q-required')) $('q-required').checked = false;
     await refreshQuestions();
     if (IS_DOCS) loadConfig({ preserveEdits: true }); // refresh the "In the bank" counts
   } catch (err) { setNotice('qform-status', `Error: ${err.message}`, 'warn'); }
@@ -859,13 +865,20 @@ async function refreshQuestions() {
   }
 
   tbody.innerHTML = questions.map((q) => `<tr>
-      <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span></td>
+      <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span>${IS_DOCS && q.required ? ' <span class="badge">Every candidate</span>' : ''}</td>
       <td>${escapeHtml(q.prompt.slice(0, 96))}${q.prompt.length > 96 ? '…' : ''}</td>
       <td class="tnum">${num(q.marks)}</td>
       <td>${questionExtraCell(q)}</td>
       <td>${q.active ? '<span class="pill ok">active</span>' : '<span class="pill muted">off</span>'}</td>
-      <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button><button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
+      <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button>${IS_DOCS ? `<button class="secondary sm" data-qreq="${q.id}" data-on="${q.required ? 0 : 1}">${q.required ? 'Draw at random' : 'Every candidate'}</button>` : ''}<button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
     </tr>`).join('');
+  tbody.querySelectorAll('[data-qreq]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await api(`/api/admin/questions/${b.dataset.qreq}`, { method: 'PUT', body: JSON.stringify({ required: b.dataset.on === '1' }) });
+      await refreshQuestions(); loadConfig({ preserveEdits: true });
+    } catch (err) { b.disabled = false; setNotice('qform-status', `Error: ${err.message}`, 'warn'); }
+  }));
   tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
     if (b.disabled) return; b.disabled = true;
     try { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); if (IS_DOCS) loadConfig({ preserveEdits: true }); }
@@ -959,8 +972,10 @@ function questionExtraCell(q) {
 function questionDetailHtml(q) {
   if (IS_DOCS) {
     return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${num(q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default'))}</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${num(q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default'))} · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
+    ${q.reference_answer ? `<div class="detail-block"><h3>Model answer (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.reference_answer)}</pre></div>` : ''}
+    ${q.rubric ? `<div class="detail-block"><h3>Marking guidance (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.rubric)}</pre></div>` : ''}
   </div>`;
   }
   return `<div class="qdetail">

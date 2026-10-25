@@ -112,3 +112,50 @@ describe('writers question bank: import, order, privacy, grading', () => {
     expect((await dreq('/api/admin/assessment-length', post(a, { part1: { questions: 41, minutes: 30 }, part2: { questions: 1, minutes: 45 } }))).status).toBe(400);
   });
 });
+
+describe('writers Part 1: questions every candidate gets, plus a random draw', () => {
+  beforeEach(async () => {
+    await migrate(); await applySql(d16); await applySql(d17); await applySql(d18);
+    const a = await admin();
+    const qs = bank().map((q) => (q.prompt.includes('Exercise') || q.part === 2 ? { ...q, required: true } : q));
+    expect((await (await dreq('/api/admin/questions/bulk-import', post(a, { questions: qs }))).json<any>()).imported).toBe(23);
+    expect((await dreq('/api/admin/assessment-length', post(a, { part1: { questions: 12, minutes: 30 }, part2: { questions: 1, minutes: 45 } }))).status).toBe(200);
+    await dreq('/api/admin/start-open', post(a, { open: true }));
+    for (let n = 1; n <= 6; n++) await seedCandidate(`rq${n}`, `rq${n}@x.com`, 'part2_ready');
+  });
+
+  it('each candidate gets both editing exercises and 10 of the 20 sentences, in their own order', async () => {
+    const sets: string[][] = [];
+    for (let n = 1; n <= 6; n++) {
+      const c = await login(`rq${n}@x.com`);
+      const qs = (await (await dreq('/api/candidate/part1/start', post(c))).json<any>()).questions as any[];
+      expect(qs).toHaveLength(12);
+      expect(qs.filter((q) => q.prompt.includes('Exercise I:'))).toHaveLength(1);
+      expect(qs.filter((q) => q.prompt.includes('Exercise II:'))).toHaveLength(1);
+      expect(qs.filter((q) => q.prompt.includes('| Sentence |'))).toHaveLength(10);
+      sets.push(qs.map((q) => q.prompt));
+    }
+    // the random ten differ between candidates, and so does the order
+    expect(new Set(sets.map((s) => [...s].sort().join('§'))).size).toBeGreaterThan(1);
+    expect(new Set(sets.map((s) => s.join('§'))).size).toBe(6);
+    // least-used rotation: after 6 candidates x 10 draws from 20, every sentence was used 3 times
+    const uses = await env.DB.prepare("SELECT u.uses FROM question_usage u JOIN question_bank q ON q.id = u.question_id WHERE q.prompt LIKE '%| Sentence |%'").all<any>();
+    expect(uses.results!.map((r: any) => r.uses).sort()).toEqual(Array(20).fill(3));
+  });
+
+  it('refuses a Part 1 length smaller than the questions everyone must get', async () => {
+    const a = await admin();
+    const r = await dreq('/api/admin/assessment-length', post(a, { part1: { questions: 1, minutes: 30 }, part2: { questions: 1, minutes: 45 } }));
+    expect(r.status).toBe(400);
+    expect((await r.json<any>()).error).toMatch(/every candidate must get/);
+  });
+
+  it('a manager can switch a question between "every candidate" and "drawn at random"', async () => {
+    const a = await admin();
+    const q = (await env.DB.prepare("SELECT id FROM question_bank WHERE prompt LIKE '%number 3.%'").first<any>()).id;
+    expect((await dreq(`/api/admin/questions/${q}`, { method: 'PUT', headers: { Cookie: a, 'Content-Type': 'application/json' }, body: JSON.stringify({ required: true }) })).status).toBe(200);
+    expect((await env.DB.prepare('SELECT required FROM question_bank WHERE id = ?').bind(q).first<any>()).required).toBe(1);
+    const cfg = await (await dreq('/api/admin/config', { headers: { Cookie: a } })).json<any>();
+    expect(cfg.docs.pool.required.part1).toBe(3);
+  });
+});

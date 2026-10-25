@@ -121,6 +121,16 @@ export async function ensureGradingClaimCols(env: Env): Promise<void> {
 
 /** Ensure candidates has the parse-claim columns, so parse requests running at the
  *  same time each take a DISJOINT set of waiting resumes (no resume parsed twice). */
+/** Writers: question_bank.required = 1 means every candidate gets the question (added on first use). */
+export async function ensureRequiredCol(env: Env): Promise<void> {
+  await ensureOnce('question_bank.required', async () => {
+    const cols = await env.DB.prepare('PRAGMA table_info(question_bank)').all<{ name: string }>();
+    if (!(cols.results ?? []).some((c) => c.name === 'required')) {
+      await addColumn(env, 'ALTER TABLE question_bank ADD COLUMN required INTEGER NOT NULL DEFAULT 0');
+    }
+  });
+}
+
 export async function ensureParseClaimCols(env: Env): Promise<void> {
   try {
     await ensureOnce('candidates.parse_claim', async () => {

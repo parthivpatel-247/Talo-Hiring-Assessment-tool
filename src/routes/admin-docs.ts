@@ -1,7 +1,7 @@
 import type { Env, Candidate } from '../types';
 import type { AdminRole } from '../lib/auth';
 import { json } from '../lib/auth';
-import { newId, nowIso, ensureGradingClaimCols } from '../lib/db';
+import { newId, nowIso, ensureGradingClaimCols, ensureRequiredCol } from '../lib/db';
 import { gradeWritingAnswer } from '../lib/openai';
 import { getDocsConfig, docsPoolCounts, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
 import { ensureDocsAttemptCols, docsStartOpen, REOPEN_SECONDS } from './candidate-docs';
@@ -82,6 +82,7 @@ export async function docsAdminConfig(env: Env) {
 export async function handleDocsAdminRoute(request: Request, env: Env, path: string, role: AdminRole): Promise<Response | null> {
   await ensureDocsAttemptCols(env);
   await ensureGradingClaimCols(env); // Resume and Retake drop any grading claim in flight
+  await ensureRequiredCol(env); // "every candidate gets this question" flag
 
   // ---- Open / close the test: candidates can start Part 1 only while it is open ----
   // ---- Grade one candidate: only once both parts are finished ----
@@ -104,6 +105,11 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       if (q == null) return json({ error: `${partLabel(p)}: questions must be a whole number from ${L.minQuestions} to ${L.maxQuestions}.` }, { status: 400 });
       if (m == null) return json({ error: `${partLabel(p)}: minutes must be a whole number from ${L.minMinutes} to ${L.maxMinutes}.` }, { status: 400 });
       values.push([`${p}_questions`, q], [`${p}_minutes`, m]);
+    }
+    const pool = await docsPoolCounts(env);
+    for (const p of PARTS) {
+      const q = Number(values.find(([k]) => k === `${p}_questions`)![1]);
+      if (pool.required[p] > q) return json({ error: `${partLabel(p)} has ${pool.required[p]} questions every candidate must get, so it needs at least ${pool.required[p]} questions.` }, { status: 400 });
     }
     const stmt = env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value');
     await env.DB.batch(values.map(([k, v]) => stmt.bind(k, String(v))));
@@ -132,8 +138,8 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     if (wl === undefined && b.wordLimit !== undefined) return json({ error: `Word limit must be a whole number from ${DOCS_LIMITS.minWords} to ${DOCS_LIMITS.maxWords}, or empty for the default.` }, { status: 400 });
     const id = newId('q');
     await env.DB.prepare(
-      `INSERT INTO question_bank (id, category, prompt, marks, word_limit, difficulty, status, active) VALUES (?, ?, ?, ?, ?, 'medium', 'active', 1)`
-    ).bind(id, part, prompt, marks, wl ?? null).run();
+      `INSERT INTO question_bank (id, category, prompt, marks, word_limit, required, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`
+    ).bind(id, part, prompt, marks, wl ?? null, b.required ? 1 : 0).run();
     await audit(env, 'add_question', null, `${partLabel(part)} · ${prompt.slice(0, 120)}`);
     return json({ ok: true, id });
   }
@@ -152,14 +158,16 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const wl = wordLimitIn(b.wordLimit);
     if (wl === undefined && b.wordLimit !== undefined) return json({ error: `Word limit must be a whole number from ${DOCS_LIMITS.minWords} to ${DOCS_LIMITS.maxWords}, or empty for the default.` }, { status: 400 });
     const active = b.active == null ? q.active : (b.active ? 1 : 0);
-    await env.DB.prepare('UPDATE question_bank SET category = ?, prompt = ?, marks = ?, word_limit = ?, active = ? WHERE id = ?')
-      .bind(part, prompt, marks, wl === undefined ? q.word_limit : wl, active, q.id)
+    const required = b.required == null ? (q.required ? 1 : 0) : (b.required ? 1 : 0);
+    await env.DB.prepare('UPDATE question_bank SET category = ?, prompt = ?, marks = ?, word_limit = ?, active = ?, required = ? WHERE id = ?')
+      .bind(part, prompt, marks, wl === undefined ? q.word_limit : wl, active, required, q.id)
       .run();
     await audit(env, 'edit_question', null, q.id);
     return json({ ok: true });
   }
 
-  // Bulk import: JSON rows of { part: 1|2, prompt, marks?, wordLimit?, referenceAnswer?, guidance? }
+  // Bulk import: JSON rows of { part: 1|2, prompt, marks?, wordLimit?, referenceAnswer?, guidance?, required? }
+  // (required: true = every candidate gets this question; the rest of the part is drawn at random)
   // (or category: "part1"/"part2"). referenceAnswer and guidance are for the grader
   // only: they are stored in reference_answer / rubric and never sent to candidates.
   if (path === '/api/admin/questions/bulk-import' && request.method === 'POST') {
@@ -172,7 +180,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const cfg = await getDocsConfig(env);
     const norm = (p: string) => p.trim().toLowerCase().replace(/\s+/g, ' ');
     const existing = new Set(((await env.DB.prepare('SELECT prompt FROM question_bank WHERE deleted_at IS NULL').all<{ prompt: string }>()).results ?? []).map((r) => norm(r.prompt)));
-    const rows: { part: DocsPart; prompt: string; marks: number; wl: number | null; ref: string | null; guide: string | null }[] = [];
+    const rows: { part: DocsPart; prompt: string; marks: number; wl: number | null; ref: string | null; guide: string | null; req: number }[] = [];
     const textOrNull = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 20000) : null);
     let skipped = 0, duplicates = 0;
     for (const q of list) {
@@ -184,11 +192,11 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       const key = norm(prompt);
       if (existing.has(key)) { duplicates++; continue; }
       existing.add(key);
-      rows.push({ part, prompt, marks, wl: wl ?? null, ref: textOrNull(q?.referenceAnswer ?? q?.reference_answer), guide: textOrNull(q?.guidance ?? q?.rubric) });
+      rows.push({ part, prompt, marks, wl: wl ?? null, ref: textOrNull(q?.referenceAnswer ?? q?.reference_answer), guide: textOrNull(q?.guidance ?? q?.rubric), req: q?.required === true || q?.required === 1 ? 1 : 0 });
     }
     if (rows.length) {
-      const stmt = env.DB.prepare(`INSERT INTO question_bank (id, category, prompt, marks, word_limit, reference_answer, rubric, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`);
-      await env.DB.batch(rows.map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl, r.ref, r.guide)));
+      const stmt = env.DB.prepare(`INSERT INTO question_bank (id, category, prompt, marks, word_limit, reference_answer, rubric, required, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`);
+      await env.DB.batch(rows.map((r) => stmt.bind(newId('q'), r.part, r.prompt, r.marks, r.wl, r.ref, r.guide, r.req)));
       await audit(env, 'import_questions', null, `${rows.length} imported, ${duplicates} duplicates, ${skipped} skipped`);
     }
     return json({ ok: true, imported: rows.length, duplicates, skipped });

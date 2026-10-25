@@ -1,4 +1,5 @@
 import type { Env } from '../types';
+import { ensureRequiredCol } from './db';
 
 /**
  * Which hiring team this deployment serves.
@@ -84,21 +85,23 @@ export async function getDocsConfig(env: Env): Promise<DocsConfig> {
 }
 
 /** Active (not disabled, not deleted) questions in each part of the bank. */
-export async function docsPoolCounts(env: Env): Promise<{ part1: number; part2: number }> {
-  const out = { part1: 0, part2: 0 };
+/** Active questions per part, and how many of them every candidate gets ("required"). */
+export async function docsPoolCounts(env: Env): Promise<{ part1: number; part2: number; required: { part1: number; part2: number } }> {
+  const out = { part1: 0, part2: 0, required: { part1: 0, part2: 0 } };
   try {
+    await ensureRequiredCol(env);
     const rows = await env.DB.prepare(
-      "SELECT category, COUNT(*) AS n FROM question_bank WHERE active = 1 AND deleted_at IS NULL AND category IN ('part1','part2') GROUP BY category"
-    ).all<{ category: DocsPart; n: number }>();
-    for (const r of rows.results ?? []) out[r.category] = Number(r.n) || 0;
+      "SELECT category, COUNT(*) AS n, SUM(CASE WHEN required = 1 THEN 1 ELSE 0 END) AS r FROM question_bank WHERE active = 1 AND deleted_at IS NULL AND category IN ('part1','part2') GROUP BY category"
+    ).all<{ category: DocsPart; n: number; r: number }>();
+    for (const row of rows.results ?? []) { out[row.category] = Number(row.n) || 0; out.required[row.category] = Number(row.r) || 0; }
   } catch { /* bank not ready */ }
   return out;
 }
 
 /** Thrown when a part's bank has fewer active questions than each candidate needs. */
 export class DocsPoolTooSmall extends Error {
-  constructor(public part: DocsPart, public need: number, public have: number) {
-    super(`The ${part === 'part1' ? 'Part 1' : 'Part 2'} question bank has ${have} active question(s); each candidate needs ${need}.`);
+  constructor(public part: DocsPart, public need: number, public have: number, message?: string) {
+    super(message ?? `The ${part === 'part1' ? 'Part 1' : 'Part 2'} question bank has ${have} active question(s); each candidate needs ${need}.`);
   }
 }
 

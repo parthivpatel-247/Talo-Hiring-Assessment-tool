@@ -1,5 +1,6 @@
-# Every bold / underlined / italic phrase candidates should see is shown with the same emphasis.
+# Table headings count as bold (the portal shows them bold).
 # Usage: python3 -I scripts/verify-writers-bank-style.py <file.docx> <bank.json>
+# Every bold / underlined / italic phrase candidates should see is shown with the same emphasis.
 import json, sys, docx
 from docx.text.paragraph import Paragraph
 d = docx.Document(sys.argv[1]); qs = json.load(open(sys.argv[2]))['questions']
@@ -29,7 +30,7 @@ for p in paras:
     for s in spans(p, 'bold'):
         heading = p.style.name.startswith('Heading') or s.startswith(('1. Grammar', '2.', '3.', 'Editing', 'Writing'))
         checked += 1
-        ok = f'**{s}' in allp or f'{s}**' in allp or (heading and f'#### {s}' in allp) or (s in ('2.', '3.', 'Editing', 'Writing') and '#### ' in allp)
+        ok = f'| {s} |' in allp or f'| {s} ' in allp or f' {s} |' in allp or f'**{s}' in allp or f'{s}**' in allp or (heading and f'#### {s}' in allp) or (s in ('2.', '3.', 'Editing', 'Writing') and '#### ' in allp)
         if not ok: problems.append(('bold', s))
     for s in spans(p, 'underline'):
         checked += 1

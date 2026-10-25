@@ -142,11 +142,12 @@
             <div class="card-head"><h2>Add a question</h2></div>
             <div class="card-body">
               <p class="muted support-only" style="margin:0 0 14px">Write a question in plain language and paste the reference answer. On save, AI builds a sample-data table (for SQL) and a grading rubric — never shown to candidates.</p>
-              <p class="muted docs-only" style="margin:0 0 14px">Pick the part, write the question exactly as candidates should see it, and set its marks and word limit. There is no rubric: AI reads each answer as a whole and gives marks with a short reason.</p>
+              <p class="muted docs-only" style="margin:0 0 14px">Pick the part, write the question exactly as candidates should see it, and set its marks and word limit. AI reads each answer as a whole and gives marks with a short reason. A model answer and marking guidance can come with Bulk import; AI treats a model answer as one acceptable version. Tick <em>Every candidate</em> for a question everyone must get; the rest of the part is drawn at random.</p>
               <div class="qform-row">
                 <div><label class="field" for="q-category">Type</label><select id="q-category"><option value="sql">SQL</option><option value="python">Python</option><option value="dsa">DSA</option><option value="scenario">Scenario</option></select></div>
                 <div><label class="field" for="q-marks">Marks</label><input type="text" id="q-marks" placeholder="auto by type" /></div>
                 <div class="docs-only"><label class="field" for="q-wordlimit">Word limit</label><input type="number" id="q-wordlimit" min="50" max="3000" step="50" placeholder="default" /></div>
+                <div class="docs-only"><label class="field" for="q-required">Every candidate</label><label style="display:flex;gap:8px;align-items:center;height:38px;font-size:13px"><input type="checkbox" id="q-required" /> Always include</label></div>
                 <div class="support-only"><label class="field" for="q-difficulty">Difficulty</label><select id="q-difficulty"><option value="easy">Easy</option><option value="medium" selected>Medium</option><option value="hard">Hard</option></select></div>
               </div>
               <label class="field" for="q-prompt">Question</label>
@@ -165,7 +166,7 @@
               <details style="margin-top:16px">
                 <summary>Bulk import (JSON) — optional</summary>
                 <p class="muted support-only" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file (easiest), or paste the JSON below. Then click "Enrich all with AI".</p>
-                <p class="muted docs-only" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file, or paste the JSON below. Each question needs <code>part</code> (1 or 2) and <code>prompt</code>; <code>marks</code> and <code>wordLimit</code> are optional. Questions already in the bank are skipped. Example: <code>{"questions":[{"part":1,"prompt":"Rewrite this error message…","marks":5,"wordLimit":150}]}</code></p>
+                <p class="muted docs-only" style="margin:10px 0 6px;font-size:12.5px">Pick a .json file, or paste the JSON below. Each question needs <code>part</code> (1 or 2) and <code>prompt</code>; <code>marks</code>, <code>wordLimit</code>, <code>referenceAnswer</code> and <code>guidance</code> (for the grader only) and <code>required</code> (true = every candidate gets it) are optional. Questions already in the bank are skipped. Example: <code>{"questions":[{"part":1,"prompt":"Rewrite this error message…","marks":5,"wordLimit":150}]}</code></p>
                 <input type="file" id="bulk-json-file" accept=".json,application/json" style="margin-bottom:10px" />
                 <textarea id="bulk-json" placeholder='{"questions":[{"category":"sql","prompt":"...","referenceAnswer":"..."}]}'></textarea>
                 <div class="btn-row"><button id="bulk-import-btn" class="secondary">Import JSON</button></div>

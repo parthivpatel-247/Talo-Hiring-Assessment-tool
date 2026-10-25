@@ -92,13 +92,14 @@ npx wrangler d1 migrations apply campus-hiring-assessment-db --remote
 
 The team's test comes from their Word file "Writing Assignment Campus Drive". `scripts/build-writers-bank.py` turns it into an import file, `scripts/verify-writers-bank.py` checks that every line candidates see is copied word for word, and `scripts/verify-writers-bank-style.py` checks that bold, underline and italic match.
 
-- **Part 1 (closed book):** 22 questions, 30 marks. They are the 20 grammar sentences (1 mark each) and the two editing exercises, Write a tooltip and Write an alert message (5 marks each). Every candidate gets all 22, each in their own random order.
-- **Part 2 (open book):** 1 question, the Alerts PRD outline (20 marks).
+- **Part 1 (closed book):** each candidate gets **12 questions, 20 marks**: both editing exercises (Write a tooltip, Write an alert message, 5 marks each, marked *Every candidate*) plus **10 of the 20 grammar sentences** (1 mark each). The ten are drawn by least-used rotation, so the 20 sentences are spread evenly across candidates (two candidates in a row get complementary sets). The 12 are then shuffled, so every candidate sees them in a different order.
+- **Part 2 (open book):** 1 question, the Alerts PRD outline (20 marks), the same for everyone. The total is **40 marks**, as in the team's file.
+- **How Part 2 looks:** the task sits in a "Your task" card at the top (it can be folded away). The PRD follows as a reference document, with a bar that stays in view and jumps to Task, Objective, Background, Requirements and User Stories. The answer box is on the right, with a 2,000-word limit.
 - **Exercise I** was reframed at the team's request: candidates write the one-line tooltip from the context. There is no existing tooltip to rewrite.
 - **Model answers, acceptable variations, explanations and marking criteria** are stored with each question for the grader only. Candidates never receive them. The grader treats a model answer as one acceptable version and gives full marks to other correct wordings.
 - **Setting up the live site:**
   1. In Admin → Question bank → Bulk import, choose `writers-question-bank.json`.
-  2. Under Resumes → Assessment length, set Part 1 to 22 questions and 30 minutes, and Part 2 to 1 question and 45 minutes.
+  2. Under Resumes → Assessment length, set Part 1 to 12 questions and 30 minutes, and Part 2 to 1 question and 45 minutes.
   3. Check that both parts show green.
 - **Formatting in question text:**
   - `#### heading` (a section heading, kept in its own letter case);
@@ -107,7 +108,8 @@ The team's test comes from their Word file "Writing Assignment Campus Drive". `s
   - `[u]underline[/u]` and `[i]italic[/i]`;
   - lists (indent two spaces for a nested item);
   - tables, in which `<br>` makes a line break inside a cell.
-- **Welcome screen:** shows the team's introduction, with the duration taken from Assessment length and Marks: 50.
+- **Welcome screen:** shows the team's introduction, with the duration taken from Assessment length and Marks: 40.
+- **Every candidate / drawn at random:** a question marked *Every candidate* (Question bank row button, the Add form tick box, or `"required": true` in an import file) goes to every candidate; the rest of the part's question count is drawn at random. Assessment length refuses a count smaller than the number of *Every candidate* questions.
 
 ## On the day
 

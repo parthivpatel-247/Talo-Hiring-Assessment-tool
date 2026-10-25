@@ -173,7 +173,7 @@ describe('writers site — admin', () => {
     const cfg = await (await dreq('/api/admin/config', { headers: { Cookie: admin } })).json<any>();
     expect(cfg.team).toBe('docs');
     expect(cfg.questionCategories.map((c: any) => c.value)).toEqual(['part1', 'part2']);
-    expect(cfg.docs.pool).toEqual({ part1: 6, part2: 3 });
+    expect(cfg.docs.pool).toMatchObject({ part1: 6, part2: 3 });
   });
 
   it('saves questions and minutes per part (manager only, validated)', async () => {
@@ -403,10 +403,10 @@ describe('writers site — same admin features and protections as the support si
   it('question soft-delete, restore and disable keep the bank counts right', async () => {
     const admin = await adminLogin();
     const pool = async () => (await (await dreq('/api/admin/config', { headers: { Cookie: admin } })).json<any>()).docs.pool;
-    expect(await pool()).toEqual({ part1: 6, part2: 3 });
+    expect(await pool()).toMatchObject({ part1: 6, part2: 3 });
     await dreq('/api/admin/questions/d1-0', { method: 'DELETE', headers: { Cookie: admin } });
     await dreq('/api/admin/questions/d2-0/toggle-active', jsonPost(admin));
-    expect(await pool()).toEqual({ part1: 5, part2: 2 });
+    expect(await pool()).toMatchObject({ part1: 5, part2: 2 });
     await dreq('/api/admin/questions/d1-0/restore', jsonPost(admin));
     const q = await env.DB.prepare("SELECT deleted_at FROM question_bank WHERE id = 'd1-0'").first<any>();
     expect(q.deleted_at).toBeNull();

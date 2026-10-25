@@ -1,6 +1,6 @@
 import type { Env, QuestionBankRow } from '../types';
 import { ensurePart3Schema, seedDefaultPart3 } from './part3bank';
-import { ensurePerfSchema, newId } from './db';
+import { ensurePerfSchema, ensureRequiredCol, newId } from './db';
 import { getDocsConfig, DocsPoolTooSmall } from './team';
 
 /**
@@ -116,7 +116,8 @@ async function pickLeastUsed(
   env: Env,
   category: 'sql' | 'python' | 'dsa' | 'scenario' | 'part1' | 'part2',
   count: number,
-  exclude: Set<string> = new Set()
+  exclude: Set<string> = new Set(),
+  optionalOnly = false
 ): Promise<string[]> {
   if (count <= 0) return [];
   // Reads only this category's pool (via idx_qbank_cat_active) plus one counter row
@@ -125,7 +126,7 @@ async function pickLeastUsed(
     `SELECT qb.id AS id, COALESCE(u.uses, 0) AS uses
      FROM question_bank qb
      LEFT JOIN question_usage u ON u.question_id = qb.id
-     WHERE qb.category = ? AND qb.active = 1 AND qb.deleted_at IS NULL`
+     WHERE qb.category = ? AND qb.active = 1 AND qb.deleted_at IS NULL${optionalOnly ? ' AND COALESCE(qb.required, 0) = 0' : ''}`
   )
     .bind(category)
     .all<{ id: string; uses: number }>();
@@ -226,9 +227,21 @@ export async function assignDocsPart1(env: Env, candidateId: string): Promise<vo
   const existing = await env.DB.prepare('SELECT 1 FROM part1_assignments WHERE candidate_id = ?').bind(candidateId).first();
   if (existing) return; // idempotent — the same set survives reloads and Resume
   await ensurePerfSchema(env);
+  await ensureRequiredCol(env);
   const need = (await getDocsConfig(env)).part1.questions;
   const seen = await seenQuestionIds(env, candidateId);
-  const ids = await pickLeastUsed(env, 'part1', need, seen);
+  // Questions marked "every candidate gets this" are always in the set; the rest of
+  // the set is drawn from the other Part 1 questions by least-used rotation. Then the
+  // whole set is shuffled, so the required ones land at a different place each time.
+  const required = ((await env.DB.prepare(
+    "SELECT id FROM question_bank WHERE category = 'part1' AND active = 1 AND deleted_at IS NULL AND required = 1"
+  ).all<{ id: string }>()).results ?? []).map((r) => r.id);
+  if (required.length > need) {
+    throw new DocsPoolTooSmall('part1', need, required.length,
+      `Part 1 has ${required.length} questions every candidate must get, but each candidate gets only ${need}. Raise Part 1's question count or untick some.`);
+  }
+  const drawn = await pickLeastUsed(env, 'part1', need - required.length, seen, true);
+  const ids = [...required, ...drawn];
   if (ids.length < need) throw new DocsPoolTooSmall('part1', need, ids.length);
   const ordered = shuffle(ids);
   // The whole set goes in as ONE statement, and only if the candidate has no set yet,

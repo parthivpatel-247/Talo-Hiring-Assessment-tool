@@ -318,6 +318,42 @@ function makePart(part) {
     if (submitBtn) submitBtn.classList.toggle('hidden', !isLast);
   }
 
+  // Writers' Part 2: a task that comes with a reference document (a "## Title" line
+  // starts the document). The task sits in its own card at the top; the document
+  // follows with a bar that stays in view and jumps to each of its sections.
+  function promptHtml(q) {
+    const plain = `<div class="qprompt">${renderRich(q.prompt)}</div>`;
+    if (!(IS_DOCS && part === 'part2')) return plain;
+    const lines = String(q.prompt || '').split('\n');
+    const at = lines.findIndex((l) => /^##\s+/.test(l.trim()));
+    if (at <= 0) return plain;
+    const task = lines.slice(0, at).join('\n');
+    const title = lines[at].trim().replace(/^##\s+/, '');
+    const doc = lines.slice(at + 1).join('\n');
+    return `<details class="task-card" open><summary>Your task</summary><div class="qprompt">${renderRich(task)}</div></details>` +
+      `<div class="ref-doc"><div class="ref-jump"><span class="ref-title">${renderInline(title)}</span><span class="ref-chips"></span></div>` +
+      `<div class="qprompt">${renderRich(doc)}</div></div>`;
+  }
+  function wireReferenceJumps() {
+    const chips = qpanel.querySelector('.ref-chips');
+    if (!chips) return;
+    const add = (label, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'ref-chip'; b.textContent = label;
+      b.addEventListener('click', onClick);
+      chips.appendChild(b);
+    };
+    add('Task', () => { const card = qpanel.querySelector('.task-card'); if (card) card.open = true; qpanel.scrollTo({ top: 0, behavior: 'smooth' }); });
+    qpanel.querySelectorAll('.ref-doc .q-h4').forEach((h) => {
+      // Scroll only the question panel (not the page), leaving room for the bar.
+      add(h.textContent.replace(/:\s*$/, ''), () => {
+        const bar = qpanel.querySelector('.ref-jump');
+        const top = qpanel.scrollTop + h.getBoundingClientRect().top - qpanel.getBoundingClientRect().top - (bar ? bar.offsetHeight : 0) - 6;
+        qpanel.scrollTo({ top, behavior: 'smooth' });
+      });
+    });
+  }
+
   function renderQuestion() {
     const q = current();
     // Part 1 shows SQL/Python (useful context); Part 2 is theory — no language label;
@@ -334,13 +370,14 @@ function makePart(part) {
     qpanel.innerHTML =
       `<div class="qhead"><span class="qnum">Question ${state.idx + 1} of ${state.questions.length}</span>${badge}</div>` +
       title +
-      `<div class="qprompt">${renderRich(q.prompt)}</div>` +
+      promptHtml(q) +
       code +
       (q.sampleData ? `<div class="sampledata">${renderSample(q.sampleData)}</div>` : '') +
       (q.hint ? `<details class="hintbox"><summary>💡 Show a hint</summary><div class="hinttext">${escapeHtml(q.hint)}</div></details>` : '');
     // Retrigger a quick fade so moving between questions reads as a smooth swap.
     qpanel.classList.remove('q-enter'); void qpanel.offsetWidth; qpanel.classList.add('q-enter');
     qpanel.scrollTop = 0;
+    wireReferenceJumps();
     answer.value = state.answers[q.id] || '';
     updateWordCount();
   }

@@ -151,6 +151,7 @@ questions.append({
     'part': 1, 'prompt': prompt, 'marks': 5, 'wordLimit': 50,
     'referenceAnswer': 'Model answer: ' + model1 + '\nAcceptable variations:\n' + '\n'.join('- ' + v for v in variations),
     'guidance': 'Marking criteria:\n' + '\n'.join('- ' + c for c in criteria),
+    'required': True,  # every candidate gets both editing exercises
     '_key': 'Editing Exercise I (tooltip)',
 })
 
@@ -166,6 +167,7 @@ questions.append({
     'part': 1, 'prompt': prompt, 'marks': 5, 'wordLimit': 100,
     'referenceAnswer': 'Model answer: ' + model2,
     'guidance': guid2,
+    'required': True,
     '_key': 'Editing Exercise II (alert message)',
 })
 
@@ -227,6 +229,7 @@ questions.append({
     'part': 2, 'prompt': prompt, 'marks': 20, 'wordLimit': 2000,
     'referenceAnswer': '',
     'guidance': 'No model answer. Grade the outline against the task and the four checks the question lists (relevance, accuracy against the PRD, language, level of detail). Reward good questions for the Product Manager about gaps or unclear points in the PRD.',
+    'required': True,
     '_key': 'Writing (Alerts PRD outline)',
 })
 
