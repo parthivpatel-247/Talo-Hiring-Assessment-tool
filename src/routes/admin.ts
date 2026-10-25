@@ -447,7 +447,15 @@ export async function handleAdminRoute(
     if (role !== 'manager') return json({ error: 'Manager access required.' }, { status: 403 });
     await ensureAuthSchema(env);
     const rows = await env.DB.prepare('SELECT id, username, email, role, active, created_at FROM admin_users ORDER BY created_at').all();
-    return json({ members: rows.results ?? [] });
+    // The config sign-ins (ADMIN_EMAIL / PANEL_EMAIL with their wrangler secrets) are
+    // not stored accounts, but they are logins too: list them, read-only, so the
+    // manager signed in with one sees it here.
+    const config: { email: string; role: AdminRole }[] = [];
+    const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
+    const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
+    if (adminEmail && env.ADMIN_PASSWORD) config.push({ email: adminEmail, role: 'manager' });
+    if (panelEmail && env.PANEL_PASSWORD) config.push({ email: panelEmail, role: 'member' });
+    return json({ members: rows.results ?? [], config });
   }
   if (path === '/api/admin/members' && request.method === 'POST') {
     if (role !== 'manager') return json({ error: 'Manager access required.' }, { status: 403 });

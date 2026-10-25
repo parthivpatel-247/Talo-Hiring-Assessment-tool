@@ -460,15 +460,27 @@ if ($('docs-length-save-btn')) $('docs-length-save-btn').addEventListener('click
 async function loadMembers() {
   const tb = document.querySelector('#member-table tbody');
   try {
-    const { members } = await api('/api/admin/members');
-    renderMembers(members || []);
+    const { members, config } = await api('/api/admin/members');
+    renderMembers(members || [], config || []);
   } catch (e) { if (tb) tb.innerHTML = `<tr><td colspan="6" class="empty">Could not load members: ${escapeHtml(e.message)}</td></tr>`; }
 }
-function renderMembers(members) {
+function renderMembers(members, config = []) {
   const tb = document.querySelector('#member-table tbody');
   if (!tb) return;
-  if (!members.length) { tb.innerHTML = '<tr><td colspan="6" class="empty">No named members yet — add one above. (The manager bootstrap password still works.)</td></tr>'; return; }
-  tb.innerHTML = members.map((m) => `<tr>
+  // Config sign-ins (set with wrangler secrets): shown first, read-only.
+  const configRows = config.map((c) => `<tr>
+      <td><strong>${c.role === 'manager' ? 'Main manager' : 'Panel (shared)'}</strong> <span class="muted" style="font-size:12px">config sign-in</span></td>
+      <td style="font-size:12.5px;color:var(--faint)">${escapeHtml(c.email)}</td>
+      <td><span class="pill ${c.role === 'manager' ? 'ok' : 'info'}">${escapeHtml(c.role)}</span></td>
+      <td><span class="pill ok">active</span></td>
+      <td class="tnum" style="font-size:12px;color:var(--faint)">—</td>
+      <td><span class="muted" style="font-size:12px">Password set with <code>wrangler secret put</code></span></td>
+    </tr>`).join('');
+  if (!members.length) {
+    tb.innerHTML = configRows + '<tr><td colspan="6" class="empty">No named members yet — add one above.</td></tr>';
+    return;
+  }
+  tb.innerHTML = configRows + members.map((m) => `<tr>
       <td><strong>${escapeHtml(m.username)}</strong></td>
       <td style="font-size:12.5px;color:var(--faint)">${escapeHtml(m.email || '—')}</td>
       <td><span class="pill ${m.role === 'manager' ? 'ok' : 'info'}">${escapeHtml(m.role)}</span></td>
@@ -484,7 +496,7 @@ function renderMembers(members) {
   tb.querySelectorAll('[data-mrole]').forEach((b) => b.addEventListener('click', () => memberUpdate(b.dataset.mrole, { role: b.dataset.cur === 'manager' ? 'member' : 'manager' })));
   tb.querySelectorAll('[data-mtoggle]').forEach((b) => b.addEventListener('click', () => memberUpdate(b.dataset.mtoggle, { active: b.dataset.active !== '1' })));
   tb.querySelectorAll('[data-mpass]').forEach((b) => b.addEventListener('click', () => {
-    const pw = prompt('New password for this member (at least 6 characters):');
+    const pw = prompt('New password for this member (at least 10 characters):');
     if (!pw) return;
     memberUpdate(b.dataset.mpass, { password: pw });
   }));

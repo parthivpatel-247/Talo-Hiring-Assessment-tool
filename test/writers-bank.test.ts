@@ -175,3 +175,13 @@ describe('writers question bank: editing marks later', () => {
     expect((await put({ marks: 0.3 })).status).toBe(400);
   });
 });
+
+describe('Access lists the config sign-ins', () => {
+  beforeEach(async () => { await migrate(); });
+  it('members API returns the manager config sign-in, read-only', async () => {
+    const a = await admin();
+    const r = await (await dreq('/api/admin/members', { headers: { Cookie: a } })).json<any>();
+    expect(r.config).toEqual([{ email: 'admin@test.local', role: 'manager' }, { email: 'panel@test.local', role: 'member' }]);
+    expect(r.members).toEqual([]);
+  });
+});
