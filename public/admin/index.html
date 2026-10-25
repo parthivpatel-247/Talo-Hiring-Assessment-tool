@@ -193,10 +193,10 @@
           <section class="card">
             <div class="card-head"><h2>Assessment length</h2><div class="r muted support-only" style="font-size:12.5px;align-self:center">The total time each candidate gets</div><div class="r muted docs-only" style="font-size:12.5px;align-self:center">Questions and time for each part</div></div>
             <div class="card-body docs-only">
-              <p class="muted" style="margin:0 0 12px">Each candidate gets this many questions, drawn at random from that part's bank, and this much time for each part. Changes apply to candidates who <strong>start after you save</strong>; anyone already in a part keeps what they were given.</p>
+              <p class="muted" style="margin:0 0 12px"><strong>Questions</strong> is the total each candidate gets in that part, <em>including</em> the questions marked <em>Every candidate</em>; the rest are drawn at random. Example: 2 every-candidate questions + 10 random = <strong>12</strong>. Changes apply to candidates who <strong>start after you save</strong>; anyone who has already started keeps what they were given (use Retake to give them a new set).</p>
               <div class="table-wrap">
                 <table class="len-table">
-                  <thead><tr><th>Part</th><th>Questions</th><th>Minutes</th><th>In the bank</th></tr></thead>
+                  <thead><tr><th>Part</th><th>Questions per candidate</th><th>Minutes</th><th>In the bank</th></tr></thead>
                   <tbody>
                     <tr><td><strong>Part 1</strong> <span class="muted">closed book</span></td>
                       <td><input type="number" id="docs-p1-q" min="1" max="40" step="1" aria-label="Part 1 questions" /></td>
@@ -305,6 +305,6 @@
     </div>
   </div>
 
-  <script src="/admin/admin.js?v=52"></script>
+  <script src="/admin/admin.js?v=53"></script>
 </body>
 </html>

@@ -159,3 +159,19 @@ describe('writers Part 1: questions every candidate gets, plus a random draw', (
     expect(cfg.docs.pool.required.part1).toBe(3);
   });
 });
+
+describe('writers question bank: editing marks later', () => {
+  beforeEach(async () => { await setup(); });
+
+  it('a manager can change a question\'s marks and word limit; new candidates get the new marks', async () => {
+    const a = await admin();
+    const q = (await env.DB.prepare("SELECT id FROM question_bank WHERE prompt LIKE '%number 5.%'").first<any>()).id;
+    const put = (body: unknown) => dreq(`/api/admin/questions/${q}`, { method: 'PUT', headers: { Cookie: a, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    expect((await put({ marks: 2, wordLimit: 80 })).status).toBe(200);
+    expect(await env.DB.prepare('SELECT marks, word_limit, reference_answer FROM question_bank WHERE id = ?').bind(q).first<any>())
+      .toEqual({ marks: 2, word_limit: 80, reference_answer: `${SECRET_MODEL} 5` });
+    expect((await put({ wordLimit: '' })).status).toBe(200); // back to the default
+    expect((await env.DB.prepare('SELECT word_limit FROM question_bank WHERE id = ?').bind(q).first<any>()).word_limit).toBeNull();
+    expect((await put({ marks: 0.3 })).status).toBe(400);
+  });
+});
