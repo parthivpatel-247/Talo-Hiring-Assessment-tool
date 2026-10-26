@@ -985,13 +985,13 @@ function docsDefaultWords(q) {
   return q.category === 'part1' ? (DOCS.part1WordLimit || DOCS.wordLimit) : DOCS.wordLimit;
 }
 function questionExtraCell(q) {
-  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${num(q.word_limit)}</span>` : `<span class="muted">default (${docsDefaultWords(q)})</span>`;
+  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${num(q.word_limit)}</span>` : `<span class="tnum" title="Default word limit for this part">${num(docsDefaultWords(q))}</span>`;
   return q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—';
 }
 function questionDetailHtml(q) {
   if (IS_DOCS) {
     return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${q.word_limit ? num(q.word_limit) : `${docsDefaultWords(q)} (default)`} · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${q.word_limit ? num(q.word_limit) : num(docsDefaultWords(q))} · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
     ${q.reference_answer ? `<div class="detail-block"><h3>Model answer (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.reference_answer)}</pre></div>` : ''}
     ${q.rubric ? `<div class="detail-block"><h3>Marking guidance (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.rubric)}</pre></div>` : ''}
