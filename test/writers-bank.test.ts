@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { env, fetchMock, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test';
 import worker from '../src/index';
 import { migrate, seedCandidate, openAiReply, applySql } from './helpers';
@@ -229,5 +229,42 @@ describe('word limits: Part 1 default 500, Part 2 default 1000, up to 10,000', (
     expect((await put(5000)).status).toBe(200);
     expect((await put(10000)).status).toBe(200);
     expect((await put(10001)).status).toBe(400);
+  });
+});
+
+describe('writers grading: an answer that pastes the question back', () => {
+  const prd = Array.from({ length: 60 }, (_, i) => `Requirement ${i + 1}: the alerting system should notify users about pipeline failures, delays and schema changes through email, Slack and the dashboard.`).join('\n');
+  const prompt = `#### 3. Writing (20 marks)\n\n**Task:** Using the Alerts PRD below, create a detailed outline for the Alerts chapter of a User Guide.\n\n## Alerts PRD\n\n${prd}`;
+
+  it('measures how much of an answer is copied from the question', async () => {
+    const { copiedFromQuestion } = await import('../src/lib/openai');
+    const pasted = prompt.replace(/\*\*|#+ /g, '');
+    expect(copiedFromQuestion(prompt, pasted).ratio).toBeGreaterThan(0.95);
+    const own = 'Alerts chapter outline. 1. Overview: what alerts are and why they matter, with a diagram. 2. Alert types: a table of each alert, the service that raises it and its severity. 3. Channels: steps with screenshots to set email, Slack or dashboard. Questions for the PM: who can create rules, and is there a limit on the snooze period?';
+    expect(copiedFromQuestion(prompt, own).ratio).toBeLessThan(0.1);
+  });
+
+  it('gives a pasted Part 2 question 0 without asking the AI', async () => {
+    const { gradeWritingAnswer } = await import('../src/lib/openai');
+    fetchMock.activate(); fetchMock.disableNetConnect(); // any AI call would throw
+    const g = await gradeWritingAnswer(env as any, { part: 'part2', prompt, maxMarks: 20, answerText: 'PART B\n' + prompt.replace(/\*\*|#+ /g, '') });
+    expect(g.score).toBe(0);
+    expect(g.reasoning).toMatch(/word for word/);
+    expect(g.deductions[0].marks).toBe(20);
+  });
+
+  it('still sends an original Part 2 answer that quotes the PRD to the AI, with a copy note', async () => {
+    const { gradeWritingAnswer } = await import('../src/lib/openai');
+    let sent = '';
+    // (spy on fetch directly: an earlier test leaves a persistent mock reply in place)
+    const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url: any, init: any) => {
+      sent = String(init?.body);
+      return new Response(JSON.stringify(openAiReply({ score: 6, reasoning: 'Mostly copied.', deductions: [{ reason: 'copied PRD', marks: 14 }], ai_content_percent: 10 })), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    });
+    const own = 'My outline: 1. Overview with a diagram. 2. Alert types table. 3. Channel setup steps with screenshots. 4. Rules with an example. Questions for the PM: who can create rules? ';
+    const g = await gradeWritingAnswer(env as any, { part: 'part2', prompt, maxMarks: 20, answerText: own + prd.slice(0, 600) });
+    expect(g.score).toBe(6);
+    expect(sent).toContain('Copy check');
+    spy.mockRestore();
   });
 });
