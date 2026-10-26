@@ -231,10 +231,11 @@ export async function assignDocsPart1(env: Env, candidateId: string): Promise<vo
   const need = (await getDocsConfig(env)).part1.questions;
   const seen = await seenQuestionIds(env, candidateId);
   // Questions marked "every candidate gets this" are always in the set; the rest of
-  // the set is drawn from the other Part 1 questions by least-used rotation. Then the
-  // whole set is shuffled, so the required ones land at a different place each time.
+  // the set is drawn from the other Part 1 questions by least-used rotation. The drawn
+  // questions are shuffled and come first; the required ones always come last, in the
+  // order they were added to the bank (e.g. Q11 Exercise I, Q12 Exercise II).
   const required = ((await env.DB.prepare(
-    "SELECT id FROM question_bank WHERE category = 'part1' AND active = 1 AND deleted_at IS NULL AND required = 1"
+    "SELECT id FROM question_bank WHERE category = 'part1' AND active = 1 AND deleted_at IS NULL AND required = 1 ORDER BY created_at, rowid"
   ).all<{ id: string }>()).results ?? []).map((r) => r.id);
   if (required.length > need) {
     throw new DocsPoolTooSmall('part1', need, required.length,
@@ -243,7 +244,7 @@ export async function assignDocsPart1(env: Env, candidateId: string): Promise<vo
   const drawn = await pickLeastUsed(env, 'part1', need - required.length, seen, true);
   const ids = [...required, ...drawn];
   if (ids.length < need) throw new DocsPoolTooSmall('part1', need, ids.length);
-  const ordered = shuffle(ids);
+  const ordered = [...shuffle(drawn), ...required];
   // The whole set goes in as ONE statement, and only if the candidate has no set yet,
   // so two overlapping calls (prefetch + start) can't give one candidate two sets.
   // json_each keeps the shuffled order: key 0 is position 0. (UNIQUE(candidate_id,

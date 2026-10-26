@@ -133,6 +133,10 @@ describe('writers Part 1: questions every candidate gets, plus a random draw', (
       expect(qs.filter((q) => q.prompt.includes('Exercise I:'))).toHaveLength(1);
       expect(qs.filter((q) => q.prompt.includes('Exercise II:'))).toHaveLength(1);
       expect(qs.filter((q) => q.prompt.includes('| Sentence |'))).toHaveLength(10);
+      // Q1-Q10 are the shuffled sentences; Q11 and Q12 are always the editing exercises
+      expect(qs.slice(0, 10).every((q) => q.prompt.includes('| Sentence |'))).toBe(true);
+      expect(qs[10].prompt).toContain('Exercise I:');
+      expect(qs[11].prompt).toContain('Exercise II:');
       sets.push(qs.map((q) => q.prompt));
     }
     // the random ten differ between candidates, and so does the order
