@@ -1,9 +1,9 @@
 import type { Env, Candidate } from '../types';
 import type { AdminRole } from '../lib/auth';
 import { json } from '../lib/auth';
-import { newId, nowIso, ensureGradingClaimCols, ensureRequiredCol } from '../lib/db';
+import { newId, nowIso, ensureGradingClaimCols, ensureRequiredCol, ensureDocsQuestionLimits } from '../lib/db';
 import { gradeWritingAnswer } from '../lib/openai';
-import { getDocsConfig, docsPoolCounts, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
+import { getDocsConfig, docsPoolCounts, defaultWordLimit, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
 import { ensureDocsAttemptCols, docsStartOpen, REOPEN_SECONDS } from './candidate-docs';
 
 /**
@@ -72,6 +72,7 @@ export async function docsAdminConfig(env: Env) {
       part1: cfg.part1,
       part2: cfg.part2,
       wordLimit: cfg.wordLimit,
+      part1WordLimit: cfg.part1WordLimit,
       pool,
       limits: DOCS_LIMITS,
       startOpen: await docsStartOpen(env),
@@ -83,6 +84,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
   await ensureDocsAttemptCols(env);
   await ensureGradingClaimCols(env); // Resume and Retake drop any grading claim in flight
   await ensureRequiredCol(env); // "every candidate gets this question" flag
+  await ensureDocsQuestionLimits(env); // word limits up to 10,000
 
   // ---- Open / close the test: candidates can start Part 1 only while it is open ----
   // ---- Grade one candidate: only once both parts are finished ----
@@ -410,7 +412,7 @@ export async function gradeDocsCandidate(env: Env, candidateId: string, claim: s
   // At most 6 answers are graded at once: a Part 1 can hold 20+ short items, and this
   // keeps one request well inside the per-request limits.
   await pool(p1.results ?? [], 6, async (q) => {
-    const g = await gradeWritingAnswer(env, { part: 'part1', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '', wordLimit: q.word_limit || cfg.wordLimit, referenceAnswer: q.reference_answer, guidance: q.rubric });
+    const g = await gradeWritingAnswer(env, { part: 'part1', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '', wordLimit: q.word_limit || cfg.part1WordLimit, referenceAnswer: q.reference_answer, guidance: q.rubric });
     await env.DB.prepare(
       `INSERT INTO part1_answers (candidate_id, question_id, answer_text, ai_score, ai_reasoning, deductions, max_marks, scored_at)
        SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM candidates WHERE id = ? AND grading_claim = ?)
@@ -560,7 +562,7 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
       const s1 = sum(r1), s2 = sum(r2);
       const base = [csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), s1.awarded + s2.awarded, s1.max + s2.max];
       const row = (part: string, q: any, i: number) => [
-        ...base, part, i + 1, csvEsc(q.prompt), csvEsc(q.answer_text || ''), words(q.answer_text), q.word_limit || cfg.wordLimit,
+        ...base, part, i + 1, csvEsc(q.prompt), csvEsc(q.answer_text || ''), words(q.answer_text), q.word_limit || defaultWordLimit(cfg, part === 'Part 1' || part === 'part1' ? 'part1' : 'part2'),
         q.ai_score ?? '', (q.ai_score != null ? q.max_marks : null) ?? q.marks ?? '', csvEsc(q.ai_reasoning || ''), csvEsc(fmtDed(q.deductions)),
         q.ai_content_pct != null ? Math.round(q.ai_content_pct) : '',
       ].join(',');

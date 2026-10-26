@@ -980,21 +980,25 @@ if (part3SeedBtn) part3SeedBtn.addEventListener('click', async () => {
 // Detail markup for a question, shown inline (expanded row) right under the
 // question in the Question bank — not on the Overview page.
 // 4th column of the question table: sample data (support) or word limit (writers).
+function docsDefaultWords(q) {
+  if (!DOCS) return 'default';
+  return q.category === 'part1' ? (DOCS.part1WordLimit || DOCS.wordLimit) : DOCS.wordLimit;
+}
 function questionExtraCell(q) {
-  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${num(q.word_limit)}</span>` : `<span class="muted">default (${DOCS ? DOCS.wordLimit : 1000})</span>`;
+  if (IS_DOCS) return q.word_limit ? `<span class="tnum">${num(q.word_limit)}</span>` : `<span class="muted">default (${docsDefaultWords(q)})</span>`;
   return q.sample_data ? '<span style="color:var(--ok)">✓</span>' : '—';
 }
 function questionDetailHtml(q) {
   if (IS_DOCS) {
     return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${num(q.word_limit || (DOCS ? DOCS.wordLimit + ' (default)' : 'default'))} · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(categoryLabel(q.category))} · ${num(q.marks)} marks · word limit ${q.word_limit ? num(q.word_limit) : `${docsDefaultWords(q)} (default)`} · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
     ${q.reference_answer ? `<div class="detail-block"><h3>Model answer (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.reference_answer)}</pre></div>` : ''}
     ${q.rubric ? `<div class="detail-block"><h3>Marking guidance (admin and grader only)</h3><pre class="softpre">${escapeHtml(q.rubric)}</pre></div>` : ''}
     ${IS_MANAGER && !q.deleted_at ? `<div class="detail-block qedit"><h3>Change marks or word limit</h3>
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
         <div><label class="field" for="qe-marks-${q.id}">Marks</label><input type="number" id="qe-marks-${q.id}" min="0.5" max="100" step="0.5" value="${num(q.marks)}" style="width:110px" /></div>
-        <div><label class="field" for="qe-wl-${q.id}">Word limit</label><input type="number" id="qe-wl-${q.id}" min="50" max="3000" step="10" value="${q.word_limit ? num(q.word_limit) : ''}" placeholder="default" style="width:130px" /></div>
+        <div><label class="field" for="qe-wl-${q.id}">Word limit</label><input type="number" id="qe-wl-${q.id}" min="50" max="10000" step="10" value="${q.word_limit ? num(q.word_limit) : ''}" placeholder="default" style="width:130px" /></div>
         <button class="primary sm" data-qsave="${q.id}">Save</button>
         <span class="muted" id="qe-status-${q.id}" style="font-size:12.5px"></span>
       </div>

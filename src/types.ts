@@ -51,6 +51,7 @@ export interface Env {
   DOCS_PART1_MARKS?: string;
   DOCS_PART2_MARKS?: string;
   DOCS_WORD_LIMIT?: string;
+  DOCS_PART1_WORD_LIMIT?: string;
   // Writers site: extra minutes a part may run past its clock for connection drops (default 10).
   DOCS_MAX_PAUSE_MINUTES?: string;
   // Per-request batch sizes (unset = the support defaults: 20 resumes parsed and up

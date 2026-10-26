@@ -207,3 +207,23 @@ describe('every admin sign-in is a real account in the database', () => {
     expect(r.status).toBe(200);
   });
 });
+
+describe('word limits: Part 1 default 500, Part 2 default 1000, up to 10,000', () => {
+  beforeEach(async () => { await setup(); });
+
+  it('uses each part\'s default and accepts limits up to 10,000 words', async () => {
+    const a = await admin();
+    await env.DB.prepare("UPDATE question_bank SET word_limit = NULL").run();
+    const c = await login('wc1@x.com');
+    const p1 = (await (await dreq('/api/candidate/part1/start', post(c))).json<any>()).questions;
+    expect(new Set(p1.map((q: any) => q.wordLimit))).toEqual(new Set([500]));
+    await dreq('/api/candidate/part1/submit', post(c));
+    const p2 = (await (await dreq('/api/candidate/part2/start', post(c))).json<any>()).questions;
+    expect(p2[0].wordLimit).toBe(1000);
+    const q = (await env.DB.prepare("SELECT id FROM question_bank WHERE category = 'part2'").first<any>()).id;
+    const put = (wordLimit: unknown) => dreq(`/api/admin/questions/${q}`, { method: 'PUT', headers: { Cookie: a, 'Content-Type': 'application/json' }, body: JSON.stringify({ marks: 20, wordLimit }) });
+    expect((await put(5000)).status).toBe(200);
+    expect((await put(10000)).status).toBe(200);
+    expect((await put(10001)).status).toBe(400);
+  });
+});

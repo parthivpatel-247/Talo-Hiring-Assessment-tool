@@ -25,7 +25,13 @@ export interface DocsPartConfig {
 export interface DocsConfig {
   part1: DocsPartConfig;
   part2: DocsPartConfig;
-  wordLimit: number; // default word limit when a question doesn't set its own
+  wordLimit: number; // default word limit for a Part 2 question that doesn't set its own
+  part1WordLimit: number; // the same default for Part 1
+}
+
+/** The default word limit for a question in this part that doesn't set its own. */
+export function defaultWordLimit(cfg: DocsConfig, part: DocsPart): number {
+  return part === 'part1' ? cfg.part1WordLimit : cfg.wordLimit;
 }
 
 export const DOCS_LIMITS = {
@@ -34,13 +40,14 @@ export const DOCS_LIMITS = {
   minQuestions: 1,
   maxQuestions: 40,
   minWords: 50,
-  maxWords: 3000,
+  maxWords: 10000,
 };
 
 const DEFAULTS = {
   part1: { questions: 4, minutes: 30, marks: 5 },
   part2: { questions: 2, minutes: 45, marks: 10 },
   wordLimit: 1000,
+  part1WordLimit: 500,
 };
 
 function num(v: unknown, fallback: number): number {
@@ -81,6 +88,7 @@ export async function getDocsConfig(env: Env): Promise<DocsConfig> {
     part1: part('part1', env.DOCS_PART1_QUESTIONS, env.PART1_DURATION_MINUTES, env.DOCS_PART1_MARKS),
     part2: part('part2', env.DOCS_PART2_QUESTIONS, env.PART2_DURATION_MINUTES, env.DOCS_PART2_MARKS),
     wordLimit: clamp(num(env.DOCS_WORD_LIMIT, DEFAULTS.wordLimit), L.minWords, L.maxWords),
+    part1WordLimit: clamp(num(env.DOCS_PART1_WORD_LIMIT, DEFAULTS.part1WordLimit), L.minWords, L.maxWords),
   };
 }
 

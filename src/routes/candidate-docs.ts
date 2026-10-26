@@ -4,7 +4,7 @@ import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, nowIso, ensureOnce, addColumn } from '../lib/db';
 import { assignDocsPart1, assignDocsPart2 } from '../lib/randomize';
 import { startPart, durationSeconds } from '../lib/timer';
-import { getDocsConfig, DocsPoolTooSmall, isDocs, type DocsConfig } from '../lib/team';
+import { getDocsConfig, DocsPoolTooSmall, isDocs, defaultWordLimit, type DocsConfig } from '../lib/team';
 
 /**
  * CANDIDATE API for the writers site (TEAM = "docs").
@@ -300,6 +300,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
         part2: { questions: cfg.part2.questions, minutes: cfg.part2.minutes },
       },
       wordLimit: cfg.wordLimit,
+      part1WordLimit: cfg.part1WordLimit,
       assessmentMinutes: cfg.part1.minutes + cfg.part2.minutes,
       open: await docsStartOpen(env),
     });
@@ -369,7 +370,7 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     if (typeof body.questionId === 'string' && body.questionId && typeof body.answerText === 'string' && remaining > 0) {
       const owned = await ownedQuestion(part, body.questionId);
       if (owned) {
-        stmts.unshift(saveAnswer(part, body.questionId, body.answerText.slice(0, answerCap(owned.word_limit || (await config()).wordLimit))));
+        stmts.unshift(saveAnswer(part, body.questionId, body.answerText.slice(0, answerCap(owned.word_limit || defaultWordLimit(await config(), part)))));
         wantSave = true;
       }
     }
@@ -409,12 +410,12 @@ export async function handleDocsCandidateRoute(request: Request, env: Env, _ctx:
     await setDeadline('part1');
     if (at?.part1_reopen_until) await env.DB.prepare('UPDATE attempts SET part1_reopen_until = NULL WHERE candidate_id = ?').bind(candidate.id).run();
     await env.DB.prepare("UPDATE candidates SET status = 'in_progress' WHERE id = ? AND status = 'part2_ready'").bind(candidate.id).run();
-    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
+    return json({ ok: true, durationSeconds: await durationSeconds(env, 'part1'), questions: await part1Questions(env, candidate.id, (await config()).part1WordLimit) });
   }
 
   if (path === '/api/candidate/part1/questions' && request.method === 'GET') {
     if (!at?.part1_started_at) return json({ error: 'Part 1 has not started.' }, { status: 409 });
-    return json({ questions: await part1Questions(env, candidate.id, (await config()).wordLimit) });
+    return json({ questions: await part1Questions(env, candidate.id, (await config()).part1WordLimit) });
   }
 
   if ((path === '/api/candidate/part1/answer' || path === '/api/candidate/part2/answer') && request.method === 'POST') {

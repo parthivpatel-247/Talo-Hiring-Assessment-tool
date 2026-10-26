@@ -131,6 +131,25 @@ export async function ensureRequiredCol(env: Env): Promise<void> {
   });
 }
 
+/**
+ * Writers: the database rule on question word limits follows DOCS_LIMITS (50 to
+ * 10,000 words). Same as migrations-docs/0019; done here too so a deploy works before
+ * the migration is applied. Runs once per Worker instance.
+ */
+export async function ensureDocsQuestionLimits(env: Env): Promise<void> {
+  await ensureOnce('question_bank.word_limit_10000', async () => {
+    const has = await env.DB.prepare("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'trg_question_bank_upd'").first<{ sql: string }>();
+    if (has && /10000/.test(has.sql)) return; // already up to date
+    const when = 'WHEN NEW.marks <= 0 OR (NEW.word_limit IS NOT NULL AND (NEW.word_limit < 50 OR NEW.word_limit > 10000))';
+    await env.DB.batch([
+      env.DB.prepare('DROP TRIGGER IF EXISTS trg_question_bank_ins'),
+      env.DB.prepare(`CREATE TRIGGER trg_question_bank_ins BEFORE INSERT ON question_bank ${when} BEGIN SELECT RAISE(ABORT, 'invalid marks or word limit'); END`),
+      env.DB.prepare('DROP TRIGGER IF EXISTS trg_question_bank_upd'),
+      env.DB.prepare(`CREATE TRIGGER trg_question_bank_upd BEFORE UPDATE OF marks, word_limit ON question_bank ${when} BEGIN SELECT RAISE(ABORT, 'invalid marks or word limit'); END`),
+    ]);
+  });
+}
+
 export async function ensureParseClaimCols(env: Env): Promise<void> {
   try {
     await ensureOnce('candidates.parse_claim', async () => {
