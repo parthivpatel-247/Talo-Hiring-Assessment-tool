@@ -1496,17 +1496,6 @@ async function showDetail(id) {
       ${dedHtml(a.deductions)}
       ${marksEditor(a, part, canEdit(part))}
     </div>`;
-  const part3Block = (a, i) => `
-    <div class="question">
-      <div class="qhead"><span class="qnum">Q${i + 1}</span><span class="badge ${a.kind === 'buggy_fix' ? 'muted' : ''}">${a.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'}</span>
-        ${scorePill(a)}</div>
-      <p class="qprompt"><strong>${a.title ? escapeHtml(a.title) + ' — ' : ''}${escapeHtml(a.prompt)}</strong></p>
-      ${a.code_snippet ? `<pre class="softpre" style="background:#0f172a;color:#e2e8f0">${escapeHtml(a.code_snippet)}</pre>` : ''}
-      <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
-      ${a.ai_reasoning ? `<p class="muted" style="margin:8px 0 0"><strong>Grading:</strong> ${escapeHtml(a.ai_reasoning)}</p>` : ''}
-      ${dedHtml(a.deductions)}
-      ${marksEditor(a, 'part3', canEdit('part3'))}
-    </div>`;
   // Final total: the sum of the answers, or the manager's override.
   const listRow = allCandidates.find((x) => x.id === id) || {};
   const totalMax = listRow.totalMax || 0, aiTotal = listRow.aiTotal ?? 0;

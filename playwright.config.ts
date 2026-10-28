@@ -14,9 +14,9 @@ export default defineConfig({
     baseURL: 'http://127.0.0.1:8787',
     headless: true,
     trace: 'off',
-    // Use the Chromium already provisioned in this environment (avoids a download).
-    // Override with PW_CHROMIUM_PATH, or remove this to use Playwright's own browser.
-    launchOptions: { executablePath: process.env.PW_CHROMIUM_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' },
+    // Playwright's own Chromium (`npx playwright install chromium`), or a local one
+    // given in PW_CHROMIUM_PATH.
+    launchOptions: process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {},
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {

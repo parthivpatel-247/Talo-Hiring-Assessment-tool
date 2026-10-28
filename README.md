@@ -55,6 +55,17 @@ The two sites never share data. What differs between them is set by
   full detail), and interview guides built from each candidate's resume and answers
   (support).
 
+## Technology stack
+
+- **Runtime:** Cloudflare Workers (TypeScript), one Worker per site.
+- **Data:** Cloudflare D1 (SQLite) and R2 (resume PDFs).
+- **Frontend:** plain HTML, CSS and JavaScript served as Worker static assets; no
+  framework or bundler.
+- **AI:** OpenAI Chat Completions (default model `gpt-4o-mini`, set in `wrangler.toml`),
+  called only from the Worker. PDF text extraction with `unpdf`.
+- **Tooling:** Wrangler 4, TypeScript 5, Vitest 3 with `@cloudflare/vitest-pool-workers`
+  (tests run in the real Workers runtime), Playwright for browser checks.
+
 ## How it is built
 
 One Cloudflare Worker per site:
@@ -82,38 +93,92 @@ scripts/                     browser smoke tests, schema checks, question-bank t
 docs/                        site guide, version control, data design, security audit
 ```
 
+## Prerequisites
+
+- **Node.js 22** or later (required by Wrangler 4) and npm.
+- A **Cloudflare account** with Workers, D1 and R2, for deploying. Local
+  development needs no account: Wrangler simulates D1 and R2 on your machine.
+- An **OpenAI API key** to use resume parsing and grading. Everything else runs
+  without one.
+
+## Setup
+
+```bash
+npm ci --legacy-peer-deps                 # see "Known limitations" for the flag
+cp .env.example .dev.vars                 # support site: local secrets
+cp .env.example .dev.vars.docs            # writers site: local secrets
+npm run db:migrate:local                  # support database (local)
+npm run db:migrate:local:docs             # writers database (local)
+```
+
+## Environment variables
+
+Secrets are never stored in the repository. Locally they go in the git-ignored
+`.dev.vars` (support) and `.dev.vars.docs` (writers); in production they are set
+with `npx wrangler secret put <NAME>` (add `--env docs` for the writers site).
+`.env.example` lists them with placeholder values:
+
+| Name | Required | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | yes | OpenAI key, used on the server only (resume parsing, grading, interview questions). |
+| `SESSION_SECRET` | yes | Signs session cookies. A long random string (`openssl rand -hex 32`), different per environment. |
+| `ADMIN_PASSWORD` | yes | With `ADMIN_EMAIL`, creates the first manager account and stays its recovery password. |
+| `PANEL_PASSWORD` | no | With `PANEL_EMAIL`, a shared panel-member sign-in (support). Empty = named accounts only. |
+| `OPENAI_BASE_URL` | no | Local testing only: send OpenAI calls to a local stand-in. Unset in production and when running tests. |
+
+Non-secret settings live in `wrangler.toml` (`[vars]` for support, `[env.docs.vars]`
+for writers): `ADMIN_EMAIL`, `PANEL_EMAIL`, `OPENAI_MODEL`, default question counts,
+marks and durations, data retention days, grading and parsing concurrency. Most of
+the assessment settings can also be changed by a manager in the admin.
+
 ## Run it locally
 
 ```bash
-npm ci --legacy-peer-deps
-cp .dev.vars.example .dev.vars            # support site; fill in local values
-cp .dev.vars.example .dev.vars.docs       # writers site
-npx wrangler d1 migrations apply campus-hiring-assessment-db --local
-npx wrangler d1 migrations apply talo-docs-db --local --env docs
-npm run dev          # support site on http://127.0.0.1:8787
-npm run dev:docs -- --port 8788 --inspector-port 9331   # writers site, alongside
+npm run dev                                               # support site: http://127.0.0.1:8787
+npm run dev:docs -- --port 8788 --inspector-port 9331     # writers site, alongside it
 ```
 
-`.dev.vars*` files are git-ignored and never committed. For local grading without
-an OpenAI key, point `OPENAI_BASE_URL` at a small local stand-in (see
-`docs/WRITERS-SITE.md`, "Local testing").
+Open `/` for the candidate page and `/admin/` for the admin. Sign in with
+`ADMIN_EMAIL` from `wrangler.toml` and the `ADMIN_PASSWORD` from your `.dev.vars`.
+Candidates can sign in only after their resume is uploaded (or a candidate row is
+added to the local database). For local grading without an OpenAI key, point
+`OPENAI_BASE_URL` at a small local stand-in (see `docs/WRITERS-SITE.md`, "Local
+testing").
 
-## Tests
+## Tests and checks
 
 ```bash
-npm test               # security-header check + all Worker tests
-npm run test:limits    # D1 statement budgets per request (Workers Free plan limits)
+npm run typecheck      # TypeScript, no emit
+npm test               # security-header check + all Worker tests (vitest, real Workers runtime)
+npm run test:limits    # D1 statements per request stay inside the Workers Free plan limits
+npm run e2e            # Playwright, support site (starts its own local server; needs
+                       # `npx playwright install chromium` or PW_CHROMIUM_PATH)
 ```
 
-Browser checks against a local dev server: `scripts/support-smoke.mjs` (support) and
-`scripts/writers-parity-check.mjs` (writers). Each file's header says how to run it.
+Browser checks against a running local site: `scripts/support-smoke.mjs` (support)
+and `scripts/writers-parity-check.mjs` (writers). Each file's header says how to run it.
+There is no separate linter or formatter configured; the code follows the existing
+style (2-space indent, single quotes, semicolons).
+
+## Build
+
+There is no separate build for the support site: `wrangler deploy` bundles the Worker
+and uploads `public/`. The writers site runs `scripts/build-writers-assets.mjs` first
+(configured in `wrangler.toml`), which copies `public/` into `dist-docs/` with the
+writers' candidate page. To check both builds without deploying:
+
+```bash
+npx wrangler deploy --dry-run --outdir /tmp/talo-build
+npx wrangler deploy --env docs --dry-run --outdir /tmp/talo-build-docs
+```
 
 ## Deploy
 
 Deploys run from `main` in your own terminal, logged in with `npx wrangler login`.
-Secrets are set with `npx wrangler secret put <NAME>` and never go into a file or the
-repository: `OPENAI_API_KEY`, `SESSION_SECRET`, `ADMIN_PASSWORD` (plus `--env docs` for
-the writers site).
+First time only: create each site's D1 database and R2 bucket (`npx wrangler d1 create`,
+`npx wrangler r2 bucket create`), put the database ids in `wrangler.toml`, and set the
+secrets with `npx wrangler secret put <NAME>` (plus `--env docs` for the writers site).
+Then, for each release:
 
 ```bash
 npx wrangler d1 migrations apply campus-hiring-assessment-db --remote   # support
@@ -124,6 +189,25 @@ npx wrangler deploy --env docs      # writers site
 
 Some columns are added at runtime by the Worker (never in a migration); see
 `docs/VERSION-CONTROL.md` for the list and for branches, tags and rollback.
+
+## Known limitations
+
+- **Install needs `--legacy-peer-deps`:** `@cloudflare/vitest-pool-workers` 0.8 declares
+  Vitest up to 3.1 while the project uses 3.2. Tests run correctly; `npm ls` reports the
+  peer ranges as invalid.
+- **Candidates sign in with their email only** (no one-time code). Once a test starts,
+  only that browser can continue it, but someone who knows a candidate's email could
+  start first.
+- **AI grading can be wrong.** Panels should review the marks; managers can correct
+  them with manual marks.
+- **Resumes must be PDFs** with selectable text (no scanned images, no .docx).
+- **Part 3 (debugging questions)** exists in the database and grading code of the
+  support site but has no candidate screens; it is not part of the current test.
+- **One e2e spec is out of date:** `e2e/part1-gate.spec.ts` expects questions to load
+  before the test starts, which the server stopped allowing in the October security
+  audit. The other e2e specs pass.
+- **Keep this repository private.** It contains the support test's question bank
+  with answer keys (`scripts/`, `src/lib/part3bank.ts`, and on the `v2` branch).
 
 ## Documentation
 

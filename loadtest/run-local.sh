@@ -4,7 +4,7 @@
 set -u
 SCEN="${1:?scenario required}"
 cd "$(dirname "$0")/.."
-export PATH="/home/claude/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 DB="campus-hiring-assessment-db"
 PORT=8787
 OUT="loadtest/results"; mkdir -p "$OUT"

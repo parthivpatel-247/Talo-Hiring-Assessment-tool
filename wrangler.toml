@@ -92,15 +92,16 @@ STALE_GRACE_MINUTES = "30"
 # Secrets — set these with `wrangler secret put <NAME>` from your own
 # terminal once you're logged into your Cloudflare account. Never commit
 # real values for these:
-#   OPENAI_API_KEY   — used server-side only, for resume parsing,
-#                       Part 2 question generation, Part 2 scoring, and
-#                       interview-question generation.
-#   ADMIN_PASSWORD   — shared password for the admin dashboard (single
-#                       login shared by you + your manager; swap for
-#                       per-admin accounts later if needed).
+#   OPENAI_API_KEY   — used server-side only, for resume parsing, grading
+#                       and interview-question generation.
+#   ADMIN_PASSWORD   — with ADMIN_EMAIL, creates the first manager account on
+#                       first sign-in and stays its recovery password. Everyone
+#                       else gets a named account in Admin → Access.
+#   PANEL_PASSWORD   — optional, with PANEL_EMAIL: a shared panel-member sign-in.
 #   SESSION_SECRET   — random string used to sign candidate and admin
 #                       session cookies. Generate with e.g.
 #                       `openssl rand -hex 32`.
+# For local `wrangler dev`, put them in `.dev.vars` / `.dev.vars.docs` (see .env.example).
 
 
 # =====================================================================

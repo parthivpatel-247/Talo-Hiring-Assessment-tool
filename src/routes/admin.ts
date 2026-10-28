@@ -267,7 +267,7 @@ function nameFromResume(name: string | null | undefined, text: string): string |
 export async function handleAdminRoute(
   request: Request,
   env: Env,
-  ctx: ExecutionContext,
+  _ctx: ExecutionContext,
   path: string
 ): Promise<Response> {
   if (path === '/api/admin/login' && request.method === 'POST') {

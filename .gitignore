@@ -3,11 +3,20 @@ node_modules/
 .wrangler/
 .dev.vars*
 !.dev.vars.example
+.env
+.env.*
+!.env.example
 *.log
 test-results/
+playwright-report/
+coverage/
 e2e-results/
 _to_delete/
 .DS_Store
+.vscode/
+.idea/
+*.pem
+*.key
 __pycache__/
 dist-docs/
 

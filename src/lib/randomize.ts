@@ -1,4 +1,4 @@
-import type { Env, QuestionBankRow } from '../types';
+import type { Env } from '../types';
 import { ensurePart3Schema, seedDefaultPart3 } from './part3bank';
 import { ensurePerfSchema, ensureRequiredCol, newId } from './db';
 import { getDocsConfig, DocsPoolTooSmall } from './team';

@@ -1,7 +1,7 @@
-# Copy this file to `.dev.vars` (already in .gitignore) for local `wrangler dev`
-# testing. These are placeholder values — replace OPENAI_API_KEY with a real
-# key if you want to test the AI features locally; ADMIN_PASSWORD and
-# SESSION_SECRET can be anything for local testing.
-OPENAI_API_KEY=sk-your-real-key-here
-ADMIN_PASSWORD=choose-a-local-test-password
-SESSION_SECRET=any-long-random-string-for-local-testing-only
+# Copy to `.dev.vars` (support site) or `.dev.vars.docs` (writers site) for local
+# `wrangler dev`. Both are git-ignored. Placeholder values only; every variable is
+# explained in .env.example.
+OPENAI_API_KEY=sk-your-key-here
+SESSION_SECRET=replace-with-a-long-random-string
+ADMIN_PASSWORD=choose-a-strong-password
+PANEL_PASSWORD=
