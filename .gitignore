@@ -2,6 +2,7 @@ node_modules/
 .venv/
 .wrangler/
 .dev.vars*
+!.dev.vars.example
 *.log
 test-results/
 e2e-results/
@@ -9,3 +10,11 @@ _to_delete/
 .DS_Store
 __pycache__/
 dist-docs/
+
+# Real candidate data and the teams' question banks (model answers) stay off GitHub.
+/add-*-candidates.sql
+/question_bank*.csv
+/question_bank*.sql
+/writers-question-bank*.json
+/backup*.sql
+/*-pre-*.sql

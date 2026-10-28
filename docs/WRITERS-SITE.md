@@ -135,6 +135,15 @@ This works the same as the support site. Some points specific to the two parts:
 - Removing or demoting a panel member in **Access** takes effect on their very next click; they don't keep their old role until they sign out.
 - **Every admin login is an account in Access.** The first sign-in with `ADMIN_EMAIL` and the `ADMIN_PASSWORD` secret creates that manager's account (name taken from the email). From then on it is listed with everyone else. The secret keeps working as the recovery password: it re-activates the account and makes it a manager again, and changing the secret signs out sessions made with the old one. A manager can also give that account its own password with **Reset password**.
 
+## Reviewing results (both sites)
+
+- **Tab switches** on the Candidates list: how many times each candidate left the test (switched tab or window, or left full screen). Writers show Part 1 (closed book: each exit counts against the candidate) and Part 2 (open book: switching is allowed, shown for context) separately. Amber means once or twice, red means 3 or more. Sort by **Tab switches (most first)** to see the most frequent first.
+- **Change marks** (managers): under each answer in a candidate's view, once that part is submitted. Enter 0 to the question's marks, in steps of 0.25, with an optional reason. The AI's marks stay visible, and the change shows who made it, when and why. The manual mark counts in the part score, the total, the list and the CSV exports. **Grade** again updates only the AI's marks, never a manual one. **Use AI marks** removes the change.
+- **Change the total** (managers): next to Total in a candidate's view, to set the final total directly (for example after a panel review). The list marks it *edited*; **Use sum of answers** removes it.
+- **Resume** and **Retake** clear manual marks and a changed total, since the answers will be graded again.
+- **Revoke access** asks whether to **also mark as Rejected**. **Restore access** puts back the status from before the revoke (Submitted if the revoke closed a running test).
+- Every one of these changes is in the **Activity log**.
+
 ## Updating the writers site later
 
 - Any change merged into `main` reaches the writers site only when you run `npx wrangler deploy --env docs`.

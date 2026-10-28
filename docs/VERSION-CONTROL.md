@@ -1,27 +1,66 @@
-# Branches and deploying
+# Branches, releases and deploying
 
 | Branch / tag | What it is | Deploy from it? |
 |---|---|---|
-| `main` | What runs in production. Small features and fixes for upcoming drives land here. | **Yes** — the only branch that is deployed. |
-| `v2` | The full v2 rebuild (new UI, schema v2, security work). Not live yet. | Not until the planned v2 release. |
-| `v1-production-2026-10-20` (tag) | Production as it was when version control started. | Rollback point. |
+| `main` | Production: the support site and the writers site, from one codebase. | **Yes**, the only branch that is deployed. |
+| `v1.5` (tag) | The complete release of 28 Oct 2026: both sites at feature parity, tab-switch counts, manual marks, revoke-and-reject. | Current production. |
+| `writers-v1` … `writers-v1.4` (tags) | Earlier writers-site releases. | Rollback points for the writers site. |
+| `v1-production-2026-10-20` (tag) | Production when version control started. | Rollback point for the support site. |
+| `v2` | An earlier full rebuild of the support site only (new screens and database layout). **Not deployed.** It has none of the writers site and none of the work since 20 Oct 2026. Kept for reference. | No. |
 
-`main` deploys **two separate sites**: the support site (`npx wrangler deploy`) and the
-writers / documentation site (`npx wrangler deploy --env docs`, see `docs/WRITERS-SITE.md`).
-Each command deploys only its own site.
+`main` deploys **two separate sites**; each command deploys only its own site:
+
+- `npx wrangler deploy`: support (`talo`, database `campus-hiring-assessment-db`).
+- `npx wrangler deploy --env docs`: writers (`talo-docs`, database `talo-docs-db`, see `docs/WRITERS-SITE.md`).
 
 ## Day to day
 
-1. New work for production: branch off `main` (`git switch -c feature/<name> main`), build, test, merge into `main`, deploy from `main`.
-2. Keep `v2` current: after each production change, merge `main` into `v2` and resolve any conflicts there, so the v2 release carries every fix.
-3. Before deploying, check you are on `main` with a clean tree: `git status` should say "On branch main, nothing to commit".
+1. Branch off `main` (`git switch -c feature/<name> main`), build, run `npm test` and `npm run test:limits`, merge into `main`.
+2. Before deploying: `git status` on `main` says "nothing to commit".
+3. Apply any new migrations for the site you deploy, then deploy it (commands below).
+4. Tag a release you may need to roll back to: `git tag -a v1.6 -m "…"`.
 
-## Releasing v2 later
+## Migrations
 
-The writers site's two-part test is built on v1 (on `main`). v2 does not have it yet, so
-before `v2` is merged into `main`, port the writers mode to v2 — or deploy the writers site
-from the `writers-v1` tag until the port is done. Deploying `--env docs` from a `main` that
-no longer has writers mode would replace the writers' test with the support one.
+```bash
+npx wrangler d1 migrations list  campus-hiring-assessment-db --remote          # support: what is pending
+npx wrangler d1 migrations apply campus-hiring-assessment-db --remote
+npx wrangler d1 migrations list  talo-docs-db --remote --env docs                # writers
+npx wrangler d1 migrations apply talo-docs-db --remote --env docs
+```
 
+Support `0017_assignment_position_unique.sql` adds a unique index: run the duplicate
+check in its header first. Writers `0019_word_limit_10000.sql` is also applied by the
+Worker at runtime, so it is safe before or after a deploy.
 
-Follow `docs/RUNBOOK.md` on the `v2` branch (database backup first), then merge `v2` into `main` and deploy from `main`.
+**Columns added at runtime** by the Worker (race-safe, once per instance). Never add
+these in a migration: the runtime may already have added them, and the migration would
+fail with "duplicate column".
+
+- `attempts`: `part1/2_deadline_at`, `part1_reopen_until`, `resumed_at`, `part1_sid`, `part2_sid`, `sessions_valid_after`.
+- `admin_sessions.user_id`; `admin_users.email`.
+- `candidates`: `parse_claim`, `parse_claimed_at`, `parse_attempts`, `grading_claim`, `grading_claimed_at`,
+  `manual_total`, `manual_total_reason`, `manual_total_by`, `manual_total_at`, `status_before_revoke`.
+- `part1_answers`, `part2_answers`, `part3_answers`: `manual_score`, `manual_reason`, `manual_by`, `manual_at`.
+- `question_bank`: `hint`, `deleted_at`, `checkpoints`, `required`.
+
+## Rolling back
+
+Deploy an earlier tag from a clean checkout, for one site at a time:
+
+```bash
+git switch --detach v1.5      # or writers-v1.4, v1-production-2026-10-20
+npx wrangler deploy           # or: npx wrangler deploy --env docs
+git switch main
+```
+
+Data is not rolled back by a code rollback. For the database, D1 Time Travel restores
+a point in time (`npx wrangler d1 time-travel info|restore …`); export a backup first
+(`npx wrangler d1 export … --remote --output=backup.sql`) and keep it private.
+
+## Kept out of the repository
+
+- `.dev.vars*` (local secrets), `dist-docs/` (build output).
+- Real candidate data, e.g. SQL files with student emails, and the teams' question
+  banks with model answers (`question_bank*.csv/sql`, `writers-question-bank.json`).
+  These stay on the hiring team's machines; listed in `.gitignore` / `.git/info/exclude`.
