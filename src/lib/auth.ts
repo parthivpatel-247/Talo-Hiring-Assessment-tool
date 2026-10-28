@@ -312,3 +312,17 @@ export async function adminDeviceId(env: Env, request: Request): Promise<string 
   if (!p || p.k !== 'dev' || typeof p.d !== 'string' || typeof p.iat !== 'number' || Date.now() - p.iat > DEVICE_SECONDS * 1000) return null;
   return p.d;
 }
+
+/** Who is signed in to the admin (account name, or "Manager" for an old config sign-in). For audit trails. */
+export async function adminWho(env: Env, request: Request): Promise<string> {
+  const token = readCookie(request, ADMIN_COOKIE);
+  if (!token) return 'Manager';
+  try {
+    const row = await env.DB.prepare(
+      'SELECT u.username AS name FROM admin_sessions s LEFT JOIN admin_users u ON u.id = s.user_id WHERE s.token = ?'
+    ).bind(token).first<{ name: string | null }>();
+    return (row?.name || 'Manager').slice(0, 80);
+  } catch {
+    return 'Manager';
+  }
+}

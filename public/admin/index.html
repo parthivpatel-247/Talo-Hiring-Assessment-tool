@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/admin/admin.css?v=14" />
+  <link rel="stylesheet" href="/admin/admin.css?v=15" />
 </head>
 <body>
   <!-- Login -->
@@ -118,13 +118,14 @@
                   <option value="name">Name (A→Z)</option>
                   <option value="status">Status</option>
                   <option value="college">College</option>
+                  <option value="tabs">Tab switches (most first)</option>
                 </select>
               </div>
               <span class="fcount" id="filter-count"></span>
             </div>
             <div class="table-wrap">
               <table id="candidate-table">
-                <thead><tr><th>Candidate</th><th>College</th><th>Status</th><th>Score</th><th>Total</th><th style="text-align:right">Actions</th></tr></thead>
+                <thead><tr><th>Candidate</th><th>College</th><th>Status</th><th title="Times the candidate left the test: switched tab or window, or left full-screen">Tab switches</th><th>Score</th><th>Total</th><th style="text-align:right">Actions</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
@@ -317,6 +318,6 @@
     </div>
   </div>
 
-  <script src="/admin/admin.js?v=58"></script>
+  <script src="/admin/admin.js?v=59"></script>
 </body>
 </html>

@@ -80,6 +80,13 @@ export interface Candidate {
   retake_granted: number;
   college: string | null;
   created_at: string;
+  /** Manager's override of the final total (null = use the sum of the answers). */
+  manual_total?: number | null;
+  manual_total_reason?: string | null;
+  manual_total_by?: string | null;
+  manual_total_at?: string | null;
+  /** Status the candidate had when access was revoked with "also reject". */
+  status_before_revoke?: string | null;
 }
 
 export type CandidateStatus =

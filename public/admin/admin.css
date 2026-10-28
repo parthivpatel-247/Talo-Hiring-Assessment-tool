@@ -339,3 +339,28 @@ table.mini td { vertical-align: top; }
 /* A tick box with its label on one line (e.g. "Every candidate · Always include"). */
 input[type="checkbox"], input[type="radio"] { width: 18px; height: 18px; padding: 0; margin: 0; flex: 0 0 auto; border-radius: 4px; box-shadow: none; accent-color: var(--accent); cursor: pointer; }
 .check-inline { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-size: 14px; white-space: nowrap; cursor: pointer; }
+
+/* Tab-switch counter on the candidate list */
+.tabs{display:inline-flex;align-items:baseline;gap:3px;padding:2px 8px;border-radius:999px;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tabs small{font-weight:500;opacity:.75;font-size:11px}
+.tabs-none{background:var(--surface-2, rgba(127,127,127,.12));color:var(--muted, #888)}
+.tabs-some{background:rgba(245,158,11,.16);color:#b45309}
+.tabs-high{background:rgba(239,68,68,.16);color:#b91c1c}
+:root[data-theme="dark"] .tabs-some{color:#fbbf24}:root[data-theme="dark"] .tabs-high{color:#f87171}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tabs-some{color:#fbbf24}:root:not([data-theme="light"]) .tabs-high{color:#f87171}}
+
+/* Manual marks */
+.mk-edit{margin:8px 0 0}
+.mk-edit>summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--accent, #4f46e5);width:max-content}
+.mk-row{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-top:8px}
+.mk-row input[type=text]{width:100%}
+.manual-note{margin:8px 0 0;font-size:12.5px;padding:6px 10px;border-radius:8px;background:rgba(245,158,11,.10);border:1px solid rgba(245,158,11,.25)}
+.edited-mark{font-size:10.5px;font-weight:600;padding:1px 6px;border-radius:999px;background:rgba(245,158,11,.16);color:#b45309;vertical-align:middle}
+:root[data-theme="dark"] .edited-mark{color:#fbbf24}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .edited-mark{color:#fbbf24}}
+
+/* Revoke access dialog */
+.revoke-dialog{border:1px solid var(--border, #ddd);border-radius:14px;padding:22px 24px;max-width:440px;width:calc(100% - 32px);background:var(--surface, #fff);color:inherit;box-shadow:var(--shadow-lg, 0 20px 60px rgba(0,0,0,.25))}
+.revoke-dialog::backdrop{background:rgba(10,12,20,.45)}
+.revoke-dialog h3{margin:0 0 8px;font-size:16px}
+.revoke-dialog p{margin:0 0 12px}

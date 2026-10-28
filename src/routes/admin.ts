@@ -1,6 +1,6 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
-import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
-import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn, ensureRequiredCol } from '../lib/db';
+import { adminWho, createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
+import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn, ensureRequiredCol, ensureManagerEditCols } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
   parseResume,
@@ -194,7 +194,7 @@ async function ensureInterviewAnswerCol(env: Env): Promise<void> {
  *  clears them), so this is always the latest attempt. */
 async function assessmentQAForInterview(env: Env, candidateId: string) {
   const rows = await env.DB.prepare(
-    `SELECT qb.prompt AS question, qb.category AS category, a.answer_text AS answer, a.ai_score AS score
+    `SELECT qb.prompt AS question, qb.category AS category, a.answer_text AS answer, COALESCE(a.manual_score, a.ai_score) AS score
      FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
      LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
      WHERE pa.candidate_id = ? ORDER BY pa.position`
@@ -338,6 +338,7 @@ export async function handleAdminRoute(
   if (!role) return json({ error: 'Not authenticated as admin' }, { status: 401 });
   // Indexes + rotation tables (runs once per Worker instance, then is a no-op).
   await ensurePerfSchema(env);
+  await ensureManagerEditCols(env); // manual marks + revoke status (once per instance)
 
   // Lift every sign-in pause (both sites, manager only): for when a pause on the
   // campus network, or on an account, is getting in the way during a drive.
@@ -1069,11 +1070,15 @@ export async function handleAdminRoute(
         accessRevoked: !!c.access_revoked,
         retakeGranted: !!c.retake_granted,
         loginCount: sums.logins.get(c.id) ?? 0,
+        tabSwitches: sums.tabs.get(c.id) ?? { part1: 0, part2: 0, part3: 0 },
         part1: p1,
         part2: p2,
         part3: p3,
-        totalAwarded: p1.awarded + p2.awarded + p3.awarded,
+        totalAwarded: c.manual_total != null ? Number(c.manual_total) : p1.awarded + p2.awarded + p3.awarded,
         totalMax: p1.max + p2.max + p3.max,
+        aiTotal: p1.awarded + p2.awarded + p3.awarded,
+        manualTotal: c.manual_total ?? null,
+        manualTotalReason: c.manual_total_reason ?? null,
       };
     });
     return json({ candidates });
@@ -1139,7 +1144,7 @@ export async function handleAdminRoute(
 
     const attempt = await env.DB.prepare('SELECT * FROM attempts WHERE candidate_id = ?').bind(id).first();
     const part1Answers = await env.DB.prepare(
-      `SELECT qb.prompt, qb.category, qb.reference_answer, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks
+      `SELECT pa.question_id AS question_id, qb.prompt, qb.category, qb.reference_answer, qb.marks AS question_marks, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.manual_score, a.manual_reason, a.manual_by, a.manual_at
        FROM part1_assignments pa
        JOIN question_bank qb ON qb.id = pa.question_id
        LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
@@ -1150,7 +1155,7 @@ export async function handleAdminRoute(
     await ensurePart2AiCol(env);
     await ensureInterviewAnswerCol(env);
     const part2Answers = await env.DB.prepare(
-      `SELECT pq.prompt, pq.based_on_skill, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.ai_content_pct
+      `SELECT pq.id AS question_id, pq.prompt, pq.based_on_skill, pq.marks AS question_marks, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.ai_content_pct, a.manual_score, a.manual_reason, a.manual_by, a.manual_at
        FROM part2_questions pq
        LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
        WHERE pq.candidate_id = ? ORDER BY pq.position`
@@ -1159,7 +1164,7 @@ export async function handleAdminRoute(
       .all();
     await ensurePart3Schema(env);
     const part3Answers = await env.DB.prepare(
-      `SELECT p3.title, p3.kind, p3.prompt, p3.code_snippet, p3.reference_answer, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks
+      `SELECT pa.question_id AS question_id, p3.title, p3.kind, p3.prompt, p3.code_snippet, p3.reference_answer, p3.marks AS question_marks, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.manual_score, a.manual_reason, a.manual_by, a.manual_at
        FROM part3_assignments pa
        JOIN part3_questions p3 ON p3.id = pa.question_id
        LEFT JOIN part3_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
@@ -1213,7 +1218,7 @@ export async function handleAdminRoute(
 
     const lines: string[] = [];
     if (fmt === 'summary') {
-      lines.push(['College', 'Name', 'Email', 'Status', 'Logins', 'Part1 awarded', 'Part1 max', 'Part2 awarded', 'Part2 max', 'Part3 awarded', 'Part3 max', 'Total awarded', 'Total max', 'P1 tab switches', 'P2 tab switches', 'P3 tab switches'].join(','));
+      lines.push(['College', 'Name', 'Email', 'Status', 'Logins', 'Part1 awarded', 'Part1 max', 'Part2 awarded', 'Part2 max', 'Part3 awarded', 'Part3 max', 'Total awarded', 'Total max', 'P1 tab switches', 'P2 tab switches', 'P3 tab switches', 'Total set by manager'].join(','));
       for (const c of candRows) {
         const p1 = await part1Summary(env, c.id);
         const p2 = await part2Summary(env, c.id);
@@ -1222,37 +1227,41 @@ export async function handleAdminRoute(
         lines.push([
           esc(c.college || ''), esc(c.name), esc(emailOut(c.email)), esc(c.status), esc(at.login_count ?? ''),
           p1.awarded, p1.max, p2.awarded, p2.max, p3.awarded, p3.max,
-          p1.awarded + p2.awarded + p3.awarded, p1.max + p2.max + p3.max,
+          c.manual_total != null ? Number(c.manual_total) : p1.awarded + p2.awarded + p3.awarded, p1.max + p2.max + p3.max,
           at.part1_tab_switch_count ?? 0, at.part2_tab_switch_count ?? 0, at.part3_tab_switch_count ?? 0,
+          c.manual_total != null ? esc(`yes (AI total ${p1.awarded + p2.awarded + p3.awarded})${c.manual_total_reason ? `: ${c.manual_total_reason}` : ''}`) : '',
         ].join(','));
       }
     } else {
-      lines.push(['College', 'Name', 'Email', 'Status', 'Total awarded', 'Total max', 'Section', 'Q#', 'Category/Skill', 'Question', 'Candidate answer', 'AI score', 'Q max', 'Deductions', 'AI reasoning'].join(','));
+      lines.push(['College', 'Name', 'Email', 'Status', 'Total awarded', 'Total max', 'Section', 'Q#', 'Category/Skill', 'Question', 'Candidate answer', 'Score', 'Q max', 'Deductions', 'AI reasoning', 'AI score', 'Manual mark reason'].join(','));
       for (const c of candRows) {
         const p1 = await part1Summary(env, c.id);
         const p2 = await part2Summary(env, c.id);
         const p3 = await part3Summary(env, c.id);
-        const base = [esc(c.college || ''), esc(c.name), esc(emailOut(c.email)), esc(c.status), p1.awarded + p2.awarded + p3.awarded, p1.max + p2.max + p3.max];
+        const base = [esc(c.college || ''), esc(c.name), esc(emailOut(c.email)), esc(c.status), c.manual_total != null ? Number(c.manual_total) : p1.awarded + p2.awarded + p3.awarded, p1.max + p2.max + p3.max];
+        // Score = the manager's manual mark when there is one, else the AI's.
+        const sc = (q: any) => (q.manual_score ?? q.ai_score ?? '');
+        const manualCols = (q: any) => [q.ai_score ?? '', q.manual_score != null ? esc(`changed by manager${q.manual_reason ? `: ${q.manual_reason}` : ''}`) : ''];
         const p1rows = (await env.DB.prepare(
-          `SELECT qb.category, qb.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning
+          `SELECT qb.category, qb.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning, a.manual_score, a.manual_reason
            FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
            LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
            WHERE pa.candidate_id = ? ORDER BY pa.position`
         ).bind(c.id).all<any>()).results ?? [];
-        p1rows.forEach((q, i) => lines.push([...base, 'Part 1', i + 1, esc(q.category), esc(q.prompt), esc(q.answer_text || ''), q.ai_score ?? '', q.max_marks ?? '', esc(fmtDed(q.deductions)), esc(q.ai_reasoning || '')].join(',')));
+        p1rows.forEach((q, i) => lines.push([...base, 'Part 1', i + 1, esc(q.category), esc(q.prompt), esc(q.answer_text || ''), sc(q), q.max_marks ?? '', esc(fmtDed(q.deductions)), esc(q.ai_reasoning || ''), ...manualCols(q)].join(',')));
         const p2rows = (await env.DB.prepare(
-          `SELECT pq.based_on_skill, pq.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning, a.ai_content_pct
+          `SELECT pq.based_on_skill, pq.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning, a.ai_content_pct, a.manual_score, a.manual_reason
            FROM part2_questions pq LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
            WHERE pq.candidate_id = ? ORDER BY pq.position`
         ).bind(c.id).all<any>().catch(() => ({ results: [] }))).results ?? [];
-        p2rows.forEach((q, i) => lines.push([...base, 'Part 2', i + 1, esc(q.based_on_skill || ''), esc(q.prompt), esc(q.answer_text || ''), q.ai_score ?? '', q.max_marks ?? '', esc(fmtDed(q.deductions)), esc((q.ai_content_pct != null ? `[AI-likelihood ~${Math.round(q.ai_content_pct)}%] ` : '') + (q.ai_reasoning || ''))].join(',')));
+        p2rows.forEach((q, i) => lines.push([...base, 'Part 2', i + 1, esc(q.based_on_skill || ''), esc(q.prompt), esc(q.answer_text || ''), sc(q), q.max_marks ?? '', esc(fmtDed(q.deductions)), esc((q.ai_content_pct != null ? `[AI-likelihood ~${Math.round(q.ai_content_pct)}%] ` : '') + (q.ai_reasoning || '')), ...manualCols(q)].join(',')));
         const p3rows = (await env.DB.prepare(
-          `SELECT p3.kind, p3.title, p3.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning
+          `SELECT p3.kind, p3.title, p3.prompt, a.answer_text, a.ai_score, a.max_marks, a.deductions, a.ai_reasoning, a.manual_score, a.manual_reason
            FROM part3_assignments pa JOIN part3_questions p3 ON p3.id = pa.question_id
            LEFT JOIN part3_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
            WHERE pa.candidate_id = ? ORDER BY pa.position`
         ).bind(c.id).all<any>().catch(() => ({ results: [] }))).results ?? [];
-        p3rows.forEach((q, i) => lines.push([...base, 'Part 3', i + 1, esc(q.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'), esc((q.title ? q.title + ' — ' : '') + q.prompt), esc(q.answer_text || ''), q.ai_score ?? '', q.max_marks ?? '', esc(fmtDed(q.deductions)), esc(q.ai_reasoning || '')].join(',')));
+        p3rows.forEach((q, i) => lines.push([...base, 'Part 3', i + 1, esc(q.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'), esc((q.title ? q.title + ' — ' : '') + q.prompt), esc(q.answer_text || ''), sc(q), q.max_marks ?? '', esc(fmtDed(q.deductions)), esc(q.ai_reasoning || ''), ...manualCols(q)].join(',')));
         const iqs = (await env.DB.prepare('SELECT question, follow_up, based_on FROM interview_questions WHERE candidate_id = ? ORDER BY position').bind(c.id).all<any>()).results ?? [];
         iqs.forEach((q, i) => lines.push([...base, 'Interview', i + 1, esc(q.based_on || ''), esc(q.question), esc(q.follow_up ? 'Follow-up: ' + q.follow_up : ''), '', '', '', ''].join(',')));
         if (!p1rows.length && !p2rows.length && !p3rows.length && !iqs.length) lines.push([...base, '', '', '', '(no questions/answers yet)', '', '', '', '', ''].join(','));
@@ -1437,7 +1446,7 @@ export async function handleAdminRoute(
       env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(id),
       // Granting a retake also restores access, so a candidate who was revoked
       // (e.g. earlier on the assessment day) can sit the test again.
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL, manual_total = NULL, manual_total_reason = NULL, manual_total_by = NULL, manual_total_at = NULL, status_before_revoke = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'retake', id);
     return json({ ok: true });
@@ -1463,18 +1472,102 @@ export async function handleAdminRoute(
       ).bind(new Date(Date.now() + 3 * 3600 * 1000).toISOString(), new Date().toISOString(), new Date().toISOString(), id),
       // The answers will be edited and graded again: drop the old marks so nothing
       // shows them as current, and the old interview guide with them.
-      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL, manual_score = NULL, manual_reason = NULL, manual_by = NULL, manual_at = NULL WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM interview_questions WHERE candidate_id = ?').bind(id),
       // Allow login again and restore access; drop any grading claim in flight.
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL, manual_total = NULL, manual_total_reason = NULL, manual_total_by = NULL, manual_total_at = NULL, status_before_revoke = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'resume', id);
     return json({ ok: true, message: 'The test is reopened with the same questions and saved answers. The candidate signs in again to continue.' });
   }
 
+  // Manual marks (both sites, manager only). The AI's score stays as it is; the
+  // manual mark is what counts in totals, lists and exports, and grading again never
+  // overwrites it. score: null clears it (back to the AI's marks).
+  const marksMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/marks$/);
+  if (marksMatch && request.method === 'POST') {
+    const cid = marksMatch[1];
+    const b = await request.json<{ part?: unknown; questionId?: unknown; score?: unknown; reason?: unknown }>().catch(() => ({} as any));
+    const part = b.part;
+    if (part !== 'part1' && part !== 'part2' && !(part === 'part3' && !isDocs(env))) return json({ error: 'Choose the part of the answer.' }, { status: 400 });
+    if (typeof b.questionId !== 'string' || !b.questionId) return json({ error: 'questionId is required.' }, { status: 400 });
+    const c = await env.DB.prepare('SELECT status FROM candidates WHERE id = ?').bind(cid).first<{ status: string }>();
+    if (!c) return json({ error: 'Not found' }, { status: 404 });
+    const at = await env.DB.prepare(`SELECT ${part}_submitted_at AS done FROM attempts WHERE candidate_id = ?`).bind(cid).first<{ done: string | null }>().catch(() => null);
+    if (!at?.done) return json({ error: "Marks can be changed once the candidate has submitted this part." }, { status: 409 });
+    const table = `${part}_answers`;
+    const q = part === 'part1'
+      ? `SELECT qb.marks AS qmarks, a.max_marks, a.scored_at, a.ai_score, a.manual_score, a.candidate_id AS has
+           FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
+           LEFT JOIN part1_answers a ON a.candidate_id = pa.candidate_id AND a.question_id = pa.question_id
+          WHERE pa.candidate_id = ? AND pa.question_id = ?`
+      : part === 'part2'
+        ? `SELECT pq.marks AS qmarks, a.max_marks, a.scored_at, a.ai_score, a.manual_score, a.candidate_id AS has
+             FROM part2_questions pq LEFT JOIN part2_answers a ON a.candidate_id = pq.candidate_id AND a.question_id = pq.id
+            WHERE pq.candidate_id = ? AND pq.id = ?`
+        : `SELECT p3.marks AS qmarks, a.max_marks, a.scored_at, a.ai_score, a.manual_score, a.candidate_id AS has
+             FROM part3_assignments pa JOIN part3_questions p3 ON p3.id = pa.question_id
+             LEFT JOIN part3_answers a ON a.candidate_id = pa.candidate_id AND a.question_id = pa.question_id
+            WHERE pa.candidate_id = ? AND pa.question_id = ?`;
+    if (part === 'part3') await ensurePart3Schema(env);
+    const row = await env.DB.prepare(q).bind(cid, b.questionId).first<{ qmarks: number | null; max_marks: number | null; scored_at: string | null; ai_score: number | null; manual_score: number | null; has: string | null }>();
+    if (!row) return json({ error: 'That question is not in this candidate\'s test.' }, { status: 404 });
+    const max = Number(row.scored_at ? row.max_marks : row.qmarks) || 0;
+    const who = await adminWho(env, request);
+    const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 300) : '';
+    if (b.score === null) {
+      await env.DB.prepare(`UPDATE ${table} SET manual_score = NULL, manual_reason = NULL, manual_by = NULL, manual_at = NULL WHERE candidate_id = ? AND question_id = ?`).bind(cid, b.questionId).run();
+      await audit(env, 'manual_marks_cleared', cid, `${part} · ${b.questionId} · back to AI marks${row.ai_score != null ? ` (${row.ai_score})` : ''} · by ${who}`);
+      return json({ ok: true });
+    }
+    const score = Number(b.score);
+    if (typeof b.score !== 'number' || !Number.isFinite(score) || score < 0 || score > max || Math.round(score * 4) !== score * 4) {
+      return json({ error: `Marks must be from 0 to ${max}, in steps of 0.25.` }, { status: 400 });
+    }
+    await env.DB.prepare(
+      `INSERT INTO ${table} (candidate_id, question_id, answer_text, max_marks, manual_score, manual_reason, manual_by, manual_at)
+       VALUES (?, ?, '', ?, ?, ?, ?, ?)
+       ON CONFLICT (candidate_id, question_id) DO UPDATE SET
+         manual_score = excluded.manual_score, manual_reason = excluded.manual_reason,
+         manual_by = excluded.manual_by, manual_at = excluded.manual_at,
+         max_marks = CASE WHEN ${table}.scored_at IS NULL THEN excluded.max_marks ELSE ${table}.max_marks END`
+    ).bind(cid, b.questionId, max, score, reason || null, who, nowIso()).run();
+    await audit(env, 'manual_marks', cid, `${part} · ${b.questionId} · ${row.manual_score ?? row.ai_score ?? '—'} → ${score} of ${max}${reason ? ` · ${reason}` : ''} · by ${who}`);
+    return json({ ok: true });
+  }
+
+  // Override a candidate's final total (both sites, manager only). total: null clears it.
+  const totalMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/total$/);
+  if (totalMatch && request.method === 'POST') {
+    const cid = totalMatch[1];
+    const b = await request.json<{ total?: unknown; reason?: unknown }>().catch(() => ({} as any));
+    const c = await env.DB.prepare('SELECT manual_total FROM candidates WHERE id = ?').bind(cid).first<{ manual_total: number | null }>();
+    if (!c) return json({ error: 'Not found' }, { status: 404 });
+    const who = await adminWho(env, request);
+    const reason = typeof b.reason === 'string' ? b.reason.trim().slice(0, 300) : '';
+    if (b.total === null) {
+      await env.DB.prepare('UPDATE candidates SET manual_total = NULL, manual_total_reason = NULL, manual_total_by = NULL, manual_total_at = NULL WHERE id = ?').bind(cid).run();
+      await audit(env, 'manual_total_cleared', cid, `back to the sum of the answers · by ${who}`);
+      return json({ ok: true });
+    }
+    const [p1, p2, p3] = await Promise.all([part1Summary(env, cid), part2Summary(env, cid), part3Summary(env, cid)]);
+    const max = p1.max + p2.max + p3.max;
+    if (!(max > 0)) return json({ error: 'Grade this candidate first: the total can be changed once there are marks to total.' }, { status: 409 });
+    const total = Number(b.total);
+    if (typeof b.total !== 'number' || !Number.isFinite(total) || total < 0 || total > max || Math.round(total * 4) !== total * 4) {
+      return json({ error: `The total must be from 0 to ${max}, in steps of 0.25.` }, { status: 400 });
+    }
+    await env.DB.prepare('UPDATE candidates SET manual_total = ?, manual_total_reason = ?, manual_total_by = ?, manual_total_at = ? WHERE id = ?')
+      .bind(total, reason || null, who, nowIso(), cid).run();
+    await audit(env, 'manual_total', cid, `${c.manual_total ?? p1.awarded + p2.awarded + p3.awarded} → ${total} of ${max}${reason ? ` · ${reason}` : ''} · by ${who}`);
+    return json({ ok: true });
+  }
+
   const revokeMatch = path.match(/^\/api\/admin\/candidates\/([^/]+)\/(revoke|unrevoke)$/);
   if (revokeMatch && request.method === 'POST') {
     const [, cid, action] = revokeMatch;
+    const rb = await request.json<{ reject?: unknown }>().catch(() => ({} as { reject?: unknown }));
+    const alsoReject = action === 'revoke' && rb.reject === true;
     if (action === 'revoke') {
       const now = nowIso();
       // Revoking access finalizes the assessment: stop both timers, mark each
@@ -1494,6 +1587,11 @@ export async function handleAdminRoute(
         env.DB.prepare(
           "UPDATE candidates SET status = 'submitted' WHERE id = ? AND status IN ('part2_ready','in_progress') AND EXISTS (SELECT 1 FROM attempts WHERE candidate_id = ? AND part1_submitted_at IS NOT NULL)"
         ).bind(cid, cid),
+        // "Also mark as Rejected": remember the status it replaces, so Restore access
+        // can put it back.
+        ...(alsoReject ? [env.DB.prepare(
+          "UPDATE candidates SET status_before_revoke = status, status = 'rejected' WHERE id = ? AND status != 'rejected'"
+        ).bind(cid)] : []),
       ]);
     } else {
       // Restoring access voids every sign-in from before (the one that caused a revoke
@@ -1507,10 +1605,15 @@ export async function handleAdminRoute(
              AND (part1_started_at IS NULL OR part1_submitted_at IS NOT NULL)
              AND EXISTS (SELECT 1 FROM candidates WHERE id = ? AND access_revoked = 1)`
         ).bind(nowIso(), cid, cid),
+        // A revoke that also rejected: back to the status from before the revoke
+        // (unless someone has changed the status since).
+        env.DB.prepare(
+          "UPDATE candidates SET status = CASE WHEN status = 'rejected' AND status_before_revoke IS NOT NULL THEN status_before_revoke ELSE status END, status_before_revoke = NULL WHERE id = ? AND access_revoked = 1"
+        ).bind(cid),
         env.DB.prepare('UPDATE candidates SET access_revoked = 0 WHERE id = ?').bind(cid),
       ]);
     }
-    await audit(env, action, cid);
+    await audit(env, action, cid, alsoReject ? 'also marked as Rejected' : '');
     return json({ ok: true });
   }
 

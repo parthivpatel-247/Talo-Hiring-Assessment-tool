@@ -1072,6 +1072,55 @@ function initials(name, email) {
 }
 function avColor(seed) { let h = 0; for (const c of seed || '') h = (h * 31 + c.charCodeAt(0)) % AV_GRADS.length; return AV_GRADS[h]; }
 
+/* ---- Revoke access: asks each time whether to also mark the candidate Rejected ---- */
+function revokeDialog(c) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'revoke-dialog';
+    const who = escapeHtml(c.name || c.email || 'this candidate');
+    dlg.innerHTML = `<form method="dialog">
+      <h3>Revoke access for ${who}?</h3>
+      <p class="muted">They can no longer sign in. If the test is running, it is submitted now with the answers saved so far.</p>
+      <label class="check-inline"><input type="checkbox" id="revoke-reject" ${c.status === 'rejected' ? 'checked disabled' : ''} /> <span>Also mark as <strong>Rejected</strong></span></label>
+      <p class="muted" style="font-size:12.5px;margin:6px 0 0">${c.status === 'rejected' ? 'Already rejected.' : 'Restore access later puts their status back.'}</p>
+      <div class="btn-row" style="justify-content:flex-end;margin-top:16px">
+        <button value="cancel" class="secondary">Cancel</button>
+        <button value="ok" class="danger" id="revoke-ok">Revoke access</button>
+      </div></form>`;
+    document.body.appendChild(dlg);
+    const box = dlg.querySelector('#revoke-reject');
+    const okBtn = dlg.querySelector('#revoke-ok');
+    const label = () => { okBtn.textContent = box.checked && !box.disabled ? 'Revoke and reject' : 'Revoke access'; };
+    box.addEventListener('change', label); label();
+    dlg.addEventListener('close', () => {
+      const ok = dlg.returnValue === 'ok';
+      const reject = box.checked && !box.disabled;
+      dlg.remove();
+      resolve(ok ? { reject } : null);
+    });
+    dlg.showModal();
+  });
+}
+
+/* ---- Tab switches on the candidate list ---- */
+// Times the candidate left the test (tab or window switch, or leaving full-screen).
+// Writers: Part 1 is closed book (every exit counts against them); Part 2 is open book
+// (switching is allowed, shown for context). Support: one count for the test.
+function tabTotal(c) { const t = c.tabSwitches || {}; return (t.part1 || 0) + (t.part2 || 0) + (t.part3 || 0); }
+function tabBadge(n, label, title) {
+  const cls = n >= 3 ? 'tabs-high' : n > 0 ? 'tabs-some' : 'tabs-none';
+  return `<span class="tabs ${cls}" title="${escapeHtml(title)}">${label ? `<small>${label}</small> ` : ''}${num(n)}</span>`;
+}
+function tabSwitchCell(c) {
+  const t = c.tabSwitches || { part1: 0, part2: 0, part3: 0 };
+  if (IS_DOCS) {
+    return tabBadge(t.part1, 'P1', `Part 1 (closed book): left the test ${t.part1} time(s)`) + ' ' +
+      tabBadge(t.part2, 'P2', `Part 2 (open book, switching allowed): switched tab or window ${t.part2} time(s)`);
+  }
+  const extra = (t.part2 || 0) + (t.part3 || 0);
+  return tabBadge(t.part1 + extra, '', `Left the test ${t.part1 + extra} time(s)${extra ? ` (test ${t.part1}, later parts ${extra})` : ''}`);
+}
+
 /* ---- Candidates + stats + analysis ---- */
 async function refreshCandidates() {
   const { candidates } = await api('/api/admin/candidates');
@@ -1091,6 +1140,7 @@ function applyFilterSort(list) {
     if (sortBy === 'name') return (a.name || a.email || '').localeCompare(b.name || b.email || '');
     if (sortBy === 'status') return (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9);
     if (sortBy === 'college') return (a.college || '~~~').localeCompare(b.college || '~~~');
+    if (sortBy === 'tabs') return tabTotal(b) - tabTotal(a);
     const at = (a.part1.graded || a.part2.graded || (a.part3 && a.part3.graded)) ? a.totalAwarded : -1; // graded first, highest total
     const bt = (b.part1.graded || b.part2.graded || (b.part3 && b.part3.graded)) ? b.totalAwarded : -1;
     return bt - at;
@@ -1138,9 +1188,9 @@ function renderCandidateTable() {
   const rows = applyFilterSort(allCandidates);
   const countEl = $('filter-count');
   if (countEl) countEl.textContent = allCandidates.length ? `${rows.length} of ${allCandidates.length} shown` : '';
-  if (!allCandidates.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No candidates yet — upload resumes in the Resumes tab.</td></tr>'; return; }
+  if (!allCandidates.length) { tbody.innerHTML = '<tr><td colspan="7" class="empty">No candidates yet — upload resumes in the Resumes tab.</td></tr>'; return; }
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="6" class="empty">No candidates match this filter. <button class="secondary sm" id="clear-filters-btn" style="margin-left:8px">Clear filters</button></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty">No candidates match this filter. <button class="secondary sm" id="clear-filters-btn" style="margin-left:8px">Clear filters</button></td></tr>';
     const cb = $('clear-filters-btn'); if (cb) cb.addEventListener('click', clearFilters);
     return;
   }
@@ -1160,10 +1210,11 @@ function renderCandidateTable() {
       <td><div class="cand"><span class="avatar" style="background:${avColor(c.id)}">${escapeHtml(initials(c.name, c.email))}</span><div><div class="nm">${escapeHtml(nm)}</div><div class="em">${escapeHtml(em)}</div></div></div></td>
       <td>${collegeCell(c)}</td>
       <td><span class="pill ${statusPill(c.status)}">${escapeHtml(statusLabel(c.status))}</span>${flags}</td>
+      <td>${tabSwitchCell(c)}</td>
       <td>${IS_DOCS
         ? (c.part1.graded || c.part2.graded ? `<span class="score" title="Part 1">${num(c.part1.awarded)}<small>/${num(c.part1.max)}</small></span> <span class="score" title="Part 2">${num(c.part2.awarded)}<small>/${num(c.part2.max)}</small></span>` : '<span class="muted">—</span>')
         : (c.part1.graded ? `<span class="score">${num(c.part1.awarded)}<small>/${num(c.part1.max)}</small></span>` : '<span class="muted">—</span>')}</td>
-      <td>${c.part1.graded || (IS_DOCS && c.part2.graded) ? `<span class="score">${num(c.totalAwarded)}<small>/${num(c.totalMax)}</small></span>` : '<span class="muted">—</span>'}</td>
+      <td>${c.part1.graded || (IS_DOCS && c.part2.graded) || c.manualTotal != null ? `<span class="score"${c.manualTotal != null ? ` title="Set by a manager${c.manualTotalReason ? `: ${escapeHtml(c.manualTotalReason)}` : ''} (sum of answers ${num(c.aiTotal)})"` : ''}>${num(c.totalAwarded)}<small>/${num(c.totalMax)}</small>${c.manualTotal != null ? ' <span class="edited-mark">edited</span>' : ''}</span>` : '<span class="muted">—</span>'}</td>
       <td>
         <div class="rowmenu">
           <button class="secondary sm" data-view="${c.id}">${svg('eye', 14)} View</button>
@@ -1228,8 +1279,14 @@ function wireCandidateRows(tb) {
   tb.querySelectorAll('[data-toggle-access]').forEach((b) => b.addEventListener('click', () => {
     const c = allCandidates.find((x) => x.id === b.dataset.toggleAccess);
     if (!c) return;
-    if (!c.accessRevoked && !confirm(`Revoke access for ${c.name || c.email}? Their test is submitted now with the answers saved so far.`)) return;
-    act(c.accessRevoked ? 'Restore access' : 'Revoke access', () => api(`/api/admin/candidates/${b.dataset.toggleAccess}/${c.accessRevoked ? 'unrevoke' : 'revoke'}`, { method: 'POST' }));
+    if (c.accessRevoked) {
+      act('Restore access', () => api(`/api/admin/candidates/${b.dataset.toggleAccess}/unrevoke`, { method: 'POST' }));
+      return;
+    }
+    revokeDialog(c).then((choice) => {
+      if (!choice) return;
+      act('Revoke access', () => api(`/api/admin/candidates/${b.dataset.toggleAccess}/revoke`, { method: 'POST', body: JSON.stringify({ reject: choice.reject }) }));
+    });
   }));
   tb.querySelectorAll('[data-shortlist]').forEach((b) => b.addEventListener('click', () => {
     b.innerHTML = '<span class="spinner"></span> Shortlisting…';
@@ -1370,15 +1427,41 @@ function statusLabel(s) { return STATUS_LABELS[s] || (s || '').replace(/_/g, ' '
 
 function countWordsAdmin(t) { const w = (t || '').trim(); return w ? w.split(/\s+/).length : 0; }
 // Writers site: Part 1 and Part 2 answers, each with its integrity notes.
-function docsAnswerSections(data, answerBlock, pasteCount, pasteMax) {
+function docsAnswerSections(data, answerBlockFor, pasteCount, pasteMax) {
   const at = data.attempt || {};
-  const sum = (rows) => rows.reduce((s, a) => s + (a.ai_score != null ? Number(a.ai_score) : 0), 0);
+  const sum = (rows) => rows.reduce((s, a) => s + (effScore(a) ?? 0), 0);
   const max = (rows) => rows.reduce((s, a) => s + (Number(a.max_marks) || 0), 0);
-  const head = (label, rows) => rows.some((a) => a.ai_score != null) ? `${label} <span class="pill ok" style="margin-left:6px">${sum(rows)}/${max(rows)}</span>` : label;
-  return `<div class="detail-block"><h3>${head('Part 1 — closed book', data.part1Answers)}</h3>${data.part1Answers.map(answerBlock).join('') || '<p class="muted">Not started yet.</p>'}
+  const head = (label, rows) => rows.some((a) => effScore(a) != null) ? `${label} <span class="pill ok" style="margin-left:6px">${num(sum(rows))}/${num(max(rows))}</span>` : label;
+  return `<div class="detail-block"><h3>${head('Part 1 — closed book', data.part1Answers)}</h3>${data.part1Answers.map(answerBlockFor('part1')).join('') || '<p class="muted">Not started yet.</p>'}
       <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${at.part1_tab_switch_count ?? 0}</strong></p></div>
-    <div class="detail-block"><h3>${head('Part 2 — open book', data.part2Answers)}</h3>${data.part2Answers.map(answerBlock).join('') || '<p class="muted">Not started yet.</p>'}
+    <div class="detail-block"><h3>${head('Part 2 — open book', data.part2Answers)}</h3>${data.part2Answers.map(answerBlockFor('part2')).join('') || '<p class="muted">Not started yet.</p>'}
       <p class="muted" style="margin-top:4px">Tab switches: <strong>${at.part2_tab_switch_count ?? 0}</strong> · Pastes: <strong>${pasteCount}</strong>${pasteCount ? ` (largest ${pasteMax} characters)` : ''} — allowed in Part 2, shown for context.</p></div>`;
+}
+
+// Manual marks: the manager's mark counts instead of the AI's when there is one.
+function effScore(a) { return a.manual_score != null ? Number(a.manual_score) : a.ai_score != null ? Number(a.ai_score) : null; }
+function answerMax(a) { return Number(a.scored_at || a.manual_score != null ? a.max_marks : a.question_marks) || Number(a.max_marks) || 0; }
+function scorePill(a) {
+  const e = effScore(a);
+  if (e == null) return '<span style="margin-left:auto" class="pill muted">not graded</span>';
+  const tip = a.manual_score != null ? `Changed by ${a.manual_by || 'a manager'}${a.ai_score != null ? ` · AI gave ${num(a.ai_score)}` : ''}` : 'AI marks';
+  return `<span style="margin-left:auto" class="pill ok" title="${escapeHtml(tip)}">${num(e)}/${num(answerMax(a))}${a.manual_score != null ? ' · edited' : ''}</span>`;
+}
+// The "Change marks" row under an answer (managers, once that part is submitted).
+function marksEditor(a, part, canEdit) {
+  const note = a.manual_score != null
+    ? `<p class="manual-note"><strong>Marks changed</strong> by ${escapeHtml(a.manual_by || 'a manager')}${a.manual_at ? ` on ${escapeHtml(String(a.manual_at).slice(0, 10))}` : ''}: ${num(a.ai_score ?? 0)} (AI) → <strong>${num(a.manual_score)}</strong>${a.manual_reason ? ` · “${escapeHtml(a.manual_reason)}”` : ''}</p>`
+    : '';
+  if (!canEdit || !a.question_id) return note;
+  const key = `${part}-${a.question_id}`;
+  return `${note}<details class="mk-edit"><summary>${a.manual_score != null ? 'Change marks again' : 'Change marks'}</summary>
+    <div class="mk-row">
+      <div><label class="field" for="mk-score-${key}">Marks (0–${num(answerMax(a))})</label><input type="number" id="mk-score-${key}" min="0" max="${answerMax(a)}" step="0.25" value="${effScore(a) ?? ''}" style="width:110px" /></div>
+      <div style="flex:1;min-width:200px"><label class="field" for="mk-reason-${key}">Reason (optional)</label><input type="text" id="mk-reason-${key}" maxlength="300" value="${escapeHtml(a.manual_reason || '')}" placeholder="e.g. answer is correct, AI missed the second query" /></div>
+      <button class="primary sm" data-mk-save="${key}" data-part="${part}" data-qid="${escapeHtml(a.question_id)}">Save marks</button>
+      ${a.manual_score != null ? `<button class="secondary sm" data-mk-clear="${key}" data-part="${part}" data-qid="${escapeHtml(a.question_id)}">Use AI marks</button>` : ''}
+      <span class="muted" id="mk-status-${key}" style="font-size:12.5px"></span>
+    </div></details>`;
 }
 
 async function showDetail(id) {
@@ -1400,26 +1483,44 @@ async function showDetail(id) {
     if (!arr.length) return '';
     return '<ul class="deductions">' + arr.map((d) => `<li>−${escapeHtml(String(d.marks))}: ${escapeHtml(d.reason)}</li>`).join('') + '</ul>';
   };
-  const answerBlock = (a, i) => `
+  const at0 = data.attempt || {};
+  const canEdit = (part) => IS_MANAGER && !!at0[`${part}_submitted_at`];
+  const answerBlockFor = (part) => (a, i) => `
     <div class="question">
       <div class="qhead"><span class="qnum">Q${i + 1}</span>${IS_DOCS ? `<span class="badge muted">${countWordsAdmin(a.answer_text)} words</span>` : `${a.category ? `<span class="badge muted">${escapeHtml(a.category)}</span>` : ''}${a.based_on_skill ? `<span class="badge">${escapeHtml(a.based_on_skill)}</span>` : ''}`}
-        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${num(a.ai_score)}/${num(a.max_marks)}` : 'not graded'}</span></div>
+        ${scorePill(a)}</div>
       <p class="qprompt"><strong>${escapeHtml(a.prompt)}</strong></p>
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
       ${a.ai_content_pct != null ? `<p class="muted" style="margin:8px 0 0"><strong>AI-likelihood (estimate):</strong> <span class="pill ${a.ai_content_pct >= 70 ? 'danger' : a.ai_content_pct >= 40 ? 'warn' : 'ok'}">${Math.round(a.ai_content_pct)}%</span> <span style="font-size:11px">how AI-generated the answer looks — a guide, not proof</span></p>` : ''}
       ${a.ai_reasoning ? `<p class="muted" style="margin:8px 0 0"><strong>Grading:</strong> ${escapeHtml(a.ai_reasoning)}</p>` : ''}
       ${dedHtml(a.deductions)}
+      ${marksEditor(a, part, canEdit(part))}
     </div>`;
   const part3Block = (a, i) => `
     <div class="question">
       <div class="qhead"><span class="qnum">Q${i + 1}</span><span class="badge ${a.kind === 'buggy_fix' ? 'muted' : ''}">${a.kind === 'buggy_fix' ? 'Buggy-code fix' : 'Break-fix scenario'}</span>
-        <span style="margin-left:auto" class="pill ${a.scored_at || a.ai_score != null ? 'ok' : 'muted'}">${a.ai_score != null ? `${num(a.ai_score)}/${num(a.max_marks)}` : 'not graded'}</span></div>
+        ${scorePill(a)}</div>
       <p class="qprompt"><strong>${a.title ? escapeHtml(a.title) + ' — ' : ''}${escapeHtml(a.prompt)}</strong></p>
       ${a.code_snippet ? `<pre class="softpre" style="background:#0f172a;color:#e2e8f0">${escapeHtml(a.code_snippet)}</pre>` : ''}
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
       ${a.ai_reasoning ? `<p class="muted" style="margin:8px 0 0"><strong>Grading:</strong> ${escapeHtml(a.ai_reasoning)}</p>` : ''}
       ${dedHtml(a.deductions)}
+      ${marksEditor(a, 'part3', canEdit('part3'))}
     </div>`;
+  // Final total: the sum of the answers, or the manager's override.
+  const listRow = allCandidates.find((x) => x.id === id) || {};
+  const totalMax = listRow.totalMax || 0, aiTotal = listRow.aiTotal ?? 0;
+  const hasTotal = totalMax > 0;
+  const totalHtml = !hasTotal ? '' : `<div class="kv"><span class="k">Total</span><span><span class="score">${num(c.manual_total != null ? c.manual_total : aiTotal)}<small>/${num(totalMax)}</small></span>${c.manual_total != null ? ` <span class="pill warn" title="Sum of the answers: ${num(aiTotal)}">set by ${escapeHtml(c.manual_total_by || 'a manager')}</span>${c.manual_total_reason ? ` <span class="muted">“${escapeHtml(c.manual_total_reason)}”</span>` : ''}` : ''}</span></div>
+        ${IS_MANAGER ? `<details class="mk-edit" style="margin:0 0 6px"><summary>${c.manual_total != null ? 'Change the total again' : 'Change the total'}</summary>
+          <div class="mk-row">
+            <div><label class="field" for="mt-score">Total (0–${num(totalMax)})</label><input type="number" id="mt-score" min="0" max="${totalMax}" step="0.25" value="${c.manual_total != null ? c.manual_total : aiTotal}" style="width:110px" /></div>
+            <div style="flex:1;min-width:200px"><label class="field" for="mt-reason">Reason (optional)</label><input type="text" id="mt-reason" maxlength="300" value="${escapeHtml(c.manual_total_reason || '')}" placeholder="e.g. panel review after the interview" /></div>
+            <button class="primary sm" id="mt-save">Save total</button>
+            ${c.manual_total != null ? '<button class="secondary sm" id="mt-clear">Use sum of answers</button>' : ''}
+            <span class="muted" id="mt-status" style="font-size:12.5px"></span>
+          </div>
+          <p class="muted" style="margin:6px 0 0;font-size:12.5px">The total overrides the sum of the answers (now ${num(aiTotal)}). To change one answer, use <em>Change marks</em> under it.</p></details>` : ''}`;
   $('detail-content').innerHTML = `
     <div class="detail-split">
       <div class="resume-pane">
@@ -1432,9 +1533,10 @@ async function showDetail(id) {
         <div class="kv"><span class="k">Email</span><span>${escapeHtml(c.email)}</span></div>
         <div class="kv"><span class="k">College</span><span>${escapeHtml(c.college || '—')}</span></div>
         <div class="kv"><span class="k">Status</span><span><span class="pill ${statusPill(c.status)}">${escapeHtml(statusLabel(c.status))}</span></span></div>
+        ${totalHtml}
         <div class="kv"><span class="k">Skills</span><span>${(c.skills || []).map(escapeHtml).join(', ') || '—'}</span></div>
         <div class="kv"><span class="k">Projects</span><span>${(c.projects || []).map((p) => escapeHtml(p.name)).join(', ') || '—'}</span></div>
-        ${IS_DOCS ? docsAnswerSections(data, answerBlock, pasteCount, pasteMax) : `<div class="detail-block"><h3>Assessment answers — closed book</h3>${data.part1Answers.map(answerBlock).join('') || '<p class="muted">No answers yet (latest attempt).</p>'}
+        ${IS_DOCS ? docsAnswerSections(data, answerBlockFor, pasteCount, pasteMax) : `<div class="detail-block"><h3>Assessment answers — closed book</h3>${data.part1Answers.map(answerBlockFor('part1')).join('') || '<p class="muted">No answers yet (latest attempt).</p>'}
           <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${data.attempt?.part1_tab_switch_count ?? 0}</strong></p></div>`}
         <div class="detail-block support-only">
           <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Interview guide <button class="secondary sm" id="gen-interview-btn">${data.interviewQuestions.length ? 'Regenerate' : 'Generate'}</button></h3>
@@ -1448,11 +1550,47 @@ async function showDetail(id) {
         </div>
       </div>
     </div>`;
+  wireMarksEditors(id);
   const genBtn = $('gen-interview-btn');
   if (genBtn) genBtn.addEventListener('click', async () => {
     genBtn.disabled = true; genBtn.innerHTML = '<span class="spinner"></span> Generating…';
     try { await api(`/api/admin/candidates/${id}/interview`, { method: 'POST' }); await showDetail(id); }
     catch (e) { alert('Could not generate interview questions: ' + e.message); genBtn.disabled = false; genBtn.textContent = 'Generate'; }
+  });
+}
+
+function wireMarksEditors(id) {
+  const box = $('detail-content'); if (!box) return;
+  const after = async () => { await refreshCandidates(); await showDetail(id); };
+  box.querySelectorAll('[data-mk-save]').forEach((b) => b.addEventListener('click', async () => {
+    const key = b.dataset.mkSave, st = $(`mk-status-${key}`);
+    const raw = $(`mk-score-${key}`).value.trim();
+    if (raw === '') { st.textContent = 'Enter the marks.'; return; }
+    b.disabled = true; st.textContent = 'Saving…';
+    try {
+      await api(`/api/admin/candidates/${id}/marks`, { method: 'POST', body: JSON.stringify({ part: b.dataset.part, questionId: b.dataset.qid, score: Number(raw), reason: $(`mk-reason-${key}`).value }) });
+      await after();
+    } catch (e) { st.textContent = `Error: ${e.message}`; b.disabled = false; }
+  }));
+  box.querySelectorAll('[data-mk-clear]').forEach((b) => b.addEventListener('click', async () => {
+    const st = $(`mk-status-${b.dataset.mkClear}`);
+    b.disabled = true; st.textContent = 'Saving…';
+    try { await api(`/api/admin/candidates/${id}/marks`, { method: 'POST', body: JSON.stringify({ part: b.dataset.part, questionId: b.dataset.qid, score: null }) }); await after(); }
+    catch (e) { st.textContent = `Error: ${e.message}`; b.disabled = false; }
+  }));
+  const ts = $('mt-save');
+  if (ts) ts.addEventListener('click', async () => {
+    const st = $('mt-status'), raw = $('mt-score').value.trim();
+    if (raw === '') { st.textContent = 'Enter the total.'; return; }
+    ts.disabled = true; st.textContent = 'Saving…';
+    try { await api(`/api/admin/candidates/${id}/total`, { method: 'POST', body: JSON.stringify({ total: Number(raw), reason: $('mt-reason').value }) }); await after(); }
+    catch (e) { st.textContent = `Error: ${e.message}`; ts.disabled = false; }
+  });
+  const tc = $('mt-clear');
+  if (tc) tc.addEventListener('click', async () => {
+    const st = $('mt-status'); tc.disabled = true; st.textContent = 'Saving…';
+    try { await api(`/api/admin/candidates/${id}/total`, { method: 'POST', body: JSON.stringify({ total: null }) }); await after(); }
+    catch (e) { st.textContent = `Error: ${e.message}`; tc.disabled = false; }
   });
 }
 

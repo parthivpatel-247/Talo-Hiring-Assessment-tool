@@ -232,7 +232,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare('DELETE FROM part2_answers WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM part2_questions WHERE candidate_id = ?').bind(id),
       env.DB.prepare('DELETE FROM attempt_events WHERE candidate_id = ?').bind(id),
-      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?").bind(id),
+      env.DB.prepare("UPDATE candidates SET status = 'part2_ready', retake_granted = 1, access_revoked = 0, grading_claim = NULL, manual_total = NULL, manual_total_reason = NULL, manual_total_by = NULL, manual_total_at = NULL, status_before_revoke = NULL WHERE id = ?").bind(id),
     ]);
     await audit(env, 'retake', id);
     return json({ ok: true });
@@ -251,7 +251,7 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     // already in flight then can't mark this candidate graded), the reopen time noted
     // (so the stale sweep measures from now), and the sign-in count reset.
     const restore = (status: string | null) => env.DB.prepare(
-      `UPDATE candidates SET ${status ? 'status = ?, ' : ''}retake_granted = 1, access_revoked = 0, grading_claim = NULL WHERE id = ?`
+      `UPDATE candidates SET ${status ? 'status = ?, ' : ''}retake_granted = 1, access_revoked = 0, grading_claim = NULL, manual_total = NULL, manual_total_reason = NULL, manual_total_by = NULL, manual_total_at = NULL, status_before_revoke = NULL WHERE id = ?`
     ).bind(...(status ? [status, id] : [id]));
     if (!at || !at.part1_started_at) {
       // Never started. If a revoke or force-submit stamped it closed, clear that so
@@ -274,8 +274,8 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const closedBetween = !!at.part1_submitted_at && !at.part2_started_at && !p1TimedOut && (!at.part2_submitted_at || (Number.isFinite(p1Closed) && Number.isFinite(allClosed) && allClosed - p1Closed >= 1000));
     // Every branch below reopens something to be graded again: drop the old marks.
     const unscore = [
-      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
-      env.DB.prepare('UPDATE part2_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, ai_content_pct = NULL, scored_at = NULL WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('UPDATE part1_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, scored_at = NULL, manual_score = NULL, manual_reason = NULL, manual_by = NULL, manual_at = NULL WHERE candidate_id = ?').bind(id),
+      env.DB.prepare('UPDATE part2_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, ai_content_pct = NULL, scored_at = NULL, manual_score = NULL, manual_reason = NULL, manual_by = NULL, manual_at = NULL WHERE candidate_id = ?').bind(id),
     ];
     if (at.part2_started_at) {
       // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed.
@@ -336,13 +336,13 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const [attempt, p1, p2, ev] = await Promise.all([
       env.DB.prepare('SELECT * FROM attempts WHERE candidate_id = ?').bind(id).first(),
       env.DB.prepare(
-        `SELECT qb.prompt, qb.category, qb.word_limit, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks
+        `SELECT pa.question_id AS question_id, qb.prompt, qb.category, qb.word_limit, qb.marks AS question_marks, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.manual_score, a.manual_reason, a.manual_by, a.manual_at
          FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
          LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
          WHERE pa.candidate_id = ? ORDER BY pa.position`
       ).bind(id).all(),
       env.DB.prepare(
-        `SELECT pq.prompt, pq.word_limit, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.ai_content_pct
+        `SELECT pq.id AS question_id, pq.prompt, pq.word_limit, pq.marks AS question_marks, a.answer_text, a.ai_score, a.ai_reasoning, a.deductions, a.max_marks, a.ai_content_pct, a.manual_score, a.manual_reason, a.manual_by, a.manual_at
          FROM part2_questions pq LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
          WHERE pq.candidate_id = ? ORDER BY pq.position`
       ).bind(id).all(),
@@ -516,13 +516,13 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
 
   // Whole-cohort reads, grouped in memory (one query per table, not per candidate).
   const p1 = (await env.DB.prepare(
-    `SELECT pa.candidate_id AS cid, pa.position, qb.prompt, qb.word_limit, a.answer_text, a.ai_score, a.max_marks, qb.marks, a.ai_reasoning, a.deductions
+    `SELECT pa.candidate_id AS cid, pa.position, qb.prompt, qb.word_limit, a.answer_text, a.ai_score, a.max_marks, qb.marks, a.ai_reasoning, a.deductions, a.manual_score, a.manual_reason
      FROM part1_assignments pa JOIN question_bank qb ON qb.id = pa.question_id
      LEFT JOIN part1_answers a ON a.question_id = pa.question_id AND a.candidate_id = pa.candidate_id
      ORDER BY pa.candidate_id, pa.position`
   ).all<any>()).results ?? [];
   const p2 = (await env.DB.prepare(
-    `SELECT pq.candidate_id AS cid, pq.position, pq.prompt, pq.word_limit, a.answer_text, a.ai_score, a.max_marks, pq.marks, a.ai_reasoning, a.deductions, a.ai_content_pct
+    `SELECT pq.candidate_id AS cid, pq.position, pq.prompt, pq.word_limit, a.answer_text, a.ai_score, a.max_marks, pq.marks, a.ai_reasoning, a.deductions, a.ai_content_pct, a.manual_score, a.manual_reason
      FROM part2_questions pq
      LEFT JOIN part2_answers a ON a.question_id = pq.id AND a.candidate_id = pq.candidate_id
      ORDER BY pq.candidate_id, pq.position`
@@ -530,12 +530,15 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
   const attempts = new Map(((await env.DB.prepare('SELECT * FROM attempts').all<any>()).results ?? []).map((a) => [a.candidate_id, a]));
   const group = (rows: any[]) => { const m = new Map<string, any[]>(); for (const r of rows) { if (!m.has(r.cid)) m.set(r.cid, []); m.get(r.cid)!.push(r); } return m; };
   const g1 = group(p1), g2 = group(p2);
+  // A manager's manual mark counts instead of the AI's.
+  const eff = (r: any) => (r.manual_score != null ? Number(r.manual_score) : r.ai_score != null ? Number(r.ai_score) : null);
   const sum = (rows: any[] = []) => ({
-    awarded: rows.reduce((s, r) => s + (r.ai_score != null ? Number(r.ai_score) : 0), 0),
+    awarded: rows.reduce((s, r) => s + (eff(r) ?? 0), 0),
     // Before grading, an answer row holds max_marks' column default, so use the question's marks.
-    max: rows.reduce((s, r) => s + Number((r.ai_score != null ? r.max_marks : null) ?? r.marks ?? 0), 0),
-    graded: rows.some((r) => r.ai_score != null),
+    max: rows.reduce((s, r) => s + Number((eff(r) != null ? r.max_marks : null) ?? r.marks ?? 0), 0),
+    graded: rows.some((r) => eff(r) != null),
   });
+  const totalOf = (c: Candidate, s1: { awarded: number }, s2: { awarded: number }) => (c.manual_total != null ? Number(c.manual_total) : s1.awarded + s2.awarded);
   const pasteRows = (await env.DB.prepare(
     "SELECT candidate_id AS cid, COUNT(*) AS pastes, COALESCE(SUM(chars), 0) AS chars FROM attempt_events WHERE part = 2 AND type = 'paste' GROUP BY candidate_id"
   ).all<{ cid: string; pastes: number; chars: number }>()).results ?? [];
@@ -544,27 +547,29 @@ async function exportDocsCsv(env: Env, url: URL): Promise<Response> {
 
   const lines: string[] = [];
   if (fmt === 'summary') {
-    lines.push(['College', 'Name', 'Email', 'Status', 'Logins', 'Part 1 score', 'Part 1 max', 'Part 2 score', 'Part 2 max', 'Total score', 'Total max', 'Graded', 'Part 1 left the test', 'Part 2 tab switches', 'Part 2 pastes', 'Part 2 pasted characters'].join(','));
+    lines.push(['College', 'Name', 'Email', 'Status', 'Logins', 'Part 1 score', 'Part 1 max', 'Part 2 score', 'Part 2 max', 'Total score', 'Total max', 'Graded', 'Part 1 left the test', 'Part 2 tab switches', 'Part 2 pastes', 'Part 2 pasted characters', 'Total set by manager'].join(','));
     for (const c of cands) {
       const s1 = sum(g1.get(c.id)), s2 = sum(g2.get(c.id));
       const at = attempts.get(c.id) || {};
       const ps = pasteStats(c.id);
       lines.push([
         csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), at.login_count ?? '',
-        s1.awarded, s1.max, s2.awarded, s2.max, s1.awarded + s2.awarded, s1.max + s2.max, s1.graded || s2.graded ? 'yes' : 'no',
+        s1.awarded, s1.max, s2.awarded, s2.max, totalOf(c, s1, s2), s1.max + s2.max, s1.graded || s2.graded ? 'yes' : 'no',
         at.part1_tab_switch_count ?? 0, at.part2_tab_switch_count ?? 0, ps.pastes, ps.chars,
+        c.manual_total != null ? csvEsc(`yes (AI total ${s1.awarded + s2.awarded})${c.manual_total_reason ? `: ${c.manual_total_reason}` : ''}`) : '',
       ].join(','));
     }
   } else {
-    lines.push(['College', 'Name', 'Email', 'Status', 'Total score', 'Total max', 'Part', 'Q#', 'Question', 'Candidate answer', 'Words', 'Word limit', 'AI score', 'Q max', 'AI reasoning', 'Deductions', 'AI-likelihood % (Part 2, estimate)'].join(','));
+    lines.push(['College', 'Name', 'Email', 'Status', 'Total score', 'Total max', 'Part', 'Q#', 'Question', 'Candidate answer', 'Words', 'Word limit', 'Score', 'Q max', 'AI reasoning', 'Deductions', 'AI-likelihood % (Part 2, estimate)', 'AI score', 'Manual mark reason'].join(','));
     for (const c of cands) {
       const r1 = g1.get(c.id) || [], r2 = g2.get(c.id) || [];
       const s1 = sum(r1), s2 = sum(r2);
-      const base = [csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), s1.awarded + s2.awarded, s1.max + s2.max];
+      const base = [csvEsc(c.college || ''), csvEsc(c.name), csvEsc(emailOut(c.email)), csvEsc(c.status), totalOf(c, s1, s2), s1.max + s2.max];
       const row = (part: string, q: any, i: number) => [
         ...base, part, i + 1, csvEsc(q.prompt), csvEsc(q.answer_text || ''), words(q.answer_text), q.word_limit || defaultWordLimit(cfg, part === 'Part 1' || part === 'part1' ? 'part1' : 'part2'),
-        q.ai_score ?? '', (q.ai_score != null ? q.max_marks : null) ?? q.marks ?? '', csvEsc(q.ai_reasoning || ''), csvEsc(fmtDed(q.deductions)),
+        eff(q) ?? '', (eff(q) != null ? q.max_marks : null) ?? q.marks ?? '', csvEsc(q.ai_reasoning || ''), csvEsc(fmtDed(q.deductions)),
         q.ai_content_pct != null ? Math.round(q.ai_content_pct) : '',
+        q.ai_score ?? '', q.manual_score != null ? csvEsc(`changed by manager${q.manual_reason ? `: ${q.manual_reason}` : ''}`) : '',
       ].join(',');
       r1.forEach((q, i) => lines.push(row('Part 1', q, i)));
       r2.forEach((q, i) => lines.push(row('Part 2', q, i)));

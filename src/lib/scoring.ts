@@ -5,53 +5,33 @@ import type { Env } from '../types';
  * partial credit; these sum the awarded marks against the max.
  */
 
-export async function part1Summary(env: Env, candidateId: string) {
-  const rows = await env.DB.prepare(
-    'SELECT ai_score, max_marks, scored_at FROM part1_answers WHERE candidate_id = ?'
-  )
-    .bind(candidateId)
-    .all<{ ai_score: number | null; max_marks: number | null; scored_at: string | null }>();
-  const answers = rows.results ?? [];
-  const scored = answers.filter((a) => a.scored_at);
-  const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
-  // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
-  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
-  return { awarded, max, graded: scored.length, total: answers.length };
-}
+/**
+ * The marks an answer counts for: a manager's manual mark when there is one, else the
+ * AI's. An answer counts as graded once either exists.
+ */
+export const EFFECTIVE_SCORE_SQL = 'COALESCE(manual_score, ai_score)';
+const GRADED_SQL = '(scored_at IS NOT NULL OR manual_score IS NOT NULL)';
 
-export async function part2Summary(env: Env, candidateId: string) {
-  const rows = await env.DB.prepare(
-    'SELECT ai_score, max_marks, scored_at FROM part2_answers WHERE candidate_id = ?'
-  )
-    .bind(candidateId)
-    .all<{ ai_score: number | null; max_marks: number | null; scored_at: string | null }>();
-  const answers = rows.results ?? [];
-  const scored = answers.filter((a) => a.scored_at);
-  const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
-  // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
-  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
-  return { awarded, max, graded: scored.length, total: answers.length };
-}
-
-export async function part3Summary(env: Env, candidateId: string) {
-  // part3_answers may not exist yet on a DB where migration 0008 / self-heal
-  // hasn't run — tolerate that and report an empty summary.
+async function summaryFor(env: Env, table: 'part1_answers' | 'part2_answers' | 'part3_answers', candidateId: string): Promise<Summary> {
   try {
-    const rows = await env.DB.prepare(
-      'SELECT ai_score, max_marks, scored_at FROM part3_answers WHERE candidate_id = ?'
-    )
-      .bind(candidateId)
-      .all<{ ai_score: number | null; max_marks: number | null; scored_at: string | null }>();
-    const answers = rows.results ?? [];
-    const scored = answers.filter((a) => a.scored_at);
-    const awarded = scored.reduce((s, a) => s + (a.ai_score ?? 0), 0);
+    const r = await env.DB.prepare(
+      `SELECT COALESCE(SUM(CASE WHEN ${GRADED_SQL} THEN ${EFFECTIVE_SCORE_SQL} ELSE 0 END), 0) AS awarded,
+              COALESCE(SUM(CASE WHEN ${GRADED_SQL} THEN max_marks ELSE 0 END), 0) AS max,
+              SUM(CASE WHEN ${GRADED_SQL} THEN 1 ELSE 0 END) AS graded,
+              COUNT(*) AS total
+         FROM ${table} WHERE candidate_id = ?`
+    ).bind(candidateId).first<{ awarded: number; max: number; graded: number | null; total: number }>();
     // max_marks is only meaningful once graded (an unsaved-grade row holds the column default).
-  const max = scored.reduce((s, a) => s + (a.max_marks ?? 0), 0);
-    return { awarded, max, graded: scored.length, total: answers.length };
+    return { awarded: Number(r?.awarded) || 0, max: Number(r?.max) || 0, graded: Number(r?.graded) || 0, total: Number(r?.total) || 0 };
   } catch {
+    // part3_answers may not exist yet on a DB where migration 0008 / self-heal hasn't run.
     return { awarded: 0, max: 0, graded: 0, total: 0 };
   }
 }
+
+export async function part1Summary(env: Env, candidateId: string) { return summaryFor(env, 'part1_answers', candidateId); }
+export async function part2Summary(env: Env, candidateId: string) { return summaryFor(env, 'part2_answers', candidateId); }
+export async function part3Summary(env: Env, candidateId: string) { return summaryFor(env, 'part3_answers', candidateId); }
 
 /* ------------------------------------------------------------------ *
  * Cohort-wide summaries — ONE aggregate query per answer table instead
@@ -69,9 +49,9 @@ async function aggregateTable(env: Env, table: 'part1_answers' | 'part2_answers'
   try {
     const rows = await env.DB.prepare(
       `SELECT candidate_id AS cid,
-         COALESCE(SUM(CASE WHEN scored_at IS NOT NULL THEN ai_score ELSE 0 END), 0) AS awarded,
-         COALESCE(SUM(CASE WHEN scored_at IS NOT NULL THEN max_marks ELSE 0 END), 0) AS max,
-         SUM(CASE WHEN scored_at IS NOT NULL THEN 1 ELSE 0 END) AS graded,
+         COALESCE(SUM(CASE WHEN ${GRADED_SQL} THEN ${EFFECTIVE_SCORE_SQL} ELSE 0 END), 0) AS awarded,
+         COALESCE(SUM(CASE WHEN ${GRADED_SQL} THEN max_marks ELSE 0 END), 0) AS max,
+         SUM(CASE WHEN ${GRADED_SQL} THEN 1 ELSE 0 END) AS graded,
          COUNT(*) AS total
        FROM ${table}
        GROUP BY candidate_id`
@@ -90,25 +70,38 @@ async function aggregateTable(env: Env, table: 'part1_answers' | 'part2_answers'
   return map;
 }
 
-/** All per-candidate login counts in one query. */
-async function loginCounts(env: Env): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
+/** Times a candidate left the test (tab switch / window switch / full-screen exit), per part. */
+export type TabSwitches = { part1: number; part2: number; part3: number };
+
+/** All per-candidate login counts and tab-switch counts in one query. */
+async function attemptStats(env: Env): Promise<{ logins: Map<string, number>; tabs: Map<string, TabSwitches> }> {
+  const logins = new Map<string, number>();
+  const tabs = new Map<string, TabSwitches>();
   try {
-    const rows = await env.DB.prepare('SELECT candidate_id AS cid, login_count FROM attempts').all<{ cid: string; login_count: number }>();
-    for (const r of rows.results ?? []) map.set(r.cid, Number(r.login_count) || 0);
+    // SELECT * because the writers database has no Part 3 columns.
+    const rows = await env.DB.prepare('SELECT * FROM attempts').all<Record<string, unknown>>();
+    for (const r of rows.results ?? []) {
+      const cid = String(r.candidate_id);
+      logins.set(cid, Number(r.login_count) || 0);
+      tabs.set(cid, {
+        part1: Number(r.part1_tab_switch_count) || 0,
+        part2: Number(r.part2_tab_switch_count) || 0,
+        part3: Number(r.part3_tab_switch_count) || 0,
+      });
+    }
   } catch { /* best effort */ }
-  return map;
+  return { logins, tabs };
 }
 
 /** Everything the candidates dashboard needs, computed cohort-wide in parallel. */
 export async function cohortSummaries(env: Env) {
-  const [p1, p2, p3, logins] = await Promise.all([
+  const [p1, p2, p3, stats] = await Promise.all([
     aggregateTable(env, 'part1_answers'),
     aggregateTable(env, 'part2_answers'),
     aggregateTable(env, 'part3_answers'),
-    loginCounts(env),
+    attemptStats(env),
   ]);
-  return { p1, p2, p3, logins };
+  return { p1, p2, p3, logins: stats.logins, tabs: stats.tabs };
 }
 
 export const EMPTY_SUMMARY: Summary = { awarded: 0, max: 0, graded: 0, total: 0 };

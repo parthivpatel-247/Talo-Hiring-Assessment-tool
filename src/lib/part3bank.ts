@@ -198,6 +198,7 @@ export async function ensurePart3Schema(env: Env): Promise<void> {
           candidate_id TEXT NOT NULL, question_id TEXT NOT NULL, answer_text TEXT,
           ai_score REAL, ai_reasoning TEXT, deductions TEXT, max_marks INTEGER DEFAULT 5,
           scored_at TEXT, updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          manual_score REAL, manual_reason TEXT, manual_by TEXT, manual_at TEXT,
           PRIMARY KEY (candidate_id, question_id))`
       ).run();
       // Add the six part3_* columns to attempts if they are missing.

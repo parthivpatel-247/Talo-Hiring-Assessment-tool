@@ -203,3 +203,27 @@ export async function ensurePerfSchema(env: Env): Promise<void> {
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+/**
+ * Manual marks (both sites): a manager can change the marks of one answer, or the
+ * candidate's final total, with an optional reason. The AI's score stays in ai_score;
+ * the manual value wins wherever marks are added up, and grading again never touches
+ * it. Columns are added at runtime (never in a migration, see docs/VERSION-CONTROL.md).
+ */
+export async function ensureManagerEditCols(env: Env): Promise<void> {
+  await ensureOnce('manual_marks', async () => {
+    const cols = ['manual_score REAL', 'manual_reason TEXT', 'manual_by TEXT', 'manual_at TEXT'];
+    for (const table of ['part1_answers', 'part2_answers', 'part3_answers']) {
+      let have: Set<string>;
+      try {
+        have = new Set(((await env.DB.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>()).results ?? []).map((c) => c.name));
+      } catch { continue; }
+      if (!have.size) continue; // table not created on this site (writers has no Part 3)
+      for (const col of cols) if (!have.has(col.split(' ')[0])) await addColumn(env, `ALTER TABLE ${table} ADD COLUMN ${col}`);
+    }
+    const cand = new Set(((await env.DB.prepare('PRAGMA table_info(candidates)').all<{ name: string }>()).results ?? []).map((c) => c.name));
+    for (const col of ['manual_total REAL', 'manual_total_reason TEXT', 'manual_total_by TEXT', 'manual_total_at TEXT', 'status_before_revoke TEXT']) {
+      if (!cand.has(col.split(' ')[0])) await addColumn(env, `ALTER TABLE candidates ADD COLUMN ${col}`);
+    }
+  });
+}
