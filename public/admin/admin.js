@@ -1489,7 +1489,7 @@ async function showDetail(id) {
     <div class="question">
       <div class="qhead"><span class="qnum">Q${i + 1}</span>${IS_DOCS ? `<span class="badge muted">${countWordsAdmin(a.answer_text)} words</span>` : `${a.category ? `<span class="badge muted">${escapeHtml(a.category)}</span>` : ''}${a.based_on_skill ? `<span class="badge">${escapeHtml(a.based_on_skill)}</span>` : ''}`}
         ${scorePill(a)}</div>
-      <p class="qprompt"><strong>${escapeHtml(a.prompt)}</strong></p>
+      <div class="qprompt cand-preview">${renderRich(a.prompt)}</div>
       <pre class="softpre">${escapeHtml(a.answer_text || '(no answer)')}</pre>
       ${a.ai_content_pct != null ? `<p class="muted" style="margin:8px 0 0"><strong>AI-likelihood (estimate):</strong> <span class="pill ${a.ai_content_pct >= 70 ? 'danger' : a.ai_content_pct >= 40 ? 'warn' : 'ok'}">${Math.round(a.ai_content_pct)}%</span> <span style="font-size:11px">how AI-generated the answer looks — a guide, not proof</span></p>` : ''}
       ${a.ai_reasoning ? `<p class="muted" style="margin:8px 0 0"><strong>Grading:</strong> ${escapeHtml(a.ai_reasoning)}</p>` : ''}

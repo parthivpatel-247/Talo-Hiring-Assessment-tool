@@ -296,7 +296,7 @@ tbody tr { transition: background-color .15s ease, opacity .15s ease; }
 .rowmenu button:active { transform: translateY(1px); }
 
 /* ---- Candidate-accurate question preview (mirrors the exam portal) ---- */
-.cand-preview { background: var(--card, #fff); border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 14px 16px; line-height: 1.6; }
+.cand-preview { background: var(--surface-2, #f7f8fc); color: var(--ink); border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 14px 16px; line-height: 1.6; }
 .cand-preview .q-title { font-size: 1.1rem; font-weight: 700; line-height: 1.3; margin: 0 0 4px; color: var(--ink); }
 .cand-preview .q-topicrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
 .cand-preview .q-topic { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
@@ -304,12 +304,12 @@ tbody tr { transition: background-color .15s ease, opacity .15s ease; }
 .cand-preview p { margin: 0 0 10px; }
 .cand-preview ul, .cand-preview ol { margin: 4px 0 12px; padding-left: 22px; }
 .cand-preview li { margin: 3px 0; }
-.cand-preview code { font-family: var(--mono, monospace); font-size: .85em; background: var(--line-soft, #f1f5f9); padding: 1px 5px; border-radius: 5px; }
+.cand-preview code { font-family: var(--mono, monospace); font-size: .85em; background: var(--hover, #f1f5f9); padding: 1px 5px; border-radius: 5px; }
 .cand-preview pre { background: var(--code-bg, #0b1220); color: var(--code-ink, #e2e8f0); padding: 12px 14px; border-radius: 8px; overflow-x: auto; font-family: var(--mono, monospace); font-size: .82rem; line-height: 1.5; margin: 8px 0 12px; }
 .cand-preview .badge.diff-easy { background: var(--ok-soft, #dcfce7); color: var(--ok, #16a34a); }
 .cand-preview .badge.diff-medium { background: var(--warn-soft, #fef3c7); color: var(--warn, #b45309); }
 .cand-preview .badge.diff-hard { background: var(--danger-soft, #fee2e2); color: var(--danger, #dc2626); }
-.cand-preview .example { border: 1px solid var(--line, #e5e7eb); border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: var(--line-soft, #f8fafc); }
+.cand-preview .example { border: 1px solid var(--border, #e5e7eb); border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: var(--surface, #f8fafc); }
 .cand-preview .example .ex-head { font-weight: 700; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--accent-text, var(--accent)); margin: 0 0 8px; }
 .cand-preview .ex-row { display: flex; gap: 10px; margin: 5px 0; font-size: .9rem; align-items: baseline; }
 .cand-preview .ex-label { flex: 0 0 auto; min-width: 92px; font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); padding-top: 2px; }
