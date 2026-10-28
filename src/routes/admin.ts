@@ -1,6 +1,6 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
 import { createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
-import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn } from '../lib/db';
+import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn, ensureRequiredCol } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
   parseResume,
@@ -14,6 +14,7 @@ import { ensurePart3Schema, seedDefaultPart3 } from '../lib/part3bank';
 import { getAssessmentMinutes } from '../lib/timer';
 import { isDocs } from '../lib/team';
 import { isManagerOnlyRoute, MANAGER_ONLY_MESSAGE } from '../lib/roles';
+import { SUPPORT_CATEGORIES, SUPPORT_LIMITS, getSupportCounts, saveSupportCounts, supportPoolCounts, totalQuestions, type SupportCounts } from '../lib/supportconfig';
 import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
 import { ensureDocsAttemptCols, testIsOpen, openSetting } from './candidate-docs';
 import { adminSigninBegin, adminSigninFailed, adminSigninSucceeded, unlockAdminAccount, liftAllPauses, activePauses } from '../lib/ratelimit';
@@ -383,6 +384,8 @@ export async function handleAdminRoute(
       colleges: await getColleges(env),
       questionCategories: await questionCategories(env),
       assessmentMinutes: await getAssessmentMinutes(env),
+      questionCounts: await getSupportCounts(env),
+      pool: await supportPoolCounts(env),
     });
   }
 
@@ -402,6 +405,43 @@ export async function handleAdminRoute(
       .run();
     await audit(env, 'edit_duration', null, `${n} min`);
     return json({ ok: true, assessmentMinutes: await getAssessmentMinutes(env) });
+  }
+
+  // Support: questions per candidate for each type (SQL / Python / DSA / Scenario),
+  // optionally with the total minutes in the same save. Same rule as the writers
+  // site: applies to candidates who start after it is saved. (Manager only.)
+  if (path === '/api/admin/assessment-length' && request.method === 'POST') {
+    if (role !== 'manager') return json({ error: MANAGER_ONLY_MESSAGE }, { status: 403 });
+    const b = await request.json<{ counts?: Record<string, unknown>; minutes?: unknown }>().catch(() => ({} as any));
+    const counts = {} as SupportCounts;
+    for (const c of SUPPORT_CATEGORIES) {
+      const n = Number(b.counts?.[c]);
+      if (!Number.isInteger(n) || n < 0 || n > SUPPORT_LIMITS.maxPerCategory) {
+        return json({ error: `${c.toUpperCase()}: enter a whole number of questions from 0 to ${SUPPORT_LIMITS.maxPerCategory}.` }, { status: 400 });
+      }
+      counts[c] = n;
+    }
+    const total = totalQuestions(counts);
+    if (total < 1 || total > SUPPORT_LIMITS.maxTotal) return json({ error: `Each candidate needs between 1 and ${SUPPORT_LIMITS.maxTotal} questions in total.` }, { status: 400 });
+    const pool = await supportPoolCounts(env);
+    for (const c of SUPPORT_CATEGORIES) {
+      if (pool.required[c] > counts[c]) {
+        return json({ error: `${c.toUpperCase()} has ${pool.required[c]} questions every candidate must get, but each candidate gets only ${counts[c]}. Raise it to at least ${pool.required[c]} or untick some.` }, { status: 400 });
+      }
+    }
+    let minutes: number | null = null;
+    if (b.minutes != null && b.minutes !== '') {
+      const m = Math.round(Number(b.minutes));
+      if (!Number.isFinite(m) || m < 5 || m > 240) return json({ error: 'Enter a duration between 5 and 240 minutes.' }, { status: 400 });
+      minutes = m;
+    }
+    await ensureCollegeSchema(env); // guarantees the settings table exists
+    await saveSupportCounts(env, counts);
+    if (minutes != null) {
+      await env.DB.prepare("INSERT INTO settings (key, value) VALUES ('assessment_minutes', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(String(minutes)).run();
+    }
+    await audit(env, 'edit_length', null, `${SUPPORT_CATEGORIES.map((c) => `${c.toUpperCase()} ${counts[c]}`).join(', ')}${minutes != null ? ` · ${minutes} min` : ''}`);
+    return json({ ok: true, counts: await getSupportCounts(env), pool: await supportPoolCounts(env), assessmentMinutes: await getAssessmentMinutes(env) });
   }
 
   // Integrity flags for the manager portal: duplicate logins, multiple logins, and
@@ -759,6 +799,7 @@ export async function handleAdminRoute(
     await ensureQuestionHintCol(env);
     await ensureQuestionDeletedCol(env);
     await ensureQuestionCheckpointsCol(env);
+    await ensureRequiredCol(env);
     // ?deleted=1 returns the soft-deleted bin (for restore); otherwise only live rows.
     const qUrl = new URL(request.url);
     const wantDeleted = qUrl.searchParams.get('deleted') === '1';
@@ -795,6 +836,7 @@ export async function handleAdminRoute(
       marks?: number;
       difficulty?: string;
       enrich?: boolean;
+      required?: boolean;
     }>().catch(() => ({} as any));
     if (typeof body.prompt !== 'string' || !body.prompt.trim() || typeof body.category !== 'string') return json({ error: 'category and prompt are required' }, { status: 400 });
     if (body.prompt.length > 20000 || (body.referenceAnswer != null && (typeof body.referenceAnswer !== 'string' || body.referenceAnswer.length > 20000))) {
@@ -829,12 +871,14 @@ export async function handleAdminRoute(
       }
     }
 
+    await ensureRequiredCol(env);
     await env.DB.prepare(
-      `INSERT INTO question_bank (id, category, prompt, reference_answer, sample_data, expected_output, rubric, hint, checkpoints, marks, difficulty, status, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1)`
+      `INSERT INTO question_bank (id, category, prompt, reference_answer, sample_data, expected_output, rubric, hint, checkpoints, marks, difficulty, status, active, required)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?)`
     )
-      .bind(id, body.category, body.prompt, body.referenceAnswer ?? null, sampleData, expectedOutput, rubric, hint, checkpoints, marks, body.difficulty ?? 'medium')
+      .bind(id, body.category, body.prompt, body.referenceAnswer ?? null, sampleData, expectedOutput, rubric, hint, checkpoints, marks, body.difficulty ?? 'medium', body.required === true ? 1 : 0)
       .run();
+    await audit(env, 'add_question', null, `${body.category.toUpperCase()} · ${body.prompt.slice(0, 120)}`);
     return json({ ok: true, id, enrichError });
   }
 
@@ -893,7 +937,7 @@ export async function handleAdminRoute(
   // Edit a question's fields.
   const editMatch = path.match(/^\/api\/admin\/questions\/([^/]+)$/);
   if (editMatch && request.method === 'PUT') {
-    const b = await request.json<Partial<{ prompt: string; reference_answer: string; sample_data: string; rubric: string; marks: number; difficulty: string; active: number }>>().catch(() => ({} as any));
+    const b = await request.json<Partial<{ prompt: string; reference_answer: string; sample_data: string; rubric: string; marks: number; difficulty: string; active: number; required: boolean }>>().catch(() => ({} as any));
     const q = (await env.DB.prepare('SELECT * FROM question_bank WHERE id = ?').bind(editMatch[1]).first()) as QuestionBankRow | null;
     if (!q) return json({ error: 'Not found' }, { status: 404 });
     for (const k of ['prompt', 'reference_answer', 'sample_data', 'rubric'] as const) {
@@ -902,8 +946,10 @@ export async function handleAdminRoute(
     if (b.marks != null && marksValue(b.marks) == null) return json({ error: 'Marks must be a whole number from 1 to 100.' }, { status: 400 });
     if (b.difficulty != null && !DIFFICULTIES.has(String(b.difficulty))) return json({ error: 'Difficulty must be easy, medium or hard.' }, { status: 400 });
     if (b.active != null && b.active !== 0 && b.active !== 1) return json({ error: 'active must be 0 or 1.' }, { status: 400 });
+    if (b.required != null && typeof b.required !== 'boolean') return json({ error: 'required must be true or false.' }, { status: 400 });
+    await ensureRequiredCol(env);
     await env.DB.prepare(
-      'UPDATE question_bank SET prompt = ?, reference_answer = ?, sample_data = ?, rubric = ?, marks = ?, difficulty = ?, active = ? WHERE id = ?'
+      'UPDATE question_bank SET prompt = ?, reference_answer = ?, sample_data = ?, rubric = ?, marks = ?, difficulty = ?, active = ?, required = ? WHERE id = ?'
     )
       .bind(
         b.prompt ?? q.prompt,
@@ -913,9 +959,12 @@ export async function handleAdminRoute(
         b.marks != null ? marksValue(b.marks) : q.marks,
         b.difficulty ?? q.difficulty,
         b.active ?? q.active,
+        b.required == null ? ((q as { required?: number }).required ? 1 : 0) : (b.required ? 1 : 0),
         q.id
       )
       .run();
+    const changed = (['prompt', 'reference_answer', 'sample_data', 'rubric', 'marks', 'difficulty', 'active', 'required'] as const).filter((k) => b[k] != null);
+    await audit(env, 'edit_question', null, `${q.id}${changed.length ? ` · ${changed.join(', ')}` : ''}${b.marks != null ? ` · marks ${q.marks} → ${marksValue(b.marks)}` : ''}`);
     return json({ ok: true });
   }
 
@@ -958,7 +1007,7 @@ export async function handleAdminRoute(
 
   // Bulk import (used for seeding). Accepts written questions with reference answers.
   if (path === '/api/admin/questions/bulk-import' && request.method === 'POST') {
-    const body = await request.json<{ questions?: { category?: string; prompt?: string; referenceAnswer?: string; marks?: number; difficulty?: string }[] }>().catch(() => ({} as { questions?: unknown }));
+    const body = await request.json<{ questions?: { category?: string; prompt?: string; referenceAnswer?: string; marks?: number; difficulty?: string; required?: boolean }[] }>().catch(() => ({} as { questions?: unknown }));
     const list = Array.isArray(body.questions) ? body.questions : [];
     // Keep only well-formed entries: a valid category and a non-empty prompt.
     const allowed = new Set(QUESTION_CATEGORIES.map((c) => c.value));
@@ -986,14 +1035,16 @@ export async function handleAdminRoute(
     if (!fresh.length) {
       return json({ ok: true, imported: 0, duplicates, skipped: list.length - valid.length });
     }
+    await ensureRequiredCol(env);
     const stmt = env.DB.prepare(
-      `INSERT INTO question_bank (id, category, prompt, reference_answer, marks, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, 'active', 1)`
+      `INSERT INTO question_bank (id, category, prompt, reference_answer, marks, difficulty, status, active, required) VALUES (?, ?, ?, ?, ?, ?, 'active', 1, ?)`
     );
     await env.DB.batch(
       fresh.map((q) =>
-        stmt.bind(newId('q'), q.category, q.prompt, q.referenceAnswer ?? null, q.marks != null ? marksValue(q.marks) : defaultMarks(env, q.category as string), q.difficulty ?? 'medium')
+        stmt.bind(newId('q'), q.category, q.prompt, q.referenceAnswer ?? null, q.marks != null ? marksValue(q.marks) : defaultMarks(env, q.category as string), q.difficulty ?? 'medium', q.required === true ? 1 : 0)
       )
     );
+    await audit(env, 'bulk_import', null, `${fresh.length} question(s)`);
     return json({ ok: true, imported: fresh.length, duplicates, skipped: list.length - valid.length });
   }
 

@@ -203,6 +203,8 @@ let sortBy = 'total';
 let ASSESSMENT_MINUTES = 60;
 // Writers site (TEAM = "docs"): two-part writing test. Set from /config.
 let IS_DOCS = false;
+let SUP_COUNTS = null, SUP_POOL = null; // support: questions per type + bank counts
+const SUP_CATS = ['sql', 'python', 'dsa', 'scenario'];
 let DOCS = null; // { part1: {questions, minutes, marks}, part2: {...}, wordLimit, pool: {part1, part2}, limits }
 const PART_LABELS = { part1: 'Part 1', part2: 'Part 2' };
 function categoryLabel(cat) { return IS_DOCS ? (PART_LABELS[cat] || cat) : String(cat || '').toUpperCase(); }
@@ -228,6 +230,7 @@ async function loadConfig({ preserveEdits = false } = {}) {
     COLLEGES = Array.isArray(cfg.colleges) ? cfg.colleges : [];
     if (Array.isArray(cfg.questionCategories) && cfg.questionCategories.length) CATEGORIES = cfg.questionCategories;
     if (cfg.assessmentMinutes) ASSESSMENT_MINUTES = cfg.assessmentMinutes;
+    if (cfg.questionCounts) { SUP_COUNTS = cfg.questionCounts; SUP_POOL = cfg.pool || null; }
     IS_DOCS = cfg.team === 'docs';
     DOCS = IS_DOCS ? cfg.docs : null;
     SIGNIN_PAUSES = Number(cfg.signinPauses) || 0;
@@ -262,6 +265,32 @@ async function loadConfig({ preserveEdits = false } = {}) {
     const userBusy = preserveEdits && (durInput === document.activeElement || Number(durInput.value) !== ASSESSMENT_MINUTES);
     if (!userBusy) durInput.value = ASSESSMENT_MINUTES;
   }
+  if (!IS_DOCS) renderSupportLength(preserveEdits);
+}
+
+// ---- Support: questions of each type per candidate (Assessment length) ----
+function renderSupportLength(preserveEdits) {
+  if (!SUP_COUNTS) return;
+  for (const c of SUP_CATS) {
+    const el = $(`sup-q-${c}`);
+    if (el) {
+      const busy = preserveEdits && el.value !== '' && (el === document.activeElement || Number(el.value) !== SUP_COUNTS[c]);
+      if (!busy) el.value = SUP_COUNTS[c];
+      el.disabled = !IS_MANAGER;
+    }
+    const cell = $(`sup-pool-${c}`); if (!cell || !SUP_POOL) continue;
+    const have = SUP_POOL.active[c] || 0, need = SUP_COUNTS[c], req = SUP_POOL.required[c] || 0;
+    const reqText = req ? ` · ${req} for every candidate, ${need - req > 0 ? `${need - req} drawn at random` : 'none drawn'}` : '';
+    cell.innerHTML = req > need
+      ? `<span class="pool-low">${have} active · ${req} must go to every candidate, so this needs at least ${req}</span>`
+      : have >= need
+        ? `<span class="pool-ok">${have} active${reqText}</span>`
+        : `<span class="pool-low">${have} active · needs at least ${need}</span>`;
+  }
+  const tot = $('sup-length-total');
+  if (tot) { const n = SUP_CATS.reduce((s, c) => s + (SUP_COUNTS[c] || 0), 0); tot.textContent = `${n} question${n === 1 ? '' : 's'} per candidate`; }
+  const btn = $('duration-save-btn'); if (btn) btn.disabled = !IS_MANAGER;
+  const d = $('duration-input'); if (d) d.disabled = !IS_MANAGER;
 }
 
 // ---- Flags (integrity alerts) in the manager portal ----
@@ -370,11 +399,19 @@ if ($('duration-save-btn')) $('duration-save-btn').addEventListener('click', asy
     setNotice('duration-status', 'Enter a whole number of minutes between 5 and 240.', 'warn');
     return;
   }
+  const counts = {};
+  for (const c of SUP_CATS) {
+    const v = $(`sup-q-${c}`) ? $(`sup-q-${c}`).value.trim() : '';
+    counts[c] = v === '' ? 0 : Number(v);
+  }
   try {
-    const r = await api('/api/admin/assessment-duration', { method: 'POST', body: JSON.stringify({ minutes: mins }) });
+    const r = await api('/api/admin/assessment-length', { method: 'POST', body: JSON.stringify({ counts, minutes: mins }) });
     ASSESSMENT_MINUTES = r.assessmentMinutes || mins;
+    SUP_COUNTS = r.counts; SUP_POOL = r.pool;
     $('duration-input').value = ASSESSMENT_MINUTES;
-    setNotice('duration-status', `Saved — the assessment is now ${ASSESSMENT_MINUTES} minutes. Candidates who start from now get this length.`, 'ok');
+    renderSupportLength(false);
+    const n = SUP_CATS.reduce((s, c) => s + (SUP_COUNTS[c] || 0), 0);
+    setNotice('duration-status', `Saved: ${SUP_CATS.map((c) => `${c === 'dsa' ? 'DSA' : c === 'sql' ? 'SQL' : c[0].toUpperCase() + c.slice(1)} ${SUP_COUNTS[c]}`).join(', ')} (${n} question${n === 1 ? '' : 's'}) in ${ASSESSMENT_MINUTES} minutes. Candidates who start from now get this.`, 'ok');
   } catch (e) { setNotice('duration-status', `Error: ${e.message}`, 'warn'); }
 });
 
@@ -712,7 +749,7 @@ $('q-add-btn').addEventListener('click', async () => {
     const body = IS_DOCS ? { category, prompt } : { category, prompt, referenceAnswer, difficulty: $('q-difficulty').value };
     if (marksRaw) body.marks = Number(marksRaw);
     if (IS_DOCS && $('q-wordlimit').value.trim()) body.wordLimit = Number($('q-wordlimit').value.trim());
-    if (IS_DOCS && $('q-required')) body.required = $('q-required').checked;
+    if ($('q-required')) body.required = $('q-required').checked;
     const r = await api('/api/admin/questions', { method: 'POST', body: JSON.stringify(body) });
     if (IS_DOCS) setNotice('qform-status', `Added to ${categoryLabel(category)}.`, 'ok');
     else setNotice('qform-status', r.enrichError ? `Added, but AI enrichment failed (${r.enrichError}).` : 'Added and enriched.', r.enrichError ? 'warn' : 'ok');
@@ -720,7 +757,7 @@ $('q-add-btn').addEventListener('click', async () => {
     if ($('q-wordlimit')) $('q-wordlimit').value = '';
     if ($('q-required')) $('q-required').checked = false;
     await refreshQuestions();
-    if (IS_DOCS) loadConfig({ preserveEdits: true }); // refresh the "In the bank" counts
+    loadConfig({ preserveEdits: true }); // refresh the "In the bank" counts
   } catch (err) { setNotice('qform-status', `Error: ${err.message}`, 'warn'); }
   finally { btn.disabled = false; btn.textContent = IS_DOCS ? 'Add question' : 'Add question & enrich with AI'; }
 });
@@ -866,12 +903,12 @@ async function refreshQuestions() {
   }
 
   tbody.innerHTML = questions.map((q) => `<tr>
-      <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span>${IS_DOCS && q.required ? ' <span class="badge">Every candidate</span>' : ''}</td>
+      <td><span class="badge muted">${escapeHtml(categoryLabel(q.category))}</span>${q.required ? ' <span class="badge">Every candidate</span>' : ''}</td>
       <td>${escapeHtml(q.prompt.slice(0, 96))}${q.prompt.length > 96 ? '…' : ''}</td>
       <td class="tnum">${num(q.marks)}</td>
       <td>${questionExtraCell(q)}</td>
       <td>${q.active ? '<span class="pill ok">active</span>' : '<span class="pill muted">off</span>'}</td>
-      <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button>${IS_DOCS ? `<button class="secondary sm" data-qreq="${q.id}" data-on="${q.required ? 0 : 1}">${q.required ? 'Draw at random' : 'Every candidate'}</button>` : ''}<button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
+      <td><div class="rowmenu"><button class="secondary sm" data-view="${q.id}">View</button>${!q.deleted_at ? `<button class="secondary sm" data-qreq="${q.id}" data-on="${q.required ? 0 : 1}">${q.required ? 'Draw at random' : 'Every candidate'}</button>` : ''}<button class="secondary sm" data-toggle="${q.id}">${q.active ? 'Disable' : 'Enable'}</button><button class="danger sm" data-qdel="${q.id}">Delete</button></div></td>
     </tr>`).join('');
   tbody.querySelectorAll('[data-qreq]').forEach((b) => b.addEventListener('click', async () => {
     b.disabled = true;
@@ -882,7 +919,7 @@ async function refreshQuestions() {
   }));
   tbody.querySelectorAll('[data-toggle]').forEach((b) => b.addEventListener('click', async () => {
     if (b.disabled) return; b.disabled = true;
-    try { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); if (IS_DOCS) loadConfig({ preserveEdits: true }); }
+    try { await api(`/api/admin/questions/${b.dataset.toggle}/toggle-active`, { method: 'POST' }); await refreshQuestions(); loadConfig({ preserveEdits: true }); }
     catch (e) { alert('Could not change the question: ' + e.message); b.disabled = false; }
   }));
   wireQuestionDetail(tbody, questions);
@@ -912,10 +949,10 @@ function wireQuestionDetail(tbody, questions) {
     const save = tr.querySelector('[data-qsave]');
     if (save) save.addEventListener('click', async () => {
       const id = save.dataset.qsave, st = $(`qe-status-${id}`);
-      const marks = $(`qe-marks-${id}`).value.trim(), wl = $(`qe-wl-${id}`).value.trim();
+      const marks = $(`qe-marks-${id}`).value.trim(), wlEl = $(`qe-wl-${id}`);
       const body = {};
       if (marks) body.marks = Number(marks);
-      body.wordLimit = wl ? Number(wl) : '';
+      if (wlEl) body.wordLimit = wlEl.value.trim() ? Number(wlEl.value.trim()) : '';
       save.disabled = true; st.textContent = 'Saving…';
       try {
         await api(`/api/admin/questions/${id}`, { method: 'PUT', body: JSON.stringify(body) });
@@ -1007,7 +1044,7 @@ function questionDetailHtml(q) {
   </div>`;
   }
   return `<div class="qdetail">
-    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(q.category.toUpperCase())} · ${num(q.marks)} marks</h3>
+    <h3 style="font-family:'Fraunces';font-size:15px;margin:0 0 8px">${escapeHtml(q.category.toUpperCase())} · ${num(q.marks)} marks · ${q.required ? 'every candidate gets it' : 'drawn at random'}</h3>
     <div class="detail-block" style="border:0;margin:0;padding:0"><h3>Question <span class="muted" style="font-weight:400;font-size:12px">— exactly as the candidate sees it</span></h3><div class="cand-preview">${renderRich(q.prompt)}</div></div>
     <div class="detail-block"><h3>Hint (shown to candidate on demand)</h3><pre class="softpre">${escapeHtml(q.hint || '(none — click Enrich all to generate)')}</pre></div>
     <div class="detail-block"><h3>Sample data (shown to candidate)</h3><div class="cand-preview">${q.sample_data ? renderRich(q.sample_data) : '<span class="muted">(none — click Enrich all to generate)</span>'}</div></div>
@@ -1015,6 +1052,14 @@ function questionDetailHtml(q) {
     <div class="detail-block"><h3>Reference answer (admin only)</h3><pre class="softpre">${escapeHtml(q.reference_answer || '(none)')}</pre></div>
     <div class="detail-block"><h3>Grading rubric (admin only)</h3><pre class="softpre">${escapeHtml(q.rubric || '(none)')}</pre></div>
     ${(q.category === 'dsa' || q.category === 'scenario') ? `<div class="detail-block"><h3>Marking checkpoints (admin only · used for grace-mark grading)</h3><pre class="softpre">${escapeHtml(q.checkpoints || '(none — click "Enrich all with AI" to generate)')}</pre></div>` : ''}
+    ${IS_MANAGER && !q.deleted_at ? `<div class="detail-block qedit"><h3>Change marks</h3>
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+        <div><label class="field" for="qe-marks-${q.id}">Marks</label><input type="number" id="qe-marks-${q.id}" min="1" max="100" step="1" value="${num(q.marks)}" style="width:110px" /></div>
+        <button class="primary sm" data-qsave="${q.id}">Save</button>
+        <span class="muted" id="qe-status-${q.id}" style="font-size:12.5px"></span>
+      </div>
+      <p class="muted" style="margin:8px 0 0;font-size:12.5px">Applies to candidates who start after you save. Already-graded answers keep their marks until you grade again.</p>
+    </div>` : ''}
   </div>`;
 }
 

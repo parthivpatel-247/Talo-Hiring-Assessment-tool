@@ -3,6 +3,7 @@ import { createCandidateSession, getCandidateSession, json, withCookie, clearCan
 import { candidateSigninPaused, candidateUnknownEmail } from '../lib/ratelimit';
 import { getCandidateByEmail, getCandidateById, getAttempt, ensureAttempt, newId, ensureQuestionHintCol, ensureQuestionDeletedCol } from '../lib/db';
 import { assignPart1Questions } from '../lib/randomize';
+import { getSupportCounts, totalQuestions } from '../lib/supportconfig';
 import { startPart, heartbeat, markSubmitted, logTabSwitch, durationSeconds } from '../lib/timer';
 import { isDocs } from '../lib/team';
 import { handleDocsCandidateRoute, ensureDocsAttemptCols, maxPauseSeconds, testIsOpen, candidateStage, sittingStatus, sittingRefused, bindSitting, publicAttempt } from './candidate-docs';
@@ -97,7 +98,7 @@ export async function handleCandidateRoute(
   // Public, pre-login config so the intro page can show the live assessment
   // length (which the admin can change). No candidate data is exposed here.
   if (path === '/api/candidate/config' && request.method === 'GET') {
-    return json({ assessmentMinutes: Math.round((await durationSeconds(env, 'part1')) / 60) });
+    return json({ assessmentMinutes: Math.round((await durationSeconds(env, 'part1')) / 60), questions: totalQuestions(await getSupportCounts(env)) });
   }
 
   const auth = await requireCandidate(env, request);

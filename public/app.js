@@ -43,6 +43,7 @@ function limitFor(q) { return (q && Number(q.wordLimit) > 0) ? Number(q.wordLimi
       .then((r) => (r.ok ? r.json() : null))
       .then((cfg) => {
         if (cfg && cfg.assessmentMinutes) setAll('js-min', cfg.assessmentMinutes);
+        if (!IS_DOCS && cfg && cfg.questions) { setAll('js-qcount', cfg.questions); setAll('js-qcount-s', cfg.questions === 1 ? '' : 's'); }
         if (IS_DOCS && cfg && cfg.parts) {
           setAll('js-p1q', cfg.parts.part1.questions); setAll('js-p1min', cfg.parts.part1.minutes);
           setAll('js-p2q', cfg.parts.part2.questions); setAll('js-p2min', cfg.parts.part2.minutes);

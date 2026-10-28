@@ -2,6 +2,7 @@ import type { Env, QuestionBankRow } from '../types';
 import { ensurePart3Schema, seedDefaultPart3 } from './part3bank';
 import { ensurePerfSchema, ensureRequiredCol, newId } from './db';
 import { getDocsConfig, DocsPoolTooSmall } from './team';
+import { getSupportCounts } from './supportconfig';
 
 /**
  * Assigns each candidate a Part 1 set (N SQL + M Python + DSA + Scenario) by a
@@ -37,15 +38,31 @@ export async function assignPart1Questions(env: Env, candidateId: string): Promi
   await ensurePerfSchema(env);
   const seen = await seenQuestionIds(env, candidateId); // exclude on retakes
 
-  const sqlCount = Number(env.SQL_QUESTIONS_PER_STUDENT);
-  const pyCount = Number(env.PYTHON_QUESTIONS_PER_STUDENT);
-  const dsaCount = Number(env.DSA_QUESTIONS_PER_STUDENT || 0);
-  const scenarioCount = Number(env.SCENARIO_QUESTIONS_PER_STUDENT || 0);
+  // Questions per type: what the manager set in admin (Assessment length), else
+  // wrangler.toml. Questions marked "Every candidate" are always in their type's
+  // share; the rest of that share is drawn by least-used rotation.
+  await ensureRequiredCol(env);
+  const counts = await getSupportCounts(env);
+  const sqlCount = counts.sql;
+  const pyCount = counts.python;
+  const dsaCount = counts.dsa;
+  const scenarioCount = counts.scenario;
 
-  const sqlIds = await pickLeastUsed(env, 'sql', sqlCount, seen);
-  const pyIds = await pickLeastUsed(env, 'python', pyCount, seen);
-  const dsaIds = await pickLeastUsed(env, 'dsa', dsaCount, seen);
-  const scenarioIds = await pickLeastUsed(env, 'scenario', scenarioCount, seen);
+  const pinnedRows = (await env.DB.prepare(
+    "SELECT id, category FROM question_bank WHERE active = 1 AND deleted_at IS NULL AND required = 1 AND category IN ('sql','python','dsa','scenario') ORDER BY created_at, rowid"
+  ).all<{ id: string; category: string }>()).results ?? [];
+  const pinned = (cat: string) => pinnedRows.filter((r) => r.category === cat).map((r) => r.id);
+  const draw = async (cat: 'sql' | 'python' | 'dsa' | 'scenario', count: number) => {
+    const must = pinned(cat).slice(0, count);
+    if (pinned(cat).length > count) {
+      throw new Error(`${cat.toUpperCase()} has ${pinned(cat).length} questions every candidate must get, but each candidate gets only ${count}. Raise the ${cat.toUpperCase()} count in Assessment length or untick some.`);
+    }
+    return [...must, ...(await pickLeastUsed(env, cat, count - must.length, seen, true))];
+  };
+  const sqlIds = await draw('sql', sqlCount);
+  const pyIds = await draw('python', pyCount);
+  const dsaIds = await draw('dsa', dsaCount);
+  const scenarioIds = await draw('scenario', scenarioCount);
 
   if (sqlIds.length < sqlCount || pyIds.length < pyCount || dsaIds.length < dsaCount || scenarioIds.length < scenarioCount) {
     throw new Error(
