@@ -284,11 +284,22 @@ export async function assignDocsPart2(env: Env, candidateId: string): Promise<vo
   const existing = await env.DB.prepare('SELECT 1 FROM part2_questions WHERE candidate_id = ?').bind(candidateId).first();
   if (existing) return; // idempotent
   await ensurePerfSchema(env);
+  await ensureRequiredCol(env);
   const need = (await getDocsConfig(env)).part2.questions;
   const seen = await seenQuestionIds(env, candidateId);
-  const ids = await pickLeastUsed(env, 'part2', need, seen);
+  // As in Part 1: questions marked "every candidate gets this" are always in the set,
+  // the rest are drawn by least-used rotation. Here they come first.
+  const required = ((await env.DB.prepare(
+    "SELECT id FROM question_bank WHERE category = 'part2' AND active = 1 AND deleted_at IS NULL AND required = 1 ORDER BY created_at, rowid"
+  ).all<{ id: string }>()).results ?? []).map((r) => r.id);
+  if (required.length > need) {
+    throw new DocsPoolTooSmall('part2', need, required.length,
+      `Part 2 has ${required.length} questions every candidate must get, but each candidate gets only ${need}. Raise Part 2's question count or untick some.`);
+  }
+  const drawn = await pickLeastUsed(env, 'part2', need - required.length, seen, true);
+  const ids = [...required, ...drawn];
   if (ids.length < need) throw new DocsPoolTooSmall('part2', need, ids.length);
-  const ordered = shuffle(ids);
+  const ordered = [...required, ...shuffle(drawn)];
   const rows = await env.DB.prepare(
     `SELECT id, prompt, marks, word_limit FROM question_bank WHERE id IN (${ordered.map(() => '?').join(',')})`
   )

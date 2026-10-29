@@ -354,8 +354,18 @@ function plainWords(text: string): string[] {
   return (text || '')
     .replace(/\[\/?[ui]\]/gi, ' ')
     .replace(/<br\s*\/?>|&nbsp;/gi, ' ')
+    // Accented and full-width letters count as their plain form, and invisible
+    // joiners are dropped, so the copy check can't be dodged by restyling letters.
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f\u200b-\u200d\u2060\ufeff\u00ad]/g, '')
     .toLowerCase()
     .match(/[a-z0-9]+/g) ?? [];
+}
+
+/** Words in an answer: whitespace and invisible joiners both separate words. */
+function countWords(text: string): number {
+  const t = (text || '').replace(/[\u200b-\u200d\u2060\ufeff]/g, ' ').trim();
+  return t ? t.split(/\s+/).length : 0;
 }
 
 /**
@@ -409,7 +419,7 @@ export async function gradeWritingAnswer(
       deductions: [{ reason: 'No answer provided', marks: opts.maxMarks }],
     };
   }
-  const words = trimmed.split(/\s+/).length;
+  const words = countWords(trimmed);
   const openBook = opts.part === 'part2';
   // Part 2: an answer that is (almost) only the question or PRD pasted back is not an
   // attempt: 0, without asking the AI (which tends to grade the pasted question as if it

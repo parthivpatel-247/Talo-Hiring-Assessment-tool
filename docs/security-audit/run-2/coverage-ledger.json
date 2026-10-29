@@ -1,0 +1,1098 @@
+[
+  {
+    "coverage_id": "public%2Fadmin%2Fadmin.js%23showDetail%7CrenderCandidateTable%7CrevokeDialog%7CquestionDetailHtml::public%2Fadmin%2Fadmin.js%23escapeHtml::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "public/admin/admin.js#showDetail|renderCandidateTable|revokeDialog|questionDetailHtml",
+      "boundary": "public/admin/admin.js#escapeHtml",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "Admin dashboard rendering of manager- and candidate-supplied text",
+    "boundary": "HTML escaping before innerHTML and attribute sinks",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "public/admin/admin.js",
+      "public/app.js",
+      "public/_headers"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "CLIENT-SIDE.md#Core discipline",
+      "CLIENT-SIDE.md#DOM and object-state attack classes",
+      "CLIENT-SIDE.md#Universal moves",
+      "CLIENT-SIDE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLIENT-SIDE.md#Cross-origin messaging and network attack classes",
+        "reason": "no postMessage or cross-origin fetch added"
+      },
+      {
+        "block": "CLIENT-SIDE.md#Service-worker and browser-storage attack classes",
+        "reason": "no service worker; storage unchanged"
+      },
+      {
+        "block": "CLIENT-SIDE.md#UI-redress and navigation attack classes",
+        "reason": "frame-ancestors none and X-Frame-Options DENY unchanged in public/_headers"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h3-injection",
+    "reviewed_paths": [
+      "public/_headers",
+      "public/admin/admin.js",
+      "public/app.js",
+      "src/lib/db.ts",
+      "src/lib/randomize.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "public/admin/admin.js"
+        ],
+        "invariant": "escapeHtml (admin.js:62) neutralises &, <, > and both quote characters, so its output is safe in element content and in quoted attribute values",
+        "method": "source",
+        "result": "escapeHtml sets textContent and reads innerHTML, which encodes & < >, then replaces \" with &quot; and ' with &#39;. Every attribute sink in the scope that takes text (title, value, data-*) is double-quoted, so the output cannot break out of the attribute.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "public/admin/admin.js",
+          "public/app.js"
+        ],
+        "invariant": "renderRich/renderInline/renderCell (admin.js:67-149, the same copy in app.js) escape all input before adding any markup and add no attributes built from input",
+        "method": "source",
+        "result": "renderInline calls escapeHtml first. The code, strong, [u] and [i] rewrites only wrap text that is already escaped in tags that have no attributes. renderCell turns back only the literal escaped forms of <br> and &nbsp;. In renderRich, fenced code, labels, topics and example headings go through escapeHtml or renderInline. The only attributes are a class taken from a fixed DIFF map keyed by the regex group Easy|Medium|Hard, a fixed li-sub class, and <ol start> built from parseInt, which is always an integer. The change from escapeHtml to renderRich(a.prompt) in showDetail (admin.js:1492) is therefore safe, including for resume-derived Part 2 prompts.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "public/admin/admin.js",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "New manual-mark, manual-total, tab-badge and revoke-dialog sinks escape every stored string that a manager or candidate controls",
+        "method": "source",
+        "result": "marksEditor (1451-1465) escapes manual_by, manual_at, manual_reason and question_id in data-qid. scorePill (1444-1449) escapes the whole title string; the AI score is escaped twice, which only affects display. The total cell (1217) escapes manualTotalReason inside its title attribute. totalHtml (1503-1512) escapes manual_total_by and manual_total_reason. revokeDialog (1080) escapes name/email. tabBadge (1110-1113) escapes the title and runs the count through num. Deductions (1484), ai_reasoning (1495) and interview questions (1533-1537) are escaped.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "public/admin/admin.js",
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/randomize.ts",
+          "src/lib/db.ts"
+        ],
+        "invariant": "Values placed in HTML without escaping are server-typed numbers or server-generated IDs that no candidate or manager can set",
+        "method": "source",
+        "result": "part1/part2_tab_switch_count (1436-1438, 1529) only ever change through SQL +1 increments (candidate-docs.ts:218, timer.ts:118,148). The writers pasteCount and pasteMax are COUNT(*) and MAX(chars), and chars is clamped by n() (candidate-docs.ts:215, admin-docs.ts:349-362). manual_total and manual_score are stored only after checks that the input is a finite number in 0.25 steps (admin.ts:1523-1524, 1556-1557). Candidate IDs, question_bank IDs and part2_questions IDs come from newId (db.ts:5-8, admin-docs.ts:141,201, admin.ts:852,1044, randomize.ts:306); part3 IDs come from the built-in bank. None of these interpolations can carry markup.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "public/_headers"
+        ],
+        "invariant": "Browser policy as a second layer behind the escaping",
+        "method": "source",
+        "result": "The CSP in public/_headers is script-src 'self' plus two inline-script hashes, with object-src 'none', base-uri 'self' and frame-ancestors 'none'. Even an HTML injection could not run inline or attribute event-handler script. style-src allows 'unsafe-inline', but no HTML injection path was found that could use it.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "public/admin/admin.js:1436-1438,1529,1506 put attempt counters, manual_total, aiTotal and totalMax into HTML without num()/escapeHtml. They are safe today only because the server stores integers or validated numbers; wrapping them in num() would keep them safe if the storage type ever changes.",
+      "public/admin/admin.js:1037-1040,1057-1059,1456-1463 put q.id and the a.question_id-derived key into id and data-* attributes without escaping. IDs come from newId today; escaping them would remove that dependency.",
+      "public/admin/admin.js:1447-1448 escapes the AI score twice in the scorePill title (num() inside a string that then goes through escapeHtml). This affects display only and is not a security issue.",
+      "src/routes/admin.ts:1211 and src/routes/admin-docs.ts:497 only look at the first character. Some spreadsheet tools strip leading spaces or recognise full-width '＝'; checking the first non-whitespace character would make the guard sturdier. No exploit path was shown from source.",
+      "public/_headers keeps style-src 'unsafe-inline'. No HTML injection that could use it was found, but tightening it would limit CSS-based exfiltration if a future sink regresses."
+    ]
+  },
+  {
+    "coverage_id": "src%2Findex.ts%23requestGuard::src%2Flib%2Fratelimit.ts%23requestGuard::profile%2Fquick%2Fall-in-scope-subsystems::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota%20and%20scheduling%20attack%20classes",
+    "canonical_refs": {
+      "surface": "src/index.ts#requestGuard",
+      "boundary": "src/lib/ratelimit.ts#requestGuard",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes"
+    },
+    "surface": "Anonymous API traffic and per-network ceilings",
+    "boundary": "Request ceilings and D1 counters",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Quota and scheduling",
+    "starting_paths": [
+      "src/lib/ratelimit.ts",
+      "src/index.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "out_of_scope",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "Scoped run: src/lib/ratelimit.ts and src/index.ts request guard are unchanged since run 1; prior lead src/lib/ratelimit.ts:requestGuard:per-network-ceiling-vs-account-daily-quota remains an owner deployment check (Cloudflare plan / WAF rule)."
+    ]
+  },
+  {
+    "coverage_id": "src%2Flib%2Fopenai.ts%23gradeWritingAnswer::src%2Flib%2Fopenai.ts%23copiedFromQuestion::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/lib/openai.ts#gradeWritingAnswer",
+      "boundary": "src/lib/openai.ts#copiedFromQuestion",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Writers AI grading of candidate answers",
+    "boundary": "Candidate text isolated from grader instructions; model output bounded to marks",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/lib/openai.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Context, retrieval, and memory attack classes",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules",
+      "AI-AND-LLM.md#Output and disclosure attack classes"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "AI-AND-LLM.md#Tool and action attack classes",
+        "reason": "the grader model has no tools or actions"
+      },
+      {
+        "block": "AI-AND-LLM.md#MCP and sub-agent trust classes",
+        "reason": "no MCP or sub-agents"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h4-llm-resource",
+    "reviewed_paths": [
+      "public/admin/admin.js",
+      "src/lib/openai.ts",
+      "src/lib/roles.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Candidate text cannot leave the quoted answer block or pose as grader context. The only candidate-controlled inputs to the writers grading prompt are the answer text and the Part 2 paste and typing numbers.",
+        "method": "source",
+        "result": "gradeWritingAnswer (openai.ts:460-472) creates a fresh boundary, ANSWER-<crypto.randomUUID()>, for every call. It removes any copy of that boundary from the answer (split(boundary).join('')) and sends system and user as separate typed roles in chatJson (openai.ts:45-48), so there is no candidate-controlled role field. The question prompt, model answer, guidance, copyNote, word count and paste evidence are built server-side and placed outside the boundary (openai.ts:461-467). The paste and typing numbers come from attempt_events, which logEvent (candidate-docs.ts:211-215) clamps to integers, so they cannot carry text into the prompt. Prompt-injection text still sits inside the intact boundary. Any effect on the candidate's own marks is a guardrail matter with no code-level boundary failure, so it is not a finding.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Model output becomes marks only after deterministic bounding, and is written only while this grading run still holds the candidate's claim.",
+        "method": "source",
+        "result": "The model's score and its deductions are reconciled by taking the lower of the two. The score is snapped to quarter marks and clamped to [0, maxMarks], where maxMarks comes from the DB question or part2_questions marks, which the triggers keep above 0 (openai.ts:475-486). Deduction marks are floored at 0 and deductions without a string reason are dropped. ai_content_percent is clamped to 0-100 and does not affect writers marks. Persistence in gradeDocsCandidate (admin-docs.ts:416-421, 439-444) uses bound parameters gated on the grading_claim. Resume and Retake drop the claim (admin-docs.ts:235, 253-255), and analysis/run and /grade release it on failure (admin.ts:1338-1343, 1380-1383). Re-grading leaves manual_score alone, so a manager's override keeps priority through COALESCE.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/lib/openai.ts"
+        ],
+        "invariant": "The copy check (copiedFromQuestion, auto-zero and copyNote) is computed server-side and affects only the answering candidate's own marks.",
+        "method": "source",
+        "result": "copiedFromQuestion (openai.ts:367-380) is deterministic and linear. It builds a set of the question's 5-word sequences, makes one pass over the answer, and is bounded by the 20,000-character prompt and the 100,000-character answer cap. The automatic zero applies only to Part 2, and only when at least 85% of the answer and at least 50 words are copied (openai.ts:419-425). Its inputs are the candidate's own answer and the manager-written prompt, so it cannot move another candidate's marks. Evading it, for example with homoglyphs, only hands the decision back to the model. That weakens a fairness heuristic but crosses no boundary (see hardening).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/admin.ts",
+          "src/lib/roles.ts",
+          "src/routes/candidate-docs.ts"
+        ],
+        "invariant": "Grader output cannot expose data the reader is not allowed to see, and grading context cannot leak between candidates.",
+        "method": "source",
+        "result": "Each grading call is a stateless request containing one answer and that question's prompt, model answer and guidance (admin-docs.ts:405-438). There is no history, memory or cache. The model's reasoning goes only to admin views and the CSV. Panel members can already read reference_answer and rubric through GET /api/admin/questions, which is not manager-only (admin.ts:799-812; roles.ts:7-26 covers only the write routes). Candidate routes never return marks or reasoning (candidate-docs.ts:16-19, 318-320). No principal gains access to data across a boundary.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/lib/openai.ts",
+          "src/routes/admin.ts",
+          "public/admin/admin.js"
+        ],
+        "invariant": "When one candidate's grading fails, other candidates are not blocked and grading does not loop forever.",
+        "method": "source",
+        "result": "chatJson does not retry hard 4xx errors (openai.ts:65-78, 96). analysis/run grades each candidate inside its own try/catch and releases a failed candidate's claim (admin.ts:1333-1345), so the rest of the batch completes. The client stops after two rounds with no progress (admin.js:1401-1402). The only effect of a persistently failing answer is that the same candidate gets re-graded once per round. That spend is small and bounded by the operator's clicks.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "The word limit is enforced only in the browser (app.js:110-114, 428). The server stores up to 10x the limit in characters (candidate-docs.ts:373). Both the client and the grader count words with /\\s+/ (openai.ts:412), which does not match U+200B and similar joiners. Text joined that way therefore bypasses the client clamp, and the grader is told the answer has a few words when it has thousands. The impact is only on fairness of the candidate's own marks. Suggested fix: count words server-side with a Unicode-aware tokenizer such as Intl.Segmenter, or treat [\\s\\u200B-\\u200D\\u2060\\uFEFF] as separators, and reject or flag answers over the limit before grading.",
+      "With word limits now up to 10,000, the answer cap is 100,000 characters. If those characters tokenize badly (rare CJK or astral characters), the prompt can exceed the model's context window. OpenAI then returns a 400, which chatJson does not retry, so that candidate's grading fails every time and the candidate is re-claimed in each Analyze round (admin.ts:1340-1343). Only the candidate's own result is affected. Suggestion: estimate tokens before calling the model, or truncate with a marker, and record a failure per answer instead of failing the whole candidate.",
+      "The candidate answer and heartbeat routes call request.json() on the whole body before applying answerCap (candidate-docs.ts:423, 432). This code is unchanged. Rejecting bodies over about 2x the largest cap, using Content-Length and a streamed read, would stop a signed-in candidate from forcing a near-platform-limit JSON parse into a shared isolate.",
+      "copiedFromQuestion and plainWords match only ASCII [a-z0-9] (openai.ts:353-359), so swapping in homoglyphs or accented letters defeats both the Part 2 automatic zero and the copyNote. Normalizing with NFKD and a confusables map before building the 5-word sequences would make this fairness heuristic sturdier. The model still sees both texts, so no boundary is crossed.",
+      "gradeDocsCandidate grades every Part 2 question at once with an unbounded Promise.all, up to 40 per candidate (admin-docs.ts:433), while Part 1 uses pool(…, 6). Reusing the pool would keep each request within the Workers subrequest and connection limits when managers configure large Part 2 sets.",
+      "The Part 2 grading prompt pairs the prompt copied into part2_questions at assignment time with the reference answer and guidance read live from question_bank (admin-docs.ts:426-431). If a manager edits a question after it is assigned, the stale prompt is graded against the new guidance. This is an integrity issue, not a security boundary."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin-docs.ts%23POST%20%2Fapi%2Fadmin%2Fassessment-length%7Cquestions%7Cquestions%2F%3Aid%7Cquestions%2Fbulk-import::src%2Flib%2Frandomize.ts%23assignDocsPart1%7CassignDocsPart2::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/routes/admin-docs.ts#POST /api/admin/assessment-length|questions|questions/:id|questions/bulk-import",
+      "boundary": "src/lib/randomize.ts#assignDocsPart1|assignDocsPart2",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Writers assessment length and every-candidate questions",
+    "boundary": "Writers per-candidate set assignment honours pinned questions in both parts",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/admin-docs.ts",
+      "src/lib/randomize.ts",
+      "src/lib/team.ts",
+      "src/lib/db.ts",
+      "src/routes/candidate-docs.ts",
+      "public/admin/admin.js"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "deferred",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "quick_profile_final_critic: Coverage critic (quick profile final pass): assignDocsPart2 ignores required; truthy required storage; edits do not recheck saved counts. Not hunted in this quick run."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23GET%20%2Fapi%2Fadmin%2Fexport.csv::src%2Froutes%2Fadmin.ts%23esc::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#GET /api/admin/export.csv",
+      "boundary": "src/routes/admin.ts#esc",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "CSV exports with manual marks and reasons",
+    "boundary": "Spreadsheet formula neutralisation of exported cells",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Injection",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h3-injection",
+    "reviewed_paths": [
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "Every free-text CSV cell passes through the formula guard and RFC 4180 quoting (esc in admin.ts:1208-1213, csvEsc in admin-docs.ts:494-499)",
+        "method": "source",
+        "result": "Both functions prefix a single quote when the cell starts with =, +, -, @, tab or carriage return, then quote any cell containing a quote, comma, CR or LF and double the quotes inside it. These free-text cells all go through esc or csvEsc: name, email, college, status, prompt, answer_text, ai_reasoning, deductions, and the new 'Total set by manager' (admin.ts:1232, admin-docs.ts:559) and 'Manual mark reason' (admin.ts:1244, admin-docs.ts:572) cells that hold manual_total_reason and manual_reason. Those two cells start with fixed text ('yes (AI total' and 'changed by manager'), so the reason never sits at the start of the cell.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h3-injection",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "Cells exported without esc are numbers computed or validated on the server",
+        "method": "source",
+        "result": "Unescaped cells are the score and AI-score columns (ai_score is Number-clamped model output; manual_score and manual_total are validated numbers), max_marks, login and tab counts, paste COUNT/SUM, word counts from words(), the integer word_limit, and Math.round(ai_content_pct). None of these can hold a string. The new score, AI, reason and total-override columns add no unescaped text path. Export scope matches the existing admin-wide read and adds nothing beyond what /api/admin/candidates/:id already shows.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "public/admin/admin.js:1436-1438,1529,1506 put attempt counters, manual_total, aiTotal and totalMax into HTML without num()/escapeHtml. They are safe today only because the server stores integers or validated numbers; wrapping them in num() would keep them safe if the storage type ever changes.",
+      "public/admin/admin.js:1037-1040,1057-1059,1456-1463 put q.id and the a.question_id-derived key into id and data-* attributes without escaping. IDs come from newId today; escaping them would remove that dependency.",
+      "public/admin/admin.js:1447-1448 escapes the AI score twice in the scorePill title (num() inside a string that then goes through escapeHtml). This affects display only and is not a security issue.",
+      "src/routes/admin.ts:1211 and src/routes/admin-docs.ts:497 only look at the first character. Some spreadsheet tools strip leading spaces or recognise full-width '＝'; checking the first non-whitespace character would make the guard sturdier. No exploit path was shown from source.",
+      "public/_headers keeps style-src 'unsafe-inline'. No HTML injection that could use it was found, but tightening it would limit CSS-based exfiltration if a future sink regresses."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Fanalysis%2Frun%7Ccandidates%2F%3Aid%2Fgrade%23writers::src%2Froutes%2Fadmin-docs.ts%23gradeDocsCandidate::profile%2Fquick%2Fall-in-scope-subsystems::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Failure%20and%20recovery%20attack%20classes",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/analysis/run|candidates/:id/grade#writers",
+      "boundary": "src/routes/admin-docs.ts#gradeDocsCandidate",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes"
+    },
+    "surface": "Writers grading fan-out per invocation",
+    "boundary": "Per-invocation subrequest and wall-time limits and claim release",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Failure and recovery",
+    "starting_paths": [
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/lib/openai.ts",
+      "src/lib/team.ts",
+      "wrangler.toml"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Failure and recovery attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "deferred",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "quick_profile_final_critic: Coverage critic (quick profile final pass): up to 40+40 grading calls per writers candidate, Part 2 unbounded Promise.all, batch of 8 candidates per invocation; claims held if the invocation is killed. Not hunted in this quick run."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Fassessment-length::src%2Flib%2Frandomize.ts%23assignPart1Questions::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/assessment-length",
+      "boundary": "src/lib/randomize.ts#assignPart1Questions",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Support assessment length, pinned questions and Part 1 assignment",
+    "boundary": "Per-candidate Part 1 set assignment honours counts and pinned questions exactly once",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/lib/supportconfig.ts",
+      "src/lib/randomize.ts",
+      "src/routes/candidate.ts",
+      "src/routes/admin-docs.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+        "reason": "no cross-principal data path; settings are site-wide manager configuration"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h2-lifecycle",
+    "reviewed_paths": [
+      "migrations/0001_init.sql",
+      "migrations/0017_assignment_position_unique.sql",
+      "src/lib/db.ts",
+      "src/lib/randomize.ts",
+      "src/lib/roles.ts",
+      "src/lib/supportconfig.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/roles.ts",
+          "src/lib/supportconfig.ts"
+        ],
+        "invariant": "Only a manager can change support questions-per-type, and saved counts are whole numbers within limits that never drop below the number of pinned (required) questions",
+        "method": "source",
+        "result": "src/routes/admin.ts:414-446 checks the manager role inline (line 415), and roles.ts:22 also lists the path as manager-only. The route accepts each count only as an integer from 0 to 20 (lines 418-424) with a total from 1 to 40 (line 426). It rejects a count below supportPoolCounts().required, which counts active, non-deleted required questions (supportconfig.ts:60-77). saveSupportCounts writes only the four fixed support_q_* keys through bound parameters. getSupportCounts clamps every stored or environment value with clampCount (non-finite or negative falls back; maximum 20; rounded). No path reaches the draw with a negative, fractional or non-numeric count.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/lib/randomize.ts",
+          "src/lib/db.ts"
+        ],
+        "invariant": "Each category's draw includes every pinned question exactly once, and pinned and optional questions never overlap",
+        "method": "source",
+        "result": "randomize.ts:51-61 selects pinned rows with required = 1 (active, not deleted, ordered by created_at and rowid). It throws when a category has more pinned questions than its count. Optional questions come from pickLeastUsed(..., optionalOnly=true), whose filter COALESCE(qb.required,0) = 0 (line 146) excludes every pinned row, so the two sets are disjoint and a set has no duplicate question. ensureRequiredCol (db.ts:125-132) creates required as INTEGER NOT NULL DEFAULT 0, and every support writer stores 0 or 1 (admin.ts:880, 963, 1045). The short-bank check at line 67 still applies.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/lib/randomize.ts",
+          "src/routes/candidate.ts",
+          "migrations/0001_init.sql",
+          "migrations/0017_assignment_position_unique.sql"
+        ],
+        "invariant": "Revalidation of fingerprint src/lib/randomize.ts:assignPart1Questions:non-atomic-existence-check-duplicate-question-set: overlapping prepare and start calls cannot give one candidate two Part 1 sets",
+        "method": "source",
+        "result": "The run-1 root cause is gone. The pinned-question change kept the fix. Each position is inserted through INSERT OR IGNORE ... WHERE NOT EXISTS (candidate_id, position) inside one env.DB.batch (randomize.ts:80-84). That is backed by PRIMARY KEY (candidate_id, question_id) (0001_init.sql:40-45) and UNIQUE(candidate_id, position) (0017). A losing overlapping batch therefore inserts nothing at positions the winner holds. candidate.ts:149-155 and 157-169 both call the same function. The only remaining variant needs the counts to change between two overlapping calls for the same candidate (a manager save inside that window); see hardening. The writers assignDocsPart1 uses a single whole-set statement with NOT EXISTS (candidate_id) (randomize.ts:269-273).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/lib/supportconfig.ts",
+          "src/lib/randomize.ts",
+          "src/routes/admin.ts"
+        ],
+        "invariant": "Behaviour when configuration is missing or a pinned question changes outside Assessment length",
+        "method": "source",
+        "result": "Missing environment variables and settings default each count to 0 (supportconfig.ts:27-37). Editing a question to required, toggling one active or restoring one (admin.ts:950-966, 972-989) does not recheck pinned counts against the saved counts. assignPart1Questions then throws for every new candidate start (randomize.ts:57-58). That is manager-caused unavailability with a descriptive error, not a crossing of any principal boundary. It is recorded as hardening.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "src/lib/randomize.ts:86-105: an overlapping assignPart1Questions call that loses still treats the overlap between the winner's stored set and its own picked list as 'chosen'. It then increments question_usage again for those questions, so rotation counts can drift. Use the batch's meta.changes (or compare positions) to detect a loss and skip bookkeeping.",
+      "src/lib/randomize.ts:80-84: the per-position NOT EXISTS guard (unlike the writers whole-set guard) lets a second overlapping call add positions beyond the first call's set if the support counts or pinned set change between the two calls. Use the whole-set WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ?) form, as assignDocsPart1 does.",
+      "src/routes/admin.ts:950-966, 972-989: marking a question required, toggling it active or restoring it does not recheck pinned counts against the saved support counts (only /api/admin/assessment-length does, at lines 427-432). Over the limit, every new candidate prepare or start then throws (randomize.ts:57-58). Validate pinned counts in those routes too.",
+      "src/lib/timer.ts:60-75 with src/routes/admin.ts:1582-1595: a revoke that commits between requireCandidate's access check and startPart's UPDATE leaves the attempt started but unsubmitted with access_revoked=1, and the start response still returns the questions. Add AND NOT EXISTS (SELECT 1 FROM candidates WHERE id = ? AND access_revoked = 1) to the startPart UPDATE, or recheck after the start.",
+      "src/routes/admin-docs.ts:276-287: a writers Resume that reopens only Part 2 also wipes Part 1 AI and manual marks even though Part 1 stays closed and its answers cannot change. Manager mark overrides are lost without an audit entry for each mark."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Fcandidates%2F%3Aid%2Fmarks%7Ctotal::src%2Flib%2Froles.ts%23isManagerOnlyRoute::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/candidates/:id/marks|total",
+      "boundary": "src/lib/roles.ts#isManagerOnlyRoute",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Manager manual marks and total override",
+    "boundary": "Manager-only gate and per-candidate question ownership for manual marks",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/lib/roles.ts",
+      "src/lib/scoring.ts",
+      "src/lib/auth.ts",
+      "src/routes/admin-docs.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Tenant and object-isolation attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Export, backup, restore, and migration attack classes",
+        "reason": "assigned to the CSV export unit"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h1-auth",
+    "reviewed_paths": [
+      "src/index.ts",
+      "src/lib/auth.ts",
+      "src/lib/roles.ts",
+      "src/lib/scoring.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/lib/roles.ts",
+          "src/routes/admin.ts",
+          "src/index.ts"
+        ],
+        "invariant": "Only a manager can reach POST /api/admin/candidates/:id/marks and /total on both sites, with no parallel route that has a weaker gate",
+        "method": "source",
+        "result": "isManagerOnlyRoute (roles.ts:20) matches /marks and /total with the same `[^/]+` id segment and `$` anchor as the handlers' regexes (admin.ts:1487, 1540). Both sites use the raw url.pathname (index.ts:12-13), so the gate and the handler see the same string. The writers gate runs at admin.ts:369 before handleDocsAdminRoute, and the support gate runs at admin.ts:594 before the handlers at 1487-1564. admin-docs.ts has no /marks or /total route, so writers requests fall through to the gated shared handler. getAdminRole (auth.ts:227-259) supplies the role from the row's current role and active flag. No other route writes manual_score or manual_total; grep shows only the two handlers plus Retake/Resume, which clear them and are manager-only. Settled: no bypass.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts"
+        ],
+        "invariant": "A manual mark can only be written to a question that belongs to the named candidate, and lower-trust paths (member-triggered grading, candidate answer saves) cannot overwrite or erase a manager's manual mark",
+        "method": "source",
+        "result": "The /marks ownership query binds (cid, questionId) through part1_assignments, part2_questions.candidate_id or part3_assignments (admin.ts:1499-1513) and returns 404 when the pair is not in that candidate's test. The UPSERT then writes exactly that (cid, questionId) pair (1527-1534). `part` is allowlisted (1492) before it is interpolated into identifiers (1496, 1498), and part3 is refused on writers. Score and total are typeof number, finite, between 0 and max, in 0.25 steps (1524, 1557). Member-callable grading UPSERTs update only ai_* columns, max_marks and scored_at (admin.ts:1716-1720, 1779-1783, 1816-1820; admin-docs.ts:417-421, 440-444) and never touch manual_*. The candidate answer save needs a running, unsubmitted part (candidate.ts:204-209), while /marks needs that part to be submitted (admin.ts:1496-1497). Settled: no cross-candidate or lower-trust write.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/lib/scoring.ts",
+          "src/lib/auth.ts"
+        ],
+        "invariant": "Totals use manual-over-AI consistently, and the audit attribution comes from the server-side session",
+        "method": "source",
+        "result": "summaryFor and aggregateTable both use COALESCE(manual_score, ai_score) with the same graded predicate (scoring.ts:12-13, 18-20, 52-54). manual_by and manual_total_by come from adminWho, which reads the session row's username and not the request body (auth.ts:317-328). Settled.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "The panel config sign-in keeps the row's role (admin.ts:155; auth.ts:251 returns row.user_role and ignores bcr). Since Access now lists the shared panel row with an ordinary 'Make manager' button (admin.js:515), one manager click gives every PANEL_PASSWORD holder manager rights. Consider capping a bc-tagged session's role at its bcr, or making config rows' role read-only in Access.",
+      "Reset password on a config row calls unlockAdminAccount with `u:${id}` (admin.ts:588), but config emails are rate-limited under the `e:${email}` key (admin.ts:295), so the reset does not lift a pause on those accounts. This is functional, not a boundary issue.",
+      "ensureConfigAccount can dereference a null row (admin.ts:163-165, `row!.id`) when both the derived name and the `name (email)` fallback are already taken usernames. INSERT OR IGNORE is then skipped and the config sign-in returns 500. The trigger needs a manager-chosen username, so this is a robustness note only.",
+      "After ADMIN_EMAIL is changed, the previous main-manager row stays an active manager account (no bc check applies to row-password sessions). If someone had set an own password on it, that access persists. Document that the old row should be disabled in Access after handing over ADMIN_EMAIL."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Fcandidates%2F%3Aid%2Frevoke%7Cunrevoke%7Cresume%7Cretake::src%2Froutes%2Fadmin.ts%23revokeMatch::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/candidates/:id/revoke|unrevoke|resume|retake",
+      "boundary": "src/routes/admin.ts#revokeMatch",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "Revoke (with reject), restore access, resume and retake around manual marks",
+    "boundary": "Candidate status and mark lifecycle across admin actions",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Business logic",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/routes/admin-docs.ts",
+      "src/lib/db.ts",
+      "src/lib/scoring.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Deletion, revocation, and lifecycle attack classes",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+      "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Derived-data and disclosure attack classes",
+        "reason": "no derived copies created by these actions beyond marks, covered here"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h2-lifecycle",
+    "reviewed_paths": [
+      "src/lib/db.ts",
+      "src/lib/roles.ts",
+      "src/lib/timer.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/admin.ts",
+      "src/routes/candidate-docs.ts",
+      "src/routes/candidate.ts",
+      "test/manager-features.test.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/roles.ts",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "Only a manager can run revoke, unrevoke, resume and retake",
+        "method": "source",
+        "result": "roles.ts:20 lists force-submit, manual, retake, resume, revoke, unrevoke, college, marks and total as manager-only. admin.ts:369 enforces this before the writers routes, and admin-docs.ts:220 and 244 add managerOnly. shortlist and reject are deliberately not manager-only, so panel members can run them.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/candidate.ts",
+          "src/routes/candidate-docs.ts",
+          "src/lib/db.ts"
+        ],
+        "invariant": "Resume and Retake clear stale manual marks, manual totals and revoke state; Restore access only puts back the pre-revoke status",
+        "method": "source",
+        "result": "Support Retake (admin.ts:1433-1450) deletes the assignments and answers, which removes their marks with them. It clears manual_total*, status_before_revoke and access_revoked. Support Resume (1465-1479) nulls the Part 1 AI and manual marks and clears the same candidate columns. Writers Resume and Retake (admin-docs.ts:222-305) do the same for Parts 1 and 2. Manual marks need ${part}_submitted_at (admin.ts:1496-1497), so a reopened part cannot be manually marked until it closes again. Unrevoke (1602-1614) restores status only while access_revoked = 1 and status = 'rejected'. Nothing outside Resume and Retake sets access_revoked = 0. A gap remains in how revoke-with-reject interacts with the shortlist/reject decision routes; see the candidate.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/admin-docs.ts",
+          "test/manager-features.test.ts"
+        ],
+        "invariant": "A candidate can be shortlisted or rejected only after grading, and Restore access must not overwrite a status decision made after the revoke",
+        "method": "source",
+        "result": "Revoke with reject sets status='rejected' for any current status (admin.ts:1592-1594), including part2_ready (never started), submitted (not yet graded) and grading. The decision gate at admin.ts:1639 (and writers admin-docs.ts:320) allows status IN ('evaluated','shortlisted','rejected'), so a panel member can shortlist a candidate who was never graded. Neither decision route clears status_before_revoke. Unrevoke (1611) therefore undoes a later explicit 'rejected' decision by restoring the pre-revoke status. test/manager-features.test.ts:166-189 covers neither sequence. Reported as needs_validation because this run cannot execute code.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h2-lifecycle",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/routes/candidate.ts",
+          "src/lib/timer.ts"
+        ],
+        "invariant": "A revoke racing a candidate's start cannot leave a test that is revoked but still running",
+        "method": "source",
+        "result": "requireCandidate reads access_revoked once (candidate.ts:23-28). startPart (timer.ts:60-75) then sets part1_started_at with no access_revoked condition. A revoke batch that commits between those two steps stamps nothing, because its stamp requires part1_started_at IS NOT NULL (admin.ts:1585). The start still returns the questions. After that the candidate's own requests fail requireCandidate, so the stuck state is visible only to staff. That is low impact and recorded as hardening, not a finding.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v2-revoke",
+        "reviewed_paths": [
+          "src/lib/roles.ts",
+          "src/routes/admin-docs.ts",
+          "src/routes/admin.ts",
+          "src/routes/candidate.ts",
+          "test/manager-features.test.ts"
+        ],
+        "invariant": "Independent candidate validation and quick-profile record verification of talo/admin/revoke-reject-status-not-reconciled-with-shortlist-reject-decisions",
+        "method": "source",
+        "result": "Verifier decision: needs_validation. Source trace re-read and confirmed; decisive behaviour blocked by the missing OS sandbox, local plan recorded.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "talo/admin/revoke-reject-status-not-reconciled-with-shortlist-reject-decisions"
+    ],
+    "unresolved": [],
+    "hardening_notes": [
+      "src/lib/randomize.ts:86-105: an overlapping assignPart1Questions call that loses still treats the overlap between the winner's stored set and its own picked list as 'chosen'. It then increments question_usage again for those questions, so rotation counts can drift. Use the batch's meta.changes (or compare positions) to detect a loss and skip bookkeeping.",
+      "src/lib/randomize.ts:80-84: the per-position NOT EXISTS guard (unlike the writers whole-set guard) lets a second overlapping call add positions beyond the first call's set if the support counts or pinned set change between the two calls. Use the whole-set WHERE NOT EXISTS (SELECT 1 FROM part1_assignments WHERE candidate_id = ?) form, as assignDocsPart1 does.",
+      "src/routes/admin.ts:950-966, 972-989: marking a question required, toggling it active or restoring it does not recheck pinned counts against the saved support counts (only /api/admin/assessment-length does, at lines 427-432). Over the limit, every new candidate prepare or start then throws (randomize.ts:57-58). Validate pinned counts in those routes too.",
+      "src/lib/timer.ts:60-75 with src/routes/admin.ts:1582-1595: a revoke that commits between requireCandidate's access check and startPart's UPDATE leaves the attempt started but unsubmitted with access_revoked=1, and the start response still returns the questions. Add AND NOT EXISTS (SELECT 1 FROM candidates WHERE id = ? AND access_revoked = 1) to the startPart UPDATE, or recheck after the start.",
+      "src/routes/admin-docs.ts:276-287: a writers Resume that reopens only Part 2 also wipes Part 1 AI and manual marks even though Part 1 stays closed and its answers cannot change. Manager mark overrides are lost without an audit entry for each mark."
+    ],
+    "verifier_decision": "needs_validation"
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Flogin%23limiter-account-key::src%2Flib%2Fratelimit.ts%23adminSigninBegin::profile%2Fquick%2Fall-in-scope-subsystems::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota%20and%20scheduling%20attack%20classes",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/login#limiter-account-key",
+      "boundary": "src/lib/ratelimit.ts#adminSigninBegin",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes"
+    },
+    "surface": "Admin sign-in limiter keys for config-email account rows",
+    "boundary": "Per-account failed sign-in buckets and pause lifting",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Quota and scheduling",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/lib/ratelimit.ts",
+      "src/lib/auth.ts",
+      "test/audit-round4.test.ts"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota and scheduling attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "deferred",
+    "agent_id": null,
+    "reviewed_paths": [],
+    "local_checks": [],
+    "result_fingerprints": [],
+    "unresolved": [
+      "quick_profile_final_critic: Coverage critic (quick profile final pass): 998ba8c keys config emails as e:<email> but the same row reachable by username uses u:<id>; reset-password unlocks only u:<id>. Not hunted in this quick run."
+    ]
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fadmin.ts%23POST%20%2Fapi%2Fadmin%2Flogin::src%2Froutes%2Fadmin.ts%23ensureConfigAccount::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/routes/admin.ts#POST /api/admin/login",
+      "boundary": "src/routes/admin.ts#ensureConfigAccount",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "Admin sign-in with config password and account provisioning",
+    "boundary": "Config-credential sign-in creates, reactivates or re-promotes an admin_users row",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Access control",
+    "starting_paths": [
+      "src/routes/admin.ts",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "test/writers-bank.test.ts",
+      "test/audit-round4.test.ts"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+      "WEB-PROTOCOL-AND-AUTH.md#Browser-session attack classes"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+        "reason": "no OAuth/OIDC/SAML in source"
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#API-key and mTLS attack classes",
+        "reason": "no API keys or mTLS issued by the app"
+      },
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#HTTP framing and cache attack classes",
+        "reason": "no proxy/cache layer in source; routing unchanged by the diff"
+      },
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "prior_needs_validation",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "h1-auth",
+    "reviewed_paths": [
+      "README.md",
+      "docs/WRITERS-DATA-DESIGN.md",
+      "public/admin/admin.js",
+      "src/lib/auth.ts",
+      "src/lib/ratelimit.ts",
+      "src/routes/admin.ts",
+      "test/audit-round4.test.ts",
+      "test/writers-bank.test.ts",
+      "wrangler.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/lib/auth.ts",
+          "src/routes/admin.ts",
+          "test/audit-round4.test.ts"
+        ],
+        "invariant": "Revalidation of talo/auth/bootstrap-admin-session-survives-credential-rotation: every session issued by a config credential stops working when ADMIN_EMAIL/ADMIN_PASSWORD or PANEL_EMAIL/PANEL_PASSWORD changes, including the row-bound sessions added by 998ba8c",
+        "method": "source",
+        "result": "A config sign-in always passes viaConfig to createAdminSession (admin.ts:326). That sets bc/bcr whenever configRole is non-null and throws if no tag can be computed (auth.ts:194-199). getAdminRole re-derives the tag from the current env for row-bound sessions that carry bc (auth.ts:247-250) and for legacy null-user sessions (auth.ts:255-257). The tag covers role, email and password (auth.ts:213-218). The row's own password is a random unusable value (admin.ts:158), and the device cookie only relaxes rate limits, so neither carries the old secret forward. The prior root cause no longer holds at HEAD. The regression tests at audit-round4.test.ts:51-75 cover both roles.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "src/lib/ratelimit.ts"
+        ],
+        "invariant": "Admin sign-in requires the correct password for the resolved principal; the config fallback requires an exact config-email match; sign-in limits are counted before the password check; the old session is replaced on login",
+        "method": "source",
+        "result": "The row password is checked first (admin.ts:300). The fallback requires loginEmail === the configured email AND secretEqual on the secret (308-309), so a named-account email with a wrong password cannot reach the config path. adminSigninBegin counts and refuses before verification (296-297; ratelimit.ts:235-259). clearAdminSession runs before a new HMAC-signed token with a random nonce is issued (325-326), so there is no fixation. The `email = ? OR username = ?` lookup (285) can only collide through manager-chosen display names, and a collision yields that row's own role only after its own password verifies. Settled for lower-trust principals.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h1-auth",
+        "reviewed_paths": [
+          "src/routes/admin.ts",
+          "public/admin/admin.js",
+          "README.md",
+          "wrangler.toml",
+          "docs/WRITERS-DATA-DESIGN.md",
+          "test/writers-bank.test.ts"
+        ],
+        "invariant": "A manager's Disable, Delete or Reset password on the shared panel account in Admin > Access revokes sign-in by holders of the old shared panel credential",
+        "method": "source",
+        "result": "Not enforced. The `AND active = 1` filter (admin.ts:285) makes a disabled panel row invisible, so a holder of PANEL_PASSWORD reaches the config fallback (309). ensureConfigAccount then sets active = 1 for any existing row (154) or recreates a deleted one (157-165). After a manager-set password, the row password fails and the same fallback still accepts PANEL_PASSWORD. Only the ADMIN_EMAIL recovery behaviour is documented (998ba8c message, README.md:125, wrangler.toml:97-99) and tested (writers-bank.test.ts:197-204). Panel reactivation is neither documented nor tested. The Access UI offers Disable/Delete on this row with the text 'They will no longer be able to log in' (admin.js:516, 529). It is reported as candidate talo/auth/panel-config-signin-reactivates-revoked-shared-account.",
+        "artifact": null
+      },
+      {
+        "agent_id": "v1-panel",
+        "reviewed_paths": [
+          "README.md",
+          "public/admin/admin.js",
+          "src/routes/admin.ts",
+          "test/writers-bank.test.ts"
+        ],
+        "invariant": "Independent candidate validation and quick-profile record verification of talo/auth/panel-config-signin-reactivates-revoked-shared-account",
+        "method": "source",
+        "result": "Verifier decision: needs_validation. Source trace re-read and confirmed; decisive behaviour blocked by the missing OS sandbox, local plan recorded.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "talo/auth/panel-config-signin-reactivates-revoked-shared-account"
+    ],
+    "unresolved": [],
+    "hardening_notes": [
+      "The panel config sign-in keeps the row's role (admin.ts:155; auth.ts:251 returns row.user_role and ignores bcr). Since Access now lists the shared panel row with an ordinary 'Make manager' button (admin.js:515), one manager click gives every PANEL_PASSWORD holder manager rights. Consider capping a bc-tagged session's role at its bcr, or making config rows' role read-only in Access.",
+      "Reset password on a config row calls unlockAdminAccount with `u:${id}` (admin.ts:588), but config emails are rate-limited under the `e:${email}` key (admin.ts:295), so the reset does not lift a pause on those accounts. This is functional, not a boundary issue.",
+      "ensureConfigAccount can dereference a null row (admin.ts:163-165, `row!.id`) when both the derived name and the `name (email)` fallback are already taken usernames. INSERT OR IGNORE is then skipped and the config sign-in returns 500. The trigger needs a manager-chosen username, so this is a robustness note only.",
+      "After ADMIN_EMAIL is changed, the previous main-manager row stays an active manager account (no bc check applies to row-password sessions). If someone had set an own password on it, that access persists. Document that the old row should be disabled in Access after handing over ADMIN_EMAIL."
+    ],
+    "verifier_decision": "needs_validation"
+  },
+  {
+    "coverage_id": "src%2Froutes%2Fcandidate-docs.ts%23POST%20%2Fapi%2Fcandidate%2Fpart1%7Cpart2%2Fanswer::src%2Froutes%2Fcandidate-docs.ts%23answerCap::profile%2Fquick%2Fall-in-scope-subsystems::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "src/routes/candidate-docs.ts#POST /api/candidate/part1|part2/answer",
+      "boundary": "src/routes/candidate-docs.ts#answerCap",
+      "subsystem": "profile/quick/all-in-scope-subsystems",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "Writers candidate answer saves with 10,000-word limits",
+    "boundary": "Per-answer size cap derived from question word limits",
+    "subsystem": "all in-scope subsystems (quick profile)",
+    "attack_class": "Resource and file handling",
+    "starting_paths": [
+      "src/routes/candidate-docs.ts",
+      "src/lib/team.ts",
+      "src/lib/db.ts",
+      "migrations-docs/0019_word_limit_10000.sql"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Resource accumulation attack classes",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "no native code in scope (TypeScript Worker and browser JS only)"
+      },
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "no RPC or message-broker surface in the repository"
+      },
+      {
+        "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+        "reason": "no desktop, mobile or local IPC surface"
+      }
+    ],
+    "prior_status": "new",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "h4-llm-resource",
+    "reviewed_paths": [
+      "migrations-docs/0019_word_limit_10000.sql",
+      "public/app.js",
+      "src/lib/db.ts",
+      "src/lib/team.ts",
+      "src/routes/admin-docs.ts",
+      "src/routes/candidate-docs.ts"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/routes/candidate-docs.ts",
+          "src/lib/team.ts",
+          "src/lib/db.ts",
+          "migrations-docs/0019_word_limit_10000.sql",
+          "src/routes/admin-docs.ts"
+        ],
+        "invariant": "Each saved answer is capped by a size derived from a bounded word limit.",
+        "method": "source",
+        "result": "answerCap is max(15000, wordLimit*10) (candidate-docs.ts:154-156). Its input is bounded to at most 100,000 UTF-16 code units, or roughly 300 KB of UTF-8, which is well under D1's per-row size limit. The word limit comes from four places, each bounded: question_bank.word_limit, limited by wordLimitIn to 50-10,000 (admin-docs.ts:50-54, 139-140, 160-161, 192-193); the runtime triggers (db.ts:140-150) and migrations-docs/0019; the env defaults, clamped to DOCS_LIMITS (team.ts:37-44, 90-91); and part2_questions.word_limit, which is copied from the bank. The slice at candidate-docs.ts:373 runs before the write. The save happens only after the question-ownership lookup and only while the part is open and before its deadline (candidate-docs.ts:331-347, 425).",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/routes/candidate-docs.ts",
+          "src/lib/team.ts"
+        ],
+        "invariant": "Answer storage cannot accumulate past a fixed number of rows per candidate.",
+        "method": "source",
+        "result": "A save is an upsert on (candidate_id, question_id) (candidate-docs.ts:333-338), so every 30-second heartbeat overwrites one row instead of adding one. Each candidate has at most maxQuestions 40 per part (team.ts:41). Candidates must be on the email allowlist and signed in. Integrity events are capped at 300 per part (candidate-docs.ts:45, 207-209). Worst-case storage is (number of allowlisted candidates) x (assigned questions) x (cap). That figure is fixed by manager configuration, and no single candidate can grow it, so this is not a shared-resource exhaustion finding.",
+        "artifact": null
+      },
+      {
+        "agent_id": "h4-llm-resource",
+        "reviewed_paths": [
+          "src/routes/candidate-docs.ts",
+          "public/app.js"
+        ],
+        "invariant": "The larger cap does not create work that is superlinear or that keeps running after a request ends.",
+        "method": "source",
+        "result": "Saving is a single slice plus one bound SQL statement. The client limits words with clampWords and countWords, which split on the same /\\s+/ pattern the server uses for counting (app.js:106-114, 428). Downstream, the cap feeds one grading call per answer, triggered by an admin, and copiedFromQuestion processes it in linear time. Nothing keeps running in the background after a request ends. Unchanged code parses the whole JSON body before slicing; that is recorded as hardening.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [],
+    "hardening_notes": [
+      "The word limit is enforced only in the browser (app.js:110-114, 428). The server stores up to 10x the limit in characters (candidate-docs.ts:373). Both the client and the grader count words with /\\s+/ (openai.ts:412), which does not match U+200B and similar joiners. Text joined that way therefore bypasses the client clamp, and the grader is told the answer has a few words when it has thousands. The impact is only on fairness of the candidate's own marks. Suggested fix: count words server-side with a Unicode-aware tokenizer such as Intl.Segmenter, or treat [\\s\\u200B-\\u200D\\u2060\\uFEFF] as separators, and reject or flag answers over the limit before grading.",
+      "With word limits now up to 10,000, the answer cap is 100,000 characters. If those characters tokenize badly (rare CJK or astral characters), the prompt can exceed the model's context window. OpenAI then returns a 400, which chatJson does not retry, so that candidate's grading fails every time and the candidate is re-claimed in each Analyze round (admin.ts:1340-1343). Only the candidate's own result is affected. Suggestion: estimate tokens before calling the model, or truncate with a marker, and record a failure per answer instead of failing the whole candidate.",
+      "The candidate answer and heartbeat routes call request.json() on the whole body before applying answerCap (candidate-docs.ts:423, 432). This code is unchanged. Rejecting bodies over about 2x the largest cap, using Content-Length and a streamed read, would stop a signed-in candidate from forcing a near-platform-limit JSON parse into a shared isolate.",
+      "copiedFromQuestion and plainWords match only ASCII [a-z0-9] (openai.ts:353-359), so swapping in homoglyphs or accented letters defeats both the Part 2 automatic zero and the copyNote. Normalizing with NFKD and a confusables map before building the 5-word sequences would make this fairness heuristic sturdier. The model still sees both texts, so no boundary is crossed.",
+      "gradeDocsCandidate grades every Part 2 question at once with an unbounded Promise.all, up to 40 per candidate (admin-docs.ts:433), while Part 1 uses pool(…, 6). Reusing the pool would keep each request within the Workers subrequest and connection limits when managers configure large Part 2 sets.",
+      "The Part 2 grading prompt pairs the prompt copied into part2_questions at assignment time with the reference answer and guidance read live from question_bank (admin-docs.ts:426-431). If a manager edits a question after it is assigned, the stale prompt is graded against the new guidance. This is an integrity issue, not a security boundary."
+    ]
+  }
+]

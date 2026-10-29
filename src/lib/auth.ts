@@ -208,8 +208,12 @@ export async function createAdminSession(env: Env, role: AdminRole = 'manager', 
 
 /**
  * A keyed fingerprint of the config credential behind a bootstrap role, or null
- * when that login is switched off (email or password empty).
+ * when that login is switched off (email or password empty). Exported so a manager
+ * can retire the shared panel credential that is in force right now.
  */
+export async function configCredentialTag(env: Env, role: AdminRole): Promise<string | null> {
+  return bootstrapTag(env, role);
+}
 async function bootstrapTag(env: Env, role: AdminRole): Promise<string | null> {
   const email = ((role === 'manager' ? env.ADMIN_EMAIL : env.PANEL_EMAIL) || '').trim().toLowerCase();
   const pass = (role === 'manager' ? env.ADMIN_PASSWORD : env.PANEL_PASSWORD) || '';
@@ -247,6 +251,9 @@ export async function getAdminRole(env: Env, request: Request): Promise<AdminRol
     if (typeof payload.bc === 'string') {
       const tag = await bootstrapTag(env, payload.bcr === 'member' ? 'member' : 'manager');
       if (!tag || !timingSafeEqual(tag, payload.bc)) return null;
+      // A session from the shared panel password is a panel member, whatever role
+      // its row has been given in Access: a shared secret never carries manager rights.
+      if (payload.bcr === 'member') return 'member';
     }
     return row.user_role === 'manager' ? 'manager' : 'member';
   }

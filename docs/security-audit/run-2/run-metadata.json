@@ -1,0 +1,55 @@
+{
+  "run_id": "run-2",
+  "repo": "talo-repo",
+  "target": "/home/claude/talo-repo",
+  "source_ref": "51fe9b5c38583427ea891e8e685378efed02512f (clean worktree)",
+  "profile": "quick",
+  "scope": "scoped run: source diff f0badac..51fe9b5 on main (all changes since run 1 and its round-4 fixes); v2 branch out of scope (not deployed)",
+  "scope_paths": [
+    "migrations-docs/0019_word_limit_10000.sql",
+    "public/admin/admin.css",
+    "public/admin/admin.js",
+    "public/admin/index.html",
+    "public/app.js",
+    "public/index.html",
+    "public/styles.css",
+    "src/lib/auth.ts",
+    "src/lib/db.ts",
+    "src/lib/openai.ts",
+    "src/lib/part3bank.ts",
+    "src/lib/randomize.ts",
+    "src/lib/roles.ts",
+    "src/lib/scoring.ts",
+    "src/lib/supportconfig.ts",
+    "src/lib/team.ts",
+    "src/routes/admin-docs.ts",
+    "src/routes/admin.ts",
+    "src/routes/candidate-docs.ts",
+    "src/routes/candidate.ts",
+    "src/types.ts",
+    "wrangler.toml",
+    "writers/index.html"
+  ],
+  "budget": 14,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "sandbox": "No OS-enforced sandbox is available to audit agents; agents do not execute target code. Owner-side local plans may be run afterwards outside the audit boundary.",
+  "selected_companions": [
+    "WEB-PROTOCOL-AND-AUTH.md",
+    "CLIENT-SIDE.md",
+    "AI-AND-LLM.md",
+    "DATA-ISOLATION-AND-LIFECYCLE.md"
+  ],
+  "prior_runs": [
+    "/home/claude/talo-repo/docs/security-audit/run-1/coverage-ledger.json",
+    "/home/claude/talo-repo/docs/security-audit/run-1/findings.json"
+  ],
+  "shared_file_owner": "parent",
+  "run_status": "complete",
+  "agents_spent": 11,
+  "agents_breakdown": {
+    "reconnaissance": 4,
+    "hunters": 4,
+    "final_coverage_critic": 1,
+    "verifiers": 2
+  }
+}

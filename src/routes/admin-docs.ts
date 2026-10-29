@@ -5,6 +5,8 @@ import { newId, nowIso, ensureGradingClaimCols, ensureRequiredCol, ensureDocsQue
 import { gradeWritingAnswer } from '../lib/openai';
 import { getDocsConfig, docsPoolCounts, defaultWordLimit, DOCS_LIMITS, partLabel, type DocsPart } from '../lib/team';
 import { ensureDocsAttemptCols, docsStartOpen, REOPEN_SECONDS } from './candidate-docs';
+import { decideCandidate } from '../lib/decisions';
+import { pinnedLimitError } from '../lib/pinned';
 
 /**
  * ADMIN API overrides for the writers site (TEAM = "docs").
@@ -138,10 +140,15 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     if (marks == null) return json({ error: 'Marks must be between 0.5 and 100, in whole or half marks.' }, { status: 400 });
     const wl = wordLimitIn(b.wordLimit);
     if (wl === undefined && b.wordLimit !== undefined) return json({ error: `Word limit must be a whole number from ${DOCS_LIMITS.minWords} to ${DOCS_LIMITS.maxWords}, or empty for the default.` }, { status: 400 });
+    const pin = b.required === true || b.required === 1;
+    if (pin) {
+      const tooMany = await pinnedLimitError(env, part, null);
+      if (tooMany) return json({ error: tooMany }, { status: 409 });
+    }
     const id = newId('q');
     await env.DB.prepare(
       `INSERT INTO question_bank (id, category, prompt, marks, word_limit, required, difficulty, status, active) VALUES (?, ?, ?, ?, ?, ?, 'medium', 'active', 1)`
-    ).bind(id, part, prompt, marks, wl ?? null, b.required ? 1 : 0).run();
+    ).bind(id, part, prompt, marks, wl ?? null, pin ? 1 : 0).run();
     await audit(env, 'add_question', null, `${partLabel(part)} · ${prompt.slice(0, 120)}`);
     return json({ ok: true, id });
   }
@@ -160,7 +167,11 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
     const wl = wordLimitIn(b.wordLimit);
     if (wl === undefined && b.wordLimit !== undefined) return json({ error: `Word limit must be a whole number from ${DOCS_LIMITS.minWords} to ${DOCS_LIMITS.maxWords}, or empty for the default.` }, { status: 400 });
     const active = b.active == null ? q.active : (b.active ? 1 : 0);
-    const required = b.required == null ? (q.required ? 1 : 0) : (b.required ? 1 : 0);
+    const required = b.required == null ? (q.required ? 1 : 0) : (b.required === true || b.required === 1 ? 1 : 0);
+    if (required && active && !q.deleted_at) {
+      const tooMany = await pinnedLimitError(env, part, q.id);
+      if (tooMany) return json({ error: tooMany }, { status: 409 });
+    }
     await env.DB.prepare('UPDATE question_bank SET category = ?, prompt = ?, marks = ?, word_limit = ?, active = ?, required = ? WHERE id = ?')
       .bind(part, prompt, marks, wl === undefined ? q.word_limit : wl, active, required, q.id)
       .run();
@@ -278,12 +289,13 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
       env.DB.prepare('UPDATE part2_answers SET ai_score = NULL, ai_reasoning = NULL, deductions = NULL, ai_content_pct = NULL, scored_at = NULL, manual_score = NULL, manual_reason = NULL, manual_by = NULL, manual_at = NULL WHERE candidate_id = ?').bind(id),
     ];
     if (at.part2_started_at) {
-      // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed.
+      // Part 2 was cut off: reopen Part 2 only. Part 1 stays closed, so its marks
+      // (including any a manager changed) stay as they are.
       reopened = 'part2';
       await env.DB.batch([
         env.DB.prepare('UPDATE attempts SET part2_started_at = NULL, part2_remaining_seconds = NULL, part2_last_heartbeat_at = NULL, part2_submitted_at = NULL, part2_deadline_at = NULL, resumed_at = ?, login_count = 0, part2_sid = NULL, sessions_valid_after = ? WHERE candidate_id = ?').bind(nowIsoStr, nowIsoStr, id),
         restore('in_progress'),
-        ...unscore,
+        unscore[1],
       ]);
     } else if (closedBetween) {
       // Between the parts: nothing to reopen except the final close, if one happened.
@@ -317,8 +329,8 @@ export async function handleDocsAdminRoute(request: Request, env: Env, path: str
   if (shortlistMatch && request.method === 'POST') {
     const [, id, action] = shortlistMatch;
     // Only a graded candidate can be shortlisted or rejected (see the support route).
-    const decided = await env.DB.prepare("UPDATE candidates SET status = ? WHERE id = ? AND status IN ('evaluated','shortlisted','rejected')").bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
-    if (!decided.meta?.changes) return json({ error: 'Only a graded candidate can be shortlisted or rejected. Refresh the list.' }, { status: 409 });
+    const decided = await decideCandidate(env, id, action === 'shortlist' ? 'shortlisted' : 'rejected');
+    if (decided) return decided;
     await audit(env, action, id);
     return json({ ok: true });
   }
@@ -430,7 +442,8 @@ export async function gradeDocsCandidate(env: Env, candidateId: string, claim: s
      WHERE pq.candidate_id = ?`
   ).bind(candidateId).all<{ question_id: string; prompt: string; marks: number; word_limit: number | null; reference_answer: string | null; rubric: string | null; answer_text: string | null }>();
 
-  await Promise.all((p2.results ?? []).map(async (q) => {
+  // Same cap as Part 1: at most 6 answers are graded at once.
+  await pool(p2.results ?? [], 6, async (q) => {
     const g = await gradeWritingAnswer(env, {
       part: 'part2', prompt: q.prompt, maxMarks: q.marks, answerText: q.answer_text ?? '',
       wordLimit: q.word_limit || cfg.wordLimit, authSignals: signals[q.question_id],
@@ -442,7 +455,7 @@ export async function gradeDocsCandidate(env: Env, candidateId: string, claim: s
        ON CONFLICT (candidate_id, question_id)
        DO UPDATE SET ai_score = excluded.ai_score, ai_reasoning = excluded.ai_reasoning, deductions = excluded.deductions, max_marks = excluded.max_marks, ai_content_pct = excluded.ai_content_pct, scored_at = excluded.scored_at`
     ).bind(candidateId, q.question_id, q.answer_text ?? '', g.score, g.reasoning, JSON.stringify(g.deductions), q.marks, g.aiContentPercent ?? null, nowIso(), candidateId, claim).run();
-  }));
+  });
 }
 
 /**
@@ -494,7 +507,7 @@ export async function closeTimedOutDocs(env: Env): Promise<number> {
 const csvEsc = (v: unknown) => {
   let s = v == null ? '' : String(v);
   // Neutralise spreadsheet formulas in free text (a candidate answer starting with "=").
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  if (/^[\s\u3000]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/.test(s) || /^[\t\r]/.test(s)) s = "'" + s; // also after leading spaces, and full-width = + - @
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 };
 const words = (t: string | null) => { const w = (t || '').trim(); return w ? w.split(/\s+/).length : 0; };

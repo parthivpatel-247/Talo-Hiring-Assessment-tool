@@ -3,7 +3,8 @@
 | Branch / tag | What it is | Deploy from it? |
 |---|---|---|
 | `main` | Production: the support site and the writers site, from one codebase. | **Yes**, the only branch that is deployed. |
-| `v1.5` (tag) | The complete release of 28 Oct 2026: both sites at feature parity, tab-switch counts, manual marks, revoke-and-reject. | Current production. |
+| `v1.5.1` (tag) | Security audit run 2 fixes on top of v1.5 (29 Oct 2026): see `docs/security-audit/run-2/REPORT.md`. No new migrations. | Deploy this. |
+| `v1.5` (tag) | The complete release of 28 Oct 2026: both sites at feature parity, tab-switch counts, manual marks, revoke-and-reject. | Rollback point. |
 | `writers-v1` … `writers-v1.4` (tags) | Earlier writers-site releases. | Rollback points for the writers site. |
 | `v1-production-2026-10-20` (tag) | Production when version control started. | Rollback point for the support site. |
 | `v2` | An earlier full rebuild of the support site only (new screens and database layout). **Not deployed.** It has none of the writers site and none of the work since 20 Oct 2026. Kept for reference. | No. |
@@ -49,7 +50,7 @@ fail with "duplicate column".
 Deploy an earlier tag from a clean checkout, for one site at a time:
 
 ```bash
-git switch --detach v1.5      # or writers-v1.4, v1-production-2026-10-20
+git switch --detach v1.5.1    # or v1.5, writers-v1.4, v1-production-2026-10-20
 npx wrangler deploy           # or: npx wrangler deploy --env docs
 git switch main
 ```

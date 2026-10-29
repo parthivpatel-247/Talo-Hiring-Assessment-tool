@@ -1,5 +1,5 @@
 import type { Env, Candidate, QuestionBankRow, ParsedResume } from '../types';
-import { adminWho, createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
+import { adminWho, configCredentialTag, createAdminSession, getAdminRole, hashPassword, verifyPassword, clearAdminSession, json, withCookie, secretEqual, revokeUserSessions, type AdminRole } from '../lib/auth';
 import { newId, nowIso, ensureQuestionHintCol, ensureQuestionDeletedCol, ensureGradingClaimCols, ensureParseClaimCols, ensureQuestionCheckpointsCol, ensureOnce, ensurePerfSchema, addColumn, ensureRequiredCol, ensureManagerEditCols } from '../lib/db';
 import { extractResumeText, emailsInText } from '../lib/resume';
 import {
@@ -14,6 +14,8 @@ import { ensurePart3Schema, seedDefaultPart3 } from '../lib/part3bank';
 import { getAssessmentMinutes } from '../lib/timer';
 import { isDocs } from '../lib/team';
 import { isManagerOnlyRoute, MANAGER_ONLY_MESSAGE } from '../lib/roles';
+import { decideCandidate } from '../lib/decisions';
+import { pinnedLimitError } from '../lib/pinned';
 import { SUPPORT_CATEGORIES, SUPPORT_LIMITS, getSupportCounts, saveSupportCounts, supportPoolCounts, totalQuestions, type SupportCounts } from '../lib/supportconfig';
 import { handleDocsAdminRoute, docsAdminConfig, gradeDocsCandidate, closeTimedOutDocs } from './admin-docs';
 import { ensureDocsAttemptCols, testIsOpen, openSetting } from './candidate-docs';
@@ -143,6 +145,11 @@ function nameFromEmail(email: string): string {
  * manager's row is kept active and a manager, so the config password can always get
  * back in (it is the recovery login). The row's own password is random and unusable
  * until a manager sets one with Reset password.
+ *
+ * The shared panel login is different: once a manager disables, deletes or
+ * re-passwords that row in Access, the panel password in force at that moment is
+ * retired (see retirePanelCredential) and this function is not reached for it again
+ * until PANEL_PASSWORD is rotated.
  */
 async function ensureConfigAccount(env: Env, email: string, role: AdminRole): Promise<{ id: string; role: AdminRole }> {
   const existing = await env.DB.prepare('SELECT id, role, active FROM admin_users WHERE email = ?').bind(email).first<{ id: string; role: string; active: number }>();
@@ -158,11 +165,48 @@ async function ensureConfigAccount(env: Env, email: string, role: AdminRole): Pr
   const { salt, hash } = await hashPassword(crypto.randomUUID() + crypto.randomUUID()); // unusable
   let name = nameFromEmail(email);
   if (await env.DB.prepare('SELECT 1 FROM admin_users WHERE username = ?').bind(name).first()) name = `${name} (${email})`.slice(0, 64);
+  if (await env.DB.prepare('SELECT 1 FROM admin_users WHERE username = ?').bind(name).first()) name = `${name.slice(0, 55)} ${id.slice(-8)}`;
   await env.DB.prepare('INSERT OR IGNORE INTO admin_users (id, username, email, pass_salt, pass_hash, role, active) VALUES (?,?,?,?,?,?,1)')
     .bind(id, name, email, salt, hash, role).run();
   const row = await env.DB.prepare('SELECT id, role FROM admin_users WHERE email = ?').bind(email).first<{ id: string; role: string }>();
+  if (!row) throw new Error('Could not create the account for the config sign-in.');
   await audit(env, 'member_add', null, `${name} <${email}> (${role}) — created at first sign-in with the config password`);
-  return { id: row!.id, role: row!.role === 'manager' ? 'manager' : 'member' };
+  return { id: row.id, role: row.role === 'manager' ? 'manager' : 'member' };
+}
+
+/**
+ * Retiring the shared panel password: a manager who disables, deletes or sets a new
+ * password on the PANEL_EMAIL account stops the panel password in force at that
+ * moment from signing in again (it would otherwise re-enable or re-create the row).
+ * Rotating PANEL_PASSWORD, or enabling the account again in Access, lifts it.
+ */
+const PANEL_RETIRED_KEY = 'panel_config_retired';
+async function panelCredentialRetired(env: Env): Promise<boolean> {
+  try {
+    const row = await env.DB.prepare('SELECT value FROM settings WHERE key = ?').bind(PANEL_RETIRED_KEY).first<{ value: string }>();
+    if (!row?.value) return false;
+    const tag = await configCredentialTag(env, 'member');
+    return !!tag && (await secretEqual(tag, row.value));
+  } catch { return false; }
+}
+async function retirePanelCredential(env: Env, retire: boolean): Promise<void> {
+  await ensureCollegeSchema(env); // guarantees the settings table exists
+  if (!retire) { await env.DB.prepare('DELETE FROM settings WHERE key = ?').bind(PANEL_RETIRED_KEY).run(); return; }
+  const tag = await configCredentialTag(env, 'member');
+  if (!tag) return;
+  await env.DB.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(PANEL_RETIRED_KEY, tag).run();
+}
+/** Is this admin_users row the shared panel login (PANEL_EMAIL)? */
+function isPanelConfigRow(env: Env, row: { email?: string | null } | null): boolean {
+  const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
+  return !!panelEmail && String(row?.email || '').trim().toLowerCase() === panelEmail;
+}
+/** Is this admin_users row a config login (ADMIN_EMAIL or PANEL_EMAIL)? */
+function configEmailOf(env: Env, row: { email?: string | null } | null): string | null {
+  const e = String(row?.email || '').trim().toLowerCase();
+  if (!e) return null;
+  const cfg = [(env.ADMIN_EMAIL || '').trim().toLowerCase(), (env.PANEL_EMAIL || '').trim().toLowerCase()].filter(Boolean);
+  return cfg.includes(e) ? e : null;
 }
 
 /** Self-heal the Part 2 AI-content column (migration 0009) so grading can store it. */
@@ -292,7 +336,11 @@ export async function handleAdminRoute(
     // The config emails keep one stable key (their account row is created at first
     // sign-in, and the trusted-browser cookie must keep matching after that).
     const isConfigEmail = !!loginEmail && (loginEmail === adminEmailCfg || loginEmail === panelEmailCfg);
-    const account = isConfigEmail ? `e:${loginEmail}` : row ? `u:${row.id}` : null;
+    // The config account's row can also be reached by its display name: it shares the
+    // email's counters, so the two spellings never get separate guessing budgets.
+    const rowEmail = String(row?.email || '').trim().toLowerCase();
+    const rowIsConfig = !!rowEmail && (rowEmail === adminEmailCfg || rowEmail === panelEmailCfg);
+    const account = isConfigEmail ? `e:${loginEmail}` : rowIsConfig ? `e:${rowEmail}` : row ? `u:${row.id}` : null;
     const begun = await adminSigninBegin(env, request, account);
     if ('refused' in begun) return begun.refused;
 
@@ -306,13 +354,16 @@ export async function handleAdminRoute(
       const adminEmail = (env.ADMIN_EMAIL || '').trim().toLowerCase();
       const panelEmail = (env.PANEL_EMAIL || '').trim().toLowerCase();
       if (adminEmail && loginEmail === adminEmail && env.ADMIN_PASSWORD && (await secretEqual(pass, env.ADMIN_PASSWORD))) viaConfig = 'manager';
-      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && (await secretEqual(pass, env.PANEL_PASSWORD))) viaConfig = 'member';
+      else if (panelEmail && loginEmail === panelEmail && env.PANEL_PASSWORD && (await secretEqual(pass, env.PANEL_PASSWORD))
+        && !(await panelCredentialRetired(env))) viaConfig = 'member';
       if (viaConfig) {
         // Every login is a real account: the config sign-in signs in to (and on first
         // use creates) the admin_users row for that email, so it is listed in Access
         // like everyone else. Its password stays the secret until a manager sets one.
         const acct = await ensureConfigAccount(env, loginEmail, viaConfig);
-        loginRole = acct.role;
+        // The shared panel password always signs in as a panel member (getAdminRole
+        // caps its sessions the same way).
+        loginRole = viaConfig === 'member' ? 'member' : acct.role;
         loginUserId = acct.id;
       }
     }
@@ -562,7 +613,9 @@ export async function handleAdminRoute(
     if (role !== 'manager') return json({ error: 'Manager access required.' }, { status: 403 });
     await ensureAuthSchema(env);
     const id = memberMatch[1];
+    const target = await env.DB.prepare('SELECT email FROM admin_users WHERE id = ?').bind(id).first<{ email: string | null }>();
     if (request.method === 'DELETE') {
+      if (isPanelConfigRow(env, target)) await retirePanelCredential(env, true);
       await env.DB.prepare('DELETE FROM admin_users WHERE id = ?').bind(id).run();
       await revokeUserSessions(env, id); // signed-in sessions of a deleted account end now
       await audit(env, 'member_delete', null, id);
@@ -584,8 +637,19 @@ export async function handleAdminRoute(
     // A new password or deactivation signs the account out everywhere. (Role changes
     // apply on the next request anyway, because the session reads the current role.)
     if (b.password || b.active === false) await revokeUserSessions(env, id);
-    // A manager setting a new password also lifts any sign-in pause on the account.
-    if (b.password) await unlockAdminAccount(env, `u:${id}`).catch(() => {});
+    // The shared panel account: disabling it or giving it its own password retires the
+    // panel password in force now; enabling it again lifts that.
+    if (isPanelConfigRow(env, target)) {
+      if (b.password || b.active === false) await retirePanelCredential(env, true);
+      else if (b.active === true) await retirePanelCredential(env, false);
+    }
+    // A manager setting a new password also lifts any sign-in pause on the account
+    // (a config login's pauses are counted under its email).
+    if (b.password) {
+      await unlockAdminAccount(env, `u:${id}`).catch(() => {});
+      const cfgEmail = configEmailOf(env, target);
+      if (cfgEmail) await unlockAdminAccount(env, `e:${cfgEmail}`).catch(() => {});
+    }
     await audit(env, 'member_update', null, id);
     return json({ ok: true });
   }
@@ -849,6 +913,10 @@ export async function handleAdminRoute(
       return json({ error: `Unknown question type "${body.category}".` }, { status: 400 });
     }
     const marks = body.marks != null ? (marksValue(body.marks) as number) : defaultMarks(env, body.category);
+    if (body.required === true) {
+      const tooMany = await pinnedLimitError(env, body.category, null);
+      if (tooMany) return json({ error: tooMany }, { status: 409 });
+    }
     const id = newId('q');
 
     await ensureQuestionHintCol(env);
@@ -949,6 +1017,14 @@ export async function handleAdminRoute(
     if (b.active != null && b.active !== 0 && b.active !== 1) return json({ error: 'active must be 0 or 1.' }, { status: 400 });
     if (b.required != null && typeof b.required !== 'boolean') return json({ error: 'required must be true or false.' }, { status: 400 });
     await ensureRequiredCol(env);
+    {
+      const willPin = b.required == null ? !!(q as { required?: number }).required : b.required;
+      const willBeActive = (b.active ?? q.active) === 1 && !(q as { deleted_at?: string | null }).deleted_at;
+      if (willPin && willBeActive) {
+        const tooMany = await pinnedLimitError(env, q.category, q.id);
+        if (tooMany) return json({ error: tooMany }, { status: 409 });
+      }
+    }
     await env.DB.prepare(
       'UPDATE question_bank SET prompt = ?, reference_answer = ?, sample_data = ?, rubric = ?, marks = ?, difficulty = ?, active = ?, required = ? WHERE id = ?'
     )
@@ -971,7 +1047,14 @@ export async function handleAdminRoute(
 
   const toggleMatch = path.match(/^\/api\/admin\/questions\/([^/]+)\/toggle-active$/);
   if (toggleMatch && request.method === 'POST') {
-    await env.DB.prepare('UPDATE question_bank SET active = 1 - active WHERE id = ?').bind(toggleMatch[1]).run();
+    await ensureRequiredCol(env);
+    const tq = await env.DB.prepare('SELECT id, category, active, required, deleted_at FROM question_bank WHERE id = ?').bind(toggleMatch[1]).first<{ id: string; category: string; active: number; required: number; deleted_at: string | null }>();
+    if (!tq) return json({ error: 'Not found' }, { status: 404 });
+    if (!tq.active && tq.required && !tq.deleted_at) {
+      const tooMany = await pinnedLimitError(env, tq.category, tq.id);
+      if (tooMany) return json({ error: tooMany }, { status: 409 });
+    }
+    await env.DB.prepare('UPDATE question_bank SET active = 1 - active WHERE id = ?').bind(tq.id).run();
     return json({ ok: true });
   }
 
@@ -980,8 +1063,13 @@ export async function handleAdminRoute(
   if (qRestoreMatch && request.method === 'POST') {
     await ensureQuestionDeletedCol(env);
     const qid = qRestoreMatch[1];
-    const q = await env.DB.prepare('SELECT id FROM question_bank WHERE id = ?').bind(qid).first();
+    await ensureRequiredCol(env);
+    const q = await env.DB.prepare('SELECT id, category, required FROM question_bank WHERE id = ?').bind(qid).first<{ id: string; category: string; required: number }>();
     if (!q) return json({ error: 'Not found' }, { status: 404 });
+    if (q.required) {
+      const tooMany = await pinnedLimitError(env, q.category, q.id);
+      if (tooMany) return json({ error: tooMany }, { status: 409 });
+    }
     // Deleting also switched it off; restoring puts it back in rotation.
     await env.DB.prepare('UPDATE question_bank SET deleted_at = NULL, active = 1 WHERE id = ?').bind(qid).run();
     await audit(env, 'restore_question', null, qid);
@@ -1208,7 +1296,7 @@ export async function handleAdminRoute(
     const esc = (v: unknown) => {
       let s = v == null ? '' : String(v);
       // Neutralise spreadsheet formulas in candidate text (an answer starting with "=").
-      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      if (/^[\s\u3000]*[=+\-@\uFF1D\uFF0B\uFF0D\uFF20]/.test(s) || /^[\t\r]/.test(s)) s = "'" + s; // also after leading spaces, and full-width = + - @
       return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
     const emailOut = (e: string) => (e.startsWith('pending+') ? '' : e);
@@ -1636,8 +1724,8 @@ export async function handleAdminRoute(
     const [, id, action] = shortlistMatch;
     // Only a graded candidate can be shortlisted or rejected: a stale screen can't
     // flip a candidate who is testing again (after Resume) or being graded.
-    const decided = await env.DB.prepare("UPDATE candidates SET status = ? WHERE id = ? AND status IN ('evaluated','shortlisted','rejected')").bind(action === 'shortlist' ? 'shortlisted' : 'rejected', id).run();
-    if (!decided.meta?.changes) return json({ error: 'Only a graded candidate can be shortlisted or rejected. Refresh the list.' }, { status: 409 });
+    const decided = await decideCandidate(env, id, action === 'shortlist' ? 'shortlisted' : 'rejected');
+    if (decided) return decided;
     if (action === 'shortlist') {
       const candidate = (await env.DB.prepare('SELECT * FROM candidates WHERE id = ?').bind(id).first()) as Candidate | null;
       if (candidate) {

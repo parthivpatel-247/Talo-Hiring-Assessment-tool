@@ -1433,9 +1433,9 @@ function docsAnswerSections(data, answerBlockFor, pasteCount, pasteMax) {
   const max = (rows) => rows.reduce((s, a) => s + (Number(a.max_marks) || 0), 0);
   const head = (label, rows) => rows.some((a) => effScore(a) != null) ? `${label} <span class="pill ok" style="margin-left:6px">${num(sum(rows))}/${num(max(rows))}</span>` : label;
   return `<div class="detail-block"><h3>${head('Part 1 — closed book', data.part1Answers)}</h3>${data.part1Answers.map(answerBlockFor('part1')).join('') || '<p class="muted">Not started yet.</p>'}
-      <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${at.part1_tab_switch_count ?? 0}</strong></p></div>
+      <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${num(at.part1_tab_switch_count ?? 0)}</strong></p></div>
     <div class="detail-block"><h3>${head('Part 2 — open book', data.part2Answers)}</h3>${data.part2Answers.map(answerBlockFor('part2')).join('') || '<p class="muted">Not started yet.</p>'}
-      <p class="muted" style="margin-top:4px">Tab switches: <strong>${at.part2_tab_switch_count ?? 0}</strong> · Pastes: <strong>${pasteCount}</strong>${pasteCount ? ` (largest ${pasteMax} characters)` : ''} — allowed in Part 2, shown for context.</p></div>`;
+      <p class="muted" style="margin-top:4px">Tab switches: <strong>${num(at.part2_tab_switch_count ?? 0)}</strong> · Pastes: <strong>${num(pasteCount)}</strong>${pasteCount ? ` (largest ${num(pasteMax)} characters)` : ''} — allowed in Part 2, shown for context.</p></div>`;
 }
 
 // Manual marks: the manager's mark counts instead of the AI's when there is one.
@@ -1526,7 +1526,7 @@ async function showDetail(id) {
         <div class="kv"><span class="k">Skills</span><span>${(c.skills || []).map(escapeHtml).join(', ') || '—'}</span></div>
         <div class="kv"><span class="k">Projects</span><span>${(c.projects || []).map((p) => escapeHtml(p.name)).join(', ') || '—'}</span></div>
         ${IS_DOCS ? docsAnswerSections(data, answerBlockFor, pasteCount, pasteMax) : `<div class="detail-block"><h3>Assessment answers — closed book</h3>${data.part1Answers.map(answerBlockFor('part1')).join('') || '<p class="muted">No answers yet (latest attempt).</p>'}
-          <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${data.attempt?.part1_tab_switch_count ?? 0}</strong></p></div>`}
+          <p class="muted" style="margin-top:4px">Left the test (full-screen exit / tab switch): <strong>${num(data.attempt?.part1_tab_switch_count ?? 0)}</strong></p></div>`}
         <div class="detail-block support-only">
           <h3 style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Interview guide <button class="secondary sm" id="gen-interview-btn">${data.interviewQuestions.length ? 'Regenerate' : 'Generate'}</button></h3>
           <p class="muted" style="margin:0 0 12px;font-size:12.5px">Personalised questions from this candidate's own projects &amp; skills — why they made a choice and what would work better — each with a model answer so the interviewer has clarity. Built from the latest attempt.</p>

@@ -1,0 +1,205 @@
+[
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "talo/admin/revoke-reject-status-not-reconciled-with-shortlist-reject-decisions",
+    "title": "Revoke with reject lets an ungraded or never-tested candidate be shortlisted, and Restore access undoes a later rejection",
+    "description": "On both sites (the writers site has no revoke route of its own, so admin.ts handles revoke/unrevoke for both), a manager's POST /api/admin/candidates/:id/revoke with {\"reject\":true} sets status='rejected' from any status other than 'rejected' and stores the old value in status_before_revoke (admin.ts:1592-1594). For a candidate who started, the same batch first moves part2_ready/in_progress to 'submitted' (admin.ts:1588), so the saved value is 'submitted'. A candidate who never started keeps 'part2_ready', and a candidate caught mid-grade keeps 'grading'. The shortlist/reject decision routes, open to panel members (roles.ts:20 does not list them), accept any status in ('evaluated','shortlisted','rejected') (admin.ts:1639, admin-docs.ts:320). So after revoke+reject, a panel member can shortlist a candidate who was never graded or never sat the test. This bypasses the stated rule that only a graded candidate can be shortlisted or rejected (admin.ts:1637-1638). Neither decision route reads or clears status_before_revoke. On Restore access (admin.ts:1610-1612): (a) a 'shortlisted' status is kept and status_before_revoke is cleared, so a never-started candidate stays 'shortlisted'. Candidate start and finish change status only from part2_ready/in_progress (candidate.ts:131, 177), so the candidate stays 'shortlisted' even after sitting the test. (b) If the status is 'rejected' because of a later explicit decision (for example revoke+reject on an 'evaluated' candidate, then shortlist, then reject), Restore access still puts back the pre-revoke 'evaluated'. That silently undoes the later rejection, against the comment at admin.ts:1609. Correction to the hunter's wording: such candidates are not permanently ungraded. Batch Analyze claims only status='submitted' (admin.ts:1328), but the per-candidate Grade now route (admin.ts:1353-1381, not manager-only, offered by the UI for shortlisted/rejected rows) grades any closed test and keeps a 'shortlisted'/'rejected' status (admin.ts:1380). The effect is a decision recorded before, or without, a grade, plus a stale restore. Neither exposes data across principals. It is a low-impact integrity flaw in the hiring-decision lifecycle.",
+    "claimed_root_cause": "Revoke with reject writes the decision value 'rejected' onto candidates in non-graded states. The shortlist/reject gate treats that value as proof of grading. status_before_revoke is a side value that only unrevoke, resume and retake read or clear, and the decision routes neither check nor reset it. So both the 'graded first' gate and the 'unless the status changed since' restore rule rely on a status value that no longer means what they assume.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/routes/admin.ts",
+        "line": 1634,
+        "scope": "shortlistMatch POST /api/admin/candidates/:id/shortlist|reject (panel member or manager; writers equivalent at src/routes/admin-docs.ts:316)",
+        "description": "Lower-trust entry: a panel member's decision request. The manager-only gate (admin.ts:369 writers, 594 support via roles.ts:20) does not cover shortlist or reject."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 1593,
+        "scope": "revokeMatch POST /api/admin/candidates/:id/revoke with {reject:true} (manager, earlier)",
+        "description": "Precondition state: UPDATE candidates SET status_before_revoke = status, status = 'rejected' WHERE id = ? AND status != 'rejected'. It runs after line 1588, so a started test is saved as 'submitted', a never-started one as 'part2_ready' and an in-flight grade as 'grading'."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 1639,
+        "scope": "shortlist/reject decision gate (support)",
+        "description": "status IN ('evaluated','shortlisted','rejected') matches the revoke-rejected, ungraded candidate. The status becomes 'shortlisted' or 'rejected', and status_before_revoke is left set."
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin-docs.ts",
+        "line": 320,
+        "scope": "shortlist/reject decision gate (writers)",
+        "description": "Same gate, and the same missing status_before_revoke reset."
+      },
+      {
+        "kind": "sink",
+        "file": "src/routes/admin.ts",
+        "line": 1611,
+        "scope": "revokeMatch unrevoke batch (Restore access)",
+        "description": "status = CASE WHEN status='rejected' AND status_before_revoke IS NOT NULL THEN status_before_revoke ELSE status END. A later explicit 'rejected' is replaced by the pre-revoke status. A 'shortlisted' status on an ungraded candidate is kept, and status_before_revoke is cleared."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/routes/admin.ts",
+        "line": 1637,
+        "description": "Stated invariant: only a graded candidate can be shortlisted or rejected."
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 1609,
+        "description": "Stated invariant: restore puts back the pre-revoke status 'unless someone has changed the status since'."
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 1588,
+        "description": "The revoke batch moves a started part2_ready/in_progress candidate to 'submitted' before the reject statement. Only never-started candidates keep 'part2_ready' as the saved value."
+      },
+      {
+        "file": "src/lib/roles.ts",
+        "line": 20,
+        "description": "The manager-only candidate actions do not include shortlist or reject, so panel members can run them."
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 1328,
+        "description": "Batch Analyze claims only status='submitted', so it skips a revoke-rejected or shortlisted candidate."
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 1380,
+        "description": "The per-candidate Grade now route grades any closed test and keeps 'shortlisted'/'rejected'. Grading is still possible, so the flaw is decision-before-grade, not answers that can never be graded."
+      },
+      {
+        "file": "src/routes/candidate.ts",
+        "line": 131,
+        "description": "Finishing the test changes status only from part2_ready/in_progress, so a shortlisted candidate who then sits the test stays 'shortlisted'."
+      },
+      {
+        "file": "src/routes/candidate.ts",
+        "line": 177,
+        "description": "Starting the test changes status only from part2_ready."
+      },
+      {
+        "file": "test/manager-features.test.ts",
+        "line": 170,
+        "description": "The existing tests cover only revoke+reject followed directly by unrevoke, with no decision in between."
+      }
+    ],
+    "blockers": [
+      "Decisive end-to-end behaviour (role routing, the D1 batch order and the meta.changes result of the gate across both site configurations) needs the vitest/workerd suite. This run has no OS-enforced sandbox and no trusted artifact promotion, so target code was not executed. The source predicts the result but did not observe it."
+    ],
+    "validation_plan": {
+      "local": "In test/manager-features.test.ts, inside the existing `${site.name}: Revoke access can also reject` describe (it runs for both sites), add two cases using test/helpers.ts. (1) seedCandidate('r3','r3@x.com') and leave the test unstarted (status part2_ready). POST /api/admin/candidates/r3/revoke with the manager cookie `a` and body {reject:true}, and expect status 'rejected' with status_before_revoke 'part2_ready'. Then POST /api/admin/candidates/r3/shortlist with panelCookie() (support) or a member account cookie (writers, where PANEL_EMAIL is empty). The invariant expects 409; the source predicts 200 and status 'shortlisted'. Then POST /api/admin/candidates/r3/unrevoke with `a` and assert the status is not 'shortlisted' (the source predicts 'shortlisted' with status_before_revoke NULL). (2) seedCandidate('r4','r4@x.com'), site.sit('r4@x.com'), then POST /api/admin/candidates/r4/grade with `a` (OpenAI is mocked) so the status is 'evaluated'. Revoke r4 with {reject:true}, shortlist it, reject it, then unrevoke it, and assert the status stays 'rejected' (the source predicts 'evaluated'). Use only in-memory D1 and dummy candidates. Candidate fix to test: make both decision routes require status_before_revoke IS NULL, or set status_before_revoke = NULL in the same UPDATE. In the revoke batch, write 'rejected' only when the status is in ('evaluated','shortlisted'), or otherwise keep the decision gate closed until the candidate is graded."
+    }
+  },
+  {
+    "verdict": "needs_validation",
+    "fingerprint": "talo/auth/panel-config-signin-reactivates-revoked-shared-account",
+    "title": "Shared panel password re-enables a panel account a manager disabled, deleted or re-passworded in Access",
+    "description": "Since 998ba8c, signing in on the support site with PANEL_EMAIL + PANEL_PASSWORD signs in to an admin_users row. That row is listed in Admin > Access like any named account (GET /api/admin/members returns every row), and the UI offers Make manager, Disable, Reset password and Delete on it. The Delete confirmation says 'They will no longer be able to log in'. The source settles the mechanics. The login lookup ignores inactive rows, so a disabled or deleted panel row is skipped and the PANEL_PASSWORD fallback runs. ensureConfigAccount then sets active = 1 on the existing row, or recreates it if it was deleted. After a manager sets a new password on the row, the row password check fails for the old shared secret, and the same fallback still accepts PANEL_PASSWORD. The new session carries a bc tag for the unchanged PANEL_PASSWORD, so getAdminRole accepts it. Result: anyone who still holds the shared panel password, such as a former panel volunteer, gets panel-member access back on their next sign-in after a manager revoked it in Access. Panel-member access covers candidate PII, resumes, answers, marks, shortlist/reject and CSV export. Only rotating or clearing the PANEL_PASSWORD secret actually revokes it. The code comment and the commit message describe reactivation as intended only for the main manager's recovery login. Panel-row reactivation is neither documented nor tested, so the decisive open fact is product intent.",
+    "claimed_root_cause": "ensureConfigAccount (src/routes/admin.ts:147-166) reactivates an inactive row (line 154) or recreates a missing row (lines 157-165) for any config role, not only the documented ADMIN_EMAIL recovery login (doc comment, lines 141-146). The login handler reaches it whenever the active-only row lookup (line 285) returns nothing, or the row's own password fails (line 300), and PANEL_EMAIL + PANEL_PASSWORD match (line 309). The Access lifecycle actions in /api/admin/members/:id each end current sessions with revokeUserSessions: Delete (line 566-567), active=false and new password (lines 575-586). None of them retires the shared config credential, so the next config sign-in undoes the change.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "src/routes/admin.ts",
+        "line": 273,
+        "scope": "POST /api/admin/login",
+        "description": "Anonymous sign-in with {email: PANEL_EMAIL, password: PANEL_PASSWORD} by a holder of the shared panel credential (support site; PANEL_EMAIL is set at wrangler.toml:61)"
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 285,
+        "scope": "handleAdminRoute login",
+        "description": "Row lookup filters `AND active = 1`, so a disabled or deleted panel row gives row = null and the row password is never checked"
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 309,
+        "scope": "handleAdminRoute login",
+        "description": "Config fallback matches PANEL_EMAIL and secretEqual(PANEL_PASSWORD) and sets viaConfig = 'member'. It also runs when the row is active but its manager-set password does not match (else branch of line 300)"
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 314,
+        "scope": "handleAdminRoute login",
+        "description": "ensureConfigAccount(env, panel email, 'member') is called"
+      },
+      {
+        "kind": "propagation",
+        "file": "src/routes/admin.ts",
+        "line": 154,
+        "scope": "ensureConfigAccount",
+        "description": "For a non-manager config role, an existing inactive row is set to active = 1 with no check of why it was disabled. If the row was deleted, lines 157-165 insert it again as active"
+      },
+      {
+        "kind": "sink",
+        "file": "src/routes/admin.ts",
+        "line": 326,
+        "scope": "handleAdminRoute login",
+        "description": "createAdminSession issues a session bound to the reactivated row with a bc tag for PANEL_PASSWORD. getAdminRole (src/lib/auth.ts:243-251) accepts it because the row is active and the tag matches the unchanged secret"
+      }
+    ],
+    "evidence": [
+      {
+        "file": "src/routes/admin.ts",
+        "line": 154,
+        "description": "`if (!existing.active) await env.DB.prepare('UPDATE admin_users SET active = 1 WHERE id = ?')` runs for role 'member'. The manager branch above it (150-152) is the only documented recovery case"
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 143,
+        "description": "Doc comment limits the stated intent to the main manager: 'The main manager's row is kept active and a manager, so the config password can always get back in (it is the recovery login).' It says nothing about the panel row"
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 313,
+        "description": "Comment 'Its password stays the secret until a manager sets one' suggests the secret should stop working once a password is set, yet the fallback at line 309 still accepts it after a manager-set password"
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 566,
+        "description": "DELETE removes the row and revokes its sessions. ensureConfigAccount recreates the row at the next PANEL_PASSWORD sign-in (lines 157-165)"
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 586,
+        "description": "Disable or a new password only calls revokeUserSessions. Nothing marks the shared config credential as retired"
+      },
+      {
+        "file": "src/routes/admin.ts",
+        "line": 537,
+        "description": "The Access listing returns every admin_users row, including the config-created panel row, with no marker that it is config-backed"
+      },
+      {
+        "file": "public/admin/admin.js",
+        "line": 529,
+        "description": "Delete confirmation promises 'They will no longer be able to log in'. The same row offers Disable (line 516) and Reset password (line 517)"
+      },
+      {
+        "file": "test/writers-bank.test.ts",
+        "line": 197,
+        "description": "Only reactivation of the ADMIN_EMAIL recovery login is specified and tested. No test covers reactivation of the panel row"
+      },
+      {
+        "file": "README.md",
+        "line": 126,
+        "description": "PANEL_PASSWORD is documented as a shared panel-member sign-in. 'Empty = named accounts only' is the only documented way to turn it off"
+      }
+    ],
+    "blockers": [
+      "Product intent is not visible in source. The 998ba8c commit message, the ensureConfigAccount doc comment (admin.ts:141-146), README.md:125 and wrangler.toml:97-99 describe recovery reactivation only for the main manager (ADMIN_EMAIL). Owner confirmation is needed on whether Disable, Delete or Reset password on the shared panel row should lock out PANEL_PASSWORD holders, or whether rotating or clearing the secret is the only supported revocation. If the latter is intended, the finding becomes a misleading-UI issue rather than an authorization bypass.",
+      "Whether the deployed support site has the PANEL_PASSWORD secret set is a deployment fact outside the repository. wrangler.toml:61 sets PANEL_EMAIL, but README.md:126 marks the secret as optional, and the path cannot be reached without it."
+    ],
+    "validation_plan": {
+      "local": "Add a describe block to test/audit-round4.test.ts. Reuse its `post` and `call` helpers (Origin https://test.local) and migrate/adminCookie/panelCookie/req from test/helpers.ts, under the vitest.config.ts env (PANEL_EMAIL panel@test.local, PANEL_PASSWORD test-panel-pass), with beforeEach(migrate). Write a helper `panelLogin = () => req('/api/admin/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'panel@test.local', password: 'test-panel-pass' }) })`. Use it rather than panelCookie, because panelCookie throws on a non-200 status. Case A (Disable): pan = await panelCookie(); mgr = await adminCookie(); id = (SELECT id FROM admin_users WHERE email='panel@test.local').id; POST /api/admin/members/${id} with post(mgr, {active:false}), expect 200; expect GET /api/admin/config with Cookie pan to return 401; r = await panelLogin(); record r.status and SELECT active FROM admin_users WHERE id=?. Case B (Delete): same setup, then call(env, `/api/admin/members/${id}`, { method: 'DELETE', headers: { Cookie: mgr, Origin: O } }); r = await panelLogin(); record r.status and SELECT COUNT(*) FROM admin_users WHERE email='panel@test.local'. Case C (Reset password): POST /api/admin/members/${id} with post(mgr, {password:'new-panel-pass-1'}); r = await panelLogin(); record r.status. The lead holds if A returns 200 with active = 1, B returns 200 with the row recreated (count 1), and C returns 200. If the owner says revocation is intended, all three should return 401. Then run `npm test -- test/audit-round4.test.ts` in an OS-sandboxed workspace (no network, in-memory D1, OpenAI mocked). Smallest server fix: in ensureConfigAccount, reactivate or recreate only when role === 'manager'. For 'member', refuse sign-in when the row exists but is inactive. After a manager deletes or re-passwords the panel row, record a tombstone, such as a settings key holding the bootstrapTag of the PANEL_PASSWORD in force at that moment. Refuse the panel config fallback while the current tag equals the tombstone, so access returns only after the secret is rotated.",
+      "deployment": "Owner-observed check only, with no sign-in attempts or other traffic to the site. (1) In the support Worker's secrets list (for example the Cloudflare dashboard, or `wrangler secret list`, which shows names only), confirm whether PANEL_PASSWORD is set. (2) Confirm the intended semantics: should Disable, Delete or Reset password on the PANEL_EMAIL row in Admin > Access lock out holders of the shared panel password, or is rotating or clearing PANEL_PASSWORD the only supported revocation? If the latter, hide or relabel those actions for config-backed rows rather than changing the server."
+    }
+  }
+]

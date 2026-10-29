@@ -67,10 +67,13 @@ export async function startPart(env: Env, candidateId: string, part: Part) {
 
   const now = nowIso();
   const seconds = await durationSeconds(env, part);
+  // Not for a candidate whose access was revoked a moment ago (between the sign-in
+  // check and this write): the revoke must never leave a test running.
   await env.DB.prepare(
-    `UPDATE attempts SET ${startedAtCol} = ?, ${remainingCol} = ?, ${heartbeatCol} = ? WHERE candidate_id = ?`
+    `UPDATE attempts SET ${startedAtCol} = ?, ${remainingCol} = ?, ${heartbeatCol} = ? WHERE candidate_id = ?
+       AND NOT EXISTS (SELECT 1 FROM candidates WHERE id = ? AND access_revoked = 1)`
   )
-    .bind(now, seconds, now, candidateId)
+    .bind(now, seconds, now, candidateId, candidateId)
     .run();
 }
 

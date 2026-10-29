@@ -214,10 +214,10 @@ Some columns are added at runtime by the Worker (never in a migration); see
 - `docs/WRITERS-SITE.md`: the writers site, question bank format, local testing.
 - `docs/VERSION-CONTROL.md`: branches, releases, migrations, deploying.
 - `docs/WRITERS-DATA-DESIGN.md`: data model of the writers site.
-- `docs/security-audit/`: the security audit report and fixes.
+- `docs/security-audit/`: security audit reports and fixes (run 1, and run 2 covering release 1.5).
 
 ## Branches
 
-- `main`: production, both sites (release `v1.5`).
+- `main`: production, both sites (release `v1.5.1`).
 - `v2`: an earlier full rebuild of the support site. It is **not deployed** and does
   not include the writers site or the work since 20 Oct 2026; kept for reference.
